@@ -212,9 +212,6 @@ class RadarManagementSystem:
             logger.info("All radars initialized successfully")
             # Mark operation as completed
             mark_operation_completed('radar_init', 'radar_management')
-            # Start cross-radar data fusion layer
-            get_radar_data_fusion().start()
-            logger.info("Cross-radar data fusion layer started")
         except Exception as e:
             logger.error(f"Error initializing radars: {str(e)}")
             logger.error(traceback.format_exc())
@@ -344,6 +341,31 @@ class RadarManagementSystem:
             # Start each radar
             for radar in self.radars.values():
                 radar.start()
+
+            # Start the cross-radar data fusion layer once its producers (the
+            # radars above) are up. This belongs here, in the lifecycle method,
+            # and is the mirror of stop()'s existing teardown of the same
+            # service.
+            #
+            # It previously lived in initialize_radars(), on the branch taken
+            # only when the persistent 'radar_init' marker was absent. That
+            # marker is written to FMOFP/tracking/ and never cleared, so the
+            # branch ran exactly once in the lifetime of a working copy: on the
+            # first boot fusion started, and on every boot afterwards
+            # initialize_radars() took the "already completed" path, rebuilt the
+            # radar objects, and returned without ever starting the worker.
+            # Cross-radar fusion was therefore dead on all subsequent runs, and
+            # TSD/EICAS silently showed no fused tracks. Nothing raised, because
+            # get_fused_tracks() happily returns an empty list when the worker
+            # has never run.
+            #
+            # Object construction is a one-time concern; running a worker thread
+            # is a per-start concern, so keying the latter off a persistent
+            # one-time marker was the underlying mistake. RadarDataFusion.start()
+            # is idempotent (it returns immediately if its thread is alive), so
+            # calling it on every start() is safe.
+            get_radar_data_fusion().start()
+            logger.info("Cross-radar data fusion layer started")
 
             # NOTE: each radar (weather/targeting/SAR/TFR/AEWC) already
             # initializes self.mode = <Type>Mode.STANDBY itself in its own

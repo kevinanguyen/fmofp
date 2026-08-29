@@ -47,6 +47,10 @@ SUITES = [
     (True,  "FMOFP.Tests.test_db_connection_pool", 300),
     (True,  "FMOFP.Tests.test_thread_and_cli_resilience", 300),
     (True,  "FMOFP.Tests.test_radar_shutdown_health", 300),
+    # Spawns two subprocesses of its own (cold- and warm-start scenarios must
+    # not share a process), each booting the radar management system, so it
+    # gets a wider budget than the single-process suites above.
+    (True,  "FMOFP.Tests.test_radar_fusion_lifecycle", 600),
 ]
 
 
