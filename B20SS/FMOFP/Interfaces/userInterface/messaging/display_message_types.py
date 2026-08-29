@@ -175,73 +175,6 @@ def get_message_type(message: Any) -> Optional[str]:
     # No message type found
     return None
 
-def get_command_type(message: Any) -> Optional[str]:
-    """
-    Extract command type from message metadata or determine based on message type.
-    
-    Args:
-        message: Message object or dictionary
-        
-    Returns:
-        str: Command type or None if not found
-    """
-    if not message:
-        return None
-        
-    # Extract from dictionary message
-    if isinstance(message, dict):
-        # Check top-level command_type field
-        if 'command_type' in message:
-            return message['command_type']
-            
-        # Check in metadata dictionary
-        if 'metadata' in message and isinstance(message['metadata'], dict):
-            cmd_type = message['metadata'].get('command_type')
-            if cmd_type:
-                return cmd_type
-                
-        # Check in additional_info dictionary
-        if 'additional_info' in message and isinstance(message['additional_info'], dict):
-            cmd_type = message['additional_info'].get('command_type')
-            if cmd_type:
-                return cmd_type
-    
-    # Extract from object attributes
-    elif hasattr(message, 'command_type'):
-        return message.command_type
-        
-    # Check object metadata
-    elif hasattr(message, 'metadata'):
-        metadata = message.metadata
-        if isinstance(metadata, dict) and 'command_type' in metadata:
-            return metadata['command_type']
-            
-    # Check object additional_info
-    elif hasattr(message, 'additional_info'):
-        additional_info = message.additional_info
-        if isinstance(additional_info, dict) and 'command_type' in additional_info:
-            return additional_info['command_type']
-    
-    # If no command_type found, try to derive from message_type
-    message_type = get_message_type(message)
-    if not message_type:
-        return None
-        
-    # Derive command type from message type
-    message_type_lower = message_type.lower()
-    
-    if 'mode' in message_type_lower and 'change' in message_type_lower:
-        return DISPLAY_COMMAND_TYPE_MODE
-    elif 'data' in message_type_lower:
-        return DISPLAY_COMMAND_TYPE_DATA
-    elif 'status' in message_type_lower:
-        return DISPLAY_COMMAND_TYPE_STATUS
-    elif 'show' in message_type_lower:
-        return DISPLAY_COMMAND_TYPE_SHOW
-    
-    # No command type found
-    return None
-
 def is_message_type(message: Any, expected_type: str) -> bool:
     """
     Check if message has expected message type.
@@ -262,27 +195,6 @@ def is_message_type(message: Any, expected_type: str) -> bool:
         
     # Case-insensitive comparison
     return msg_type.lower() == expected_type.lower()
-
-def is_command_type(message: Any, expected_type: str) -> bool:
-    """
-    Check if message has expected command type.
-    
-    Args:
-        message: Message object or dictionary
-        expected_type: Expected command type
-        
-    Returns:
-        bool: True if message matches expected command type
-    """
-    if not expected_type:
-        return False
-        
-    cmd_type = get_command_type(message)
-    if not cmd_type:
-        return False
-        
-    # Case-insensitive comparison
-    return cmd_type.lower() == expected_type.lower()
 
 def is_vil_message(message: Any) -> bool:
     """

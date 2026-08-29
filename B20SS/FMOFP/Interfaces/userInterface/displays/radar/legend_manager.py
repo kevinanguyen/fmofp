@@ -532,47 +532,6 @@ class CollapsibleLegendPanel(QObject):
         # Restore painter state
         painter.restore()
 
-class LegendRenderStrategy(Enum):
-    """Strategies for rendering legends"""
-    STANDARD = auto()    # Single legend with full details
-    COMPACT = auto()     # Condensed version with minimal details
-    COMBINED = auto()    # Multiple legends in a single display
-    CONTEXTUAL = auto()  # Dynamic based on visible data
-
-class LegendConfig:
-    """Enhanced configuration for a specific legend type"""
-    
-    def __init__(self, name: str, allowed_modes: List[str], enabled: bool = False):
-        """Initialize legend configuration.
-        
-        Args:
-            name: Legend identifier
-            allowed_modes: List of modes where this legend can be shown
-            enabled: Initial enabled state
-        """
-        self.name = name
-        self.allowed_modes = set(allowed_modes)
-        self.enabled = enabled
-        self.colors: Dict[str, QColor] = {}
-        self.labels: List[str] = []
-        self.position: Optional[Tuple[float, float]] = None
-        self.show_values = False
-        self.priority = 0  # Higher priority legends are drawn first
-        
-        # Enhanced properties
-        self.shape = LegendShape.SQUARE  # Default shape
-        self.units = ""  # Units for values (e.g., "kg/m²")
-        self.title = name.capitalize()  # Human-readable title
-        self.render_strategy = LegendRenderStrategy.STANDARD
-        self.data_type = name  # Type of data this legend represents
-        
-    def is_allowed_in_mode(self, mode: str) -> bool:
-        """Check if legend is allowed in given mode."""
-        return mode.upper() in {m.upper() for m in self.allowed_modes}
-        
-    def __repr__(self) -> str:
-        return f"LegendConfig(name={self.name}, enabled={self.enabled}, modes={self.allowed_modes})"
-
 class LegendManager:
     """Enhanced manager for radar display legends"""
     
