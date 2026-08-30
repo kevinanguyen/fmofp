@@ -90,7 +90,7 @@ class MultiFunctionDisplay(BaseDisplay):
             RadarType.WEATHER,
             RadarType.TARGETING,
             RadarType.TFR,
-            RadarType.SAR,
+            # RadarType.SAR,
             RadarType.AEWC
         ]
         self.current_radar_type = RadarType.WEATHER
