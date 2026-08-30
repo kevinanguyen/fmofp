@@ -222,7 +222,7 @@ class RadarManagementSystem:
         return {
             "weather_radar": {"name": "weather_radar"},
             "targeting_radar": {"name": "targeting_radar"},
-            "sar_radar": {"name": "sar_radar"},
+            # "sar_radar": {"name": "sar_radar"},
             "tfr_radar": {"name": "tfr_radar"},
             "aewc_radar": {"name": "aewc_radar"}
         }
