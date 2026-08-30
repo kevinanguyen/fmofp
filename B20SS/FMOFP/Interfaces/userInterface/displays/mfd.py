@@ -90,6 +90,9 @@ class MultiFunctionDisplay(BaseDisplay):
             RadarType.WEATHER,
             RadarType.TARGETING,
             RadarType.TFR,
+            # INSTRUCTOR NOTE - SSTR-004
+            # Intentional bug: The RadarType.SAR entry is commented out of this menu list, so no menu index maps to SAR.
+            # Canonical fix: Restore `RadarType.SAR,` in this list.
             # RadarType.SAR,
             RadarType.AEWC
         ]
