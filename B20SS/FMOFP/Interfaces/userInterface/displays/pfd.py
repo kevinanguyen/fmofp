@@ -131,7 +131,6 @@ class PrimaryFlightDisplay(BaseDisplay):
             self.draw_attitude_indicator(painter)
             self.draw_altitude_tape(painter)
             self.draw_airspeed_tape(painter)
-            self.draw_heading_indicator(painter)
 
             # Draw  elements
             self.draw_flight_mode_indicator(painter)
