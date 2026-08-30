@@ -733,12 +733,7 @@ class MultiFunctionDisplay(BaseDisplay):
             radius = min(rect.width(), rect.height()) / 3
 
             # Draw compass circle with enhanced visuals
-            compass_rect = QRectF(
-                center.x() - radius,
-                center.y() - radius,
-                radius * 2,
-                radius * 2
-            )
+            compass_rect = QRectF()
 
             if use_gradients:
                 self._visual_effects.draw_enhanced_ellipse(
