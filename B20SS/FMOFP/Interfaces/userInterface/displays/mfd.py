@@ -779,6 +779,9 @@ class MultiFunctionDisplay(BaseDisplay):
                 painter.drawEllipse(compass_rect)
 
             # Draw cardinal points with enhanced visuals
+            # INSTRUCTOR NOTE - SSTR-002
+            # Intentional bug: The cardinal-point list is empty, so no N/E/S/W labels are drawn.
+            # Canonical fix: Restore `points = [("N", 0), ("E", 90), ("S", 180), ("W", 270)]`.
             points = []
             for label, angle in points:
                 rad_angle = math.radians(angle - 90)
