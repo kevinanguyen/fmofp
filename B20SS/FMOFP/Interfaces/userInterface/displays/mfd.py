@@ -733,6 +733,9 @@ class MultiFunctionDisplay(BaseDisplay):
             radius = min(rect.width(), rect.height()) / 3
 
             # Draw compass circle with enhanced visuals
+            # INSTRUCTOR NOTE - SSTR-003
+            # Intentional bug: compass_rect is an empty QRectF, so the compass circle is never drawn.
+            # Canonical fix: Restore `QRectF(center.x() - radius, center.y() - radius, radius * 2, radius * 2)`.
             compass_rect = QRectF()
 
             if use_gradients:
