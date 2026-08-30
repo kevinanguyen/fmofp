@@ -629,6 +629,9 @@ class PrimaryFlightDisplay(BaseDisplay):
                             # Minor ticks
                             painter.setPen(self.hud_color)
                             painter.drawLine(tick_line)
+                    # INSTRUCTOR NOTE - SSTR-006
+                    # Intentional bug: The non-gradient fallback block is incorrectly nested inside the gradient branch.
+                    # Canonical fix: Restore the `else:` above this block and dedent the existing block beneath it.
                     # Fall back to original drawing
                     painter.setPen(self.hud_color)
 
