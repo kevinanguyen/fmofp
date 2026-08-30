@@ -222,6 +222,9 @@ class RadarManagementSystem:
         return {
             "weather_radar": {"name": "weather_radar"},
             "targeting_radar": {"name": "targeting_radar"},
+            # INSTRUCTOR NOTE - SSTR-001
+            # Intentional bug: The sar_radar roster entry is commented out, so the SAR radar is never constructed.
+            # Canonical fix: Restore `"sar_radar": {"name": "sar_radar"},` in this dict.
             # "sar_radar": {"name": "sar_radar"},
             "tfr_radar": {"name": "tfr_radar"},
             "aewc_radar": {"name": "aewc_radar"}
