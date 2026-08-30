@@ -629,38 +629,37 @@ class PrimaryFlightDisplay(BaseDisplay):
                             # Minor ticks
                             painter.setPen(self.hud_color)
                             painter.drawLine(tick_line)
-            else:
-                # Fall back to original drawing
-                painter.setPen(self.hud_color)
+                    # Fall back to original drawing
+                    painter.setPen(self.hud_color)
 
-                # Draw airspeed box
-                box_height = 30
-                box_rect = QRectF(tape_x - 10, tape_y - box_height/2, tape_width, box_height)
-                painter.drawRect(box_rect)
+                    # Draw airspeed box
+                    box_height = 30
+                    box_rect = QRectF(tape_x - 10, tape_y - box_height/2, tape_width, box_height)
+                    painter.drawRect(box_rect)
 
-                # Draw current airspeed
-                text_point = QPointF(tape_x, tape_y + 5)
-                painter.drawText(text_point, f"{int(self.airspeed):03d}")
+                    # Draw current airspeed
+                    text_point = QPointF(tape_x, tape_y + 5)
+                    painter.drawText(text_point, f"{int(self.airspeed):03d}")
 
-                # Draw mach number (aircraft specific) - repositioned to avoid overlap
-                mach_point = QPointF(tape_x, tape_y + box_height + 15)
-                painter.drawText(mach_point, f"M{self.mach:.3f}")
+                    # Draw mach number (aircraft specific) - repositioned to avoid overlap
+                    mach_point = QPointF(tape_x, tape_y + box_height + 15)
+                    painter.drawText(mach_point, f"M{self.mach:.3f}")
 
-                # Draw speed ticks
-                tick_spacing = box_height * 0.8
-                for i in range(-5, 6):
-                    tick_speed = self.airspeed + (i * 10)
-                    y_pos = tape_y + (i * tick_spacing)
+                    # Draw speed ticks
+                    tick_spacing = box_height * 0.8
+                    for i in range(-5, 6):
+                        tick_speed = self.airspeed + (i * 10)
+                        y_pos = tape_y + (i * tick_spacing)
 
-                    if i != 0:  # Don't draw over the main speed
-                        tick_line = QLineF(
-                            QPointF(tape_x - 10, y_pos),
-                            QPointF(tape_x, y_pos)
-                        )
-                        painter.drawLine(tick_line)
-                        if i % 2 == 0:
-                            text_point = QPointF(tape_x + 10, y_pos + 5)
-                            painter.drawText(text_point, f"{int(tick_speed):03d}")
+                        if i != 0:  # Don't draw over the main speed
+                            tick_line = QLineF(
+                                QPointF(tape_x - 10, y_pos),
+                                QPointF(tape_x, y_pos)
+                            )
+                            painter.drawLine(tick_line)
+                            if i % 2 == 0:
+                                text_point = QPointF(tape_x + 10, y_pos + 5)
+                                painter.drawText(text_point, f"{int(tick_speed):03d}")
 
         except Exception as e:
             logger.error(f"Error drawing airspeed tape: {str(e)}")
