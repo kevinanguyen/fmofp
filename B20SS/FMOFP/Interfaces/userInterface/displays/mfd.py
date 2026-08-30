@@ -779,7 +779,7 @@ class MultiFunctionDisplay(BaseDisplay):
                 painter.drawEllipse(compass_rect)
 
             # Draw cardinal points with enhanced visuals
-            points = [("N", 0), ("E", 90), ("S", 180), ("W", 270)]
+            points = []
             for label, angle in points:
                 rad_angle = math.radians(angle - 90)
                 point_x = center.x() + radius * 1.2 * math.cos(rad_angle)
