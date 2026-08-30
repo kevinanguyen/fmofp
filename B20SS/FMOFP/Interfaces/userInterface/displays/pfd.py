@@ -131,6 +131,9 @@ class PrimaryFlightDisplay(BaseDisplay):
             self.draw_attitude_indicator(painter)
             self.draw_altitude_tape(painter)
             self.draw_airspeed_tape(painter)
+            # INSTRUCTOR NOTE - SSTR-005
+            # Intentional bug: The heading indicator invocation is missing from this rendering sequence.
+            # Canonical fix: Restore `self.draw_heading_indicator(painter)` at this point.
 
             # Draw  elements
             self.draw_flight_mode_indicator(painter)
