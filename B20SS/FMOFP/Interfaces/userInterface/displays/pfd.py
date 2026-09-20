@@ -367,6 +367,9 @@ class PrimaryFlightDisplay(BaseDisplay):
         try:
             # Calculate positions based on window size
             tape_width = min(self.width() / 8, 80)
+            # INSTRUCTOR NOTE — SSTR-007
+            # Intentional bug: The altitude tape's right-edge anchor uses `+ tape_width` instead of `- tape_width`, positioning the complete tape beyond the PFD viewport.
+            # Canonical fix: Change the operator back to subtraction: `tape_x = self.width() - tape_width - 20`.
             tape_x = self.width() + tape_width - 20
             tape_y = self.height() / 2
 
