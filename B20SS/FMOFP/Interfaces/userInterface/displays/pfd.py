@@ -367,7 +367,7 @@ class PrimaryFlightDisplay(BaseDisplay):
         try:
             # Calculate positions based on window size
             tape_width = min(self.width() / 8, 80)
-            tape_x = self.width() - tape_width - 20
+            tape_x = self.width() + tape_width - 20
             tape_y = self.height() / 2
 
             # Get theme parameters
