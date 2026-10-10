@@ -131,25 +131,34 @@ TEST(FmsNavUpdateCmd, PresentBitsAndUnsignedScales) {
     EXPECT_EQ(Word{0xC000}, w[3]);  // 270 deg of 360/65536 = 49152
 }
 
-TEST(LayoutOf, MfdCommandSharesTheRadarLayout) {
+TEST(LayoutOf, MfdCommandSharesTheRadarLayoutButNotItsAddress) {
     EXPECT_EQ(13, MfdRdrWxCmd::kRt);
     EXPECT_EQ(20, MfdRdrWxCmd::kSubaddress);
     EXPECT_EQ(Direction::kTransmit, MfdRdrWxCmd::kDirection);
+    EXPECT_EQ(10, MfdRdrWxCmd::kRateHz);
     EXPECT_EQ(RdrWxModeCmd::kWords, MfdRdrWxCmd::kWords);
+    // The radar's own command is receive, aperiodic, at RT 9: nothing leaks across.
+    EXPECT_EQ(9, RdrWxModeCmd::kRt);
+    EXPECT_EQ(Direction::kReceive, RdrWxModeCmd::kDirection);
+
     MfdRdrWxCmd m{};
-    m.requested_state = TerminalState::NORMAL;
-    m.requested_mode = WeatherMode::PRECIPITATION;
-    m.cmd_seq = 9;
-    m.range_km = 80.0;
-    m.tilt = 2.5;
+    m.payload.requested_state = TerminalState::NORMAL;
+    m.payload.requested_mode = WeatherMode::PRECIPITATION;
+    m.payload.cmd_seq = 9;
+    m.payload.range_km = 80.0;
+    m.payload.tilt = 2.5;
     MfdRdrWxCmd::Words w{};
     ASSERT_EQ(Status::kOk, m.encode(w));
+    // The bus controller relays the words untouched into the radar's command.
     RdrWxModeCmd as_radar{};
     ASSERT_EQ(Status::kOk, RdrWxModeCmd::decode(w, as_radar));
     EXPECT_EQ(WeatherMode::PRECIPITATION, as_radar.requested_mode);
     EXPECT_EQ(9, as_radar.cmd_seq);
     EXPECT_DOUBLE_EQ(80.0, as_radar.range_km);
     EXPECT_NEAR(2.5, as_radar.tilt, 180.0 / 32768.0);
+    MfdRdrWxCmd back{};
+    ASSERT_EQ(Status::kOk, MfdRdrWxCmd::decode(w, back));
+    EXPECT_EQ(9, back.payload.cmd_seq);
 }
 
 TEST(RdrWxModeCmd, ARangeBelowTheMinimumIsClampedToIt) {

@@ -58,6 +58,17 @@ Status UdpSocket::open(std::uint16_t port) noexcept {
         ::closesocket(s);
         return Status::kIoError;
     }
+    // Winsock turns an ICMP "port unreachable" for a datagram we sent into a
+    // WSAECONNRESET on our next recvfrom. A terminal that is not running
+    // would then break the bus controller's receive of other replies, so
+    // switch that behaviour off (SIO_UDP_CONNRESET).
+    DWORD ignored = 0;
+    BOOL off = FALSE;
+    constexpr DWORD kSioUdpConnreset = 0x9800000CUL;  // _WSAIOW(IOC_VENDOR, 12)
+    if (::WSAIoctl(s, kSioUdpConnreset, &off, sizeof off, nullptr, 0, &ignored, nullptr, nullptr) != 0) {
+        ::closesocket(s);
+        return Status::kIoError;
+    }
     handle_ = static_cast<std::int64_t>(s);
     return Status::kOk;
 }

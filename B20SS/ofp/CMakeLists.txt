@@ -41,7 +41,10 @@ endif()
 add_subdirectory(bus)
 add_subdirectory(osal)
 add_subdirectory(icd)
+add_subdirectory(bc)
+add_subdirectory(partitions)
 if(OFP_BUILD_TESTS)
+    find_package(Threads REQUIRED)
     add_subdirectory(tests)
 endif()
 
@@ -73,6 +76,9 @@ if(OFP_COVERAGE AND OFP_GCOVR AND OFP_BUILD_TESTS)
         COMMAND ${OFP_GCOVR} --root ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_BINARY_DIR}
             --filter ${CMAKE_CURRENT_SOURCE_DIR}/bus
             --filter ${CMAKE_CURRENT_SOURCE_DIR}/osal
+            --filter ${CMAKE_CURRENT_SOURCE_DIR}/bc/src
+            --filter ${CMAKE_CURRENT_SOURCE_DIR}/bc/include
+            --filter ${CMAKE_CURRENT_SOURCE_DIR}/partitions/common
             --filter ${CMAKE_BINARY_DIR}/icd/generated/include
             --print-summary --txt
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
