@@ -7,6 +7,7 @@ add_executable(ofp_tests
     status_word_test.cpp
     transport_test.cpp
     osal_test.cpp
+    remote_terminal_test.cpp
     icd_messages_test.cpp)
 add_dependencies(ofp_tests ofp_icd_generate)
 target_link_libraries(ofp_tests PRIVATE
