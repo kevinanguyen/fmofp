@@ -2,7 +2,9 @@ name: FMOFP CI
 
 on:
   push:
-    branches: [ main ]
+    # port/** is the C++ port's working branch; running CI there gives the
+    # C++ job feedback long before anything reaches main.
+    branches: [ main, 'port/**' ]
   pull_request:
     branches: [ main ]
 
