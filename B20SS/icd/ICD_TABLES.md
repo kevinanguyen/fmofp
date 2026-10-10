@@ -1,0 +1,1015 @@
+# FMOFP 1553B ICD — tables
+
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.0 (DRAFT, 2026-10-10). Conventions, timing and transport are in [README.md](README.md).
+
+## Terminals
+
+| RT | ID | Name | Status | Source | Note |
+|---|---|---|---|---|---|
+| 0 | `reserved_0` | Reserved (was 'Unnamed System') | reserved |  |  |
+| 1 | `avionics` | Avionics - LRU health, built-in test, FM fitness, software configuration | existing | Systems/avionics/hardwareHealth, Systems/builtInTestSystems, Systems/fmFitness, Systems/configurationManagement | BIT merged here (Alee, 2026-10-10). FM fitness and SW configuration are here too: Alee said to fold them into another terminal, and both are health/maintenance functions |
+| 2 | `comms` | Communications | existing | Systems/comms/messaging_service.py |  |
+| 3 | `enginemanagement` | Engine management - ECU, fuel, thrust | existing | Systems/engineManagement |  |
+| 4 | `enviornmentalcontrolsystem` | Environmental control system | existing | Systems/enviornmentalControlSystem | id keeps the repo's spelling |
+| 5 | `flightcontrolsys` | Flight control - FCC, GCAS, performance monitor | existing | Systems/flightControlSys |  |
+| 6 | `missionplanning` | Mission planning | existing | Systems/missionPlanning/missionService.py |  |
+| 7 | `nav` | Navigation - GPS, INS, fusion | existing | Systems/nav |  |
+| 8 | `powermanagement` | Power management | existing | Systems/powerManagement |  |
+| 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before |
+| 10 | `sensormanagement` | Sensor management | existing | Systems/sensorManagement |  |
+| 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address |
+| 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys |  |
+| 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py |  |
+| 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays |  |
+| 15 | `radar_display` | Weather radar display | new | Interfaces/userInterface/displays/radar |  |
+| 16 | `tsd` | Tactical situation display | new | Interfaces/userInterface/displays/tsd.py |  |
+| 17 | `sms` | Stores management display | new | Interfaces/userInterface/displays |  |
+| 18 | `hud` | Head-up display | new | Interfaces/userInterface (HUDContainer) |  |
+| 19 | `hydraulics` | Hydraulics | new | Systems/hydraulics |  |
+| 20 | `airframe` | Airframe systems | new | Systems/airframeSystemManagement |  |
+| 21 | `flightsurfaces` | Flight surfaces | new | Systems/flightSurfaces |  |
+| 22 | `defensive` | Defensive systems - RWR, chaff, flare, ECM | new | Systems/defensiveSys |  |
+| 23 | `flightdatamonitoring` | Flight data monitoring | new | Systems/flightDataMonitoring |  |
+
+RT 31 is broadcast. Unused: 24, 25, 26, 27, 28, 29, 30.
+
+## Message summary
+
+| ID | RT | SA | Dir | Words | Rate (Hz) | Title | Status |
+|---|---|---|---|---|---|---|---|
+| [`FCS_MODE_CMD`](#fcs_mode_cmd) | 5 | 10 | R | 1 | aperiodic | Flight control mode command | DRAFT |
+| [`FCS_STATUS`](#fcs_status) | 5 | 10 | T | 2 | 5 | Flight control status | DRAFT |
+| [`FCS_SURFACE_CMD`](#fcs_surface_cmd) | 5 | 11 | R | 2 | aperiodic | Control surface command | DRAFT |
+| [`FCS_SURFACE_STATUS`](#fcs_surface_status) | 5 | 11 | T | 7 | 10 | Control surface positions | DRAFT |
+| [`FCS_ATTITUDE`](#fcs_attitude) | 5 | 12 | T | 4 | 50 | Aircraft attitude | DRAFT |
+| [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd) | 9 | 1 | R | 3 | aperiodic | Weather radar mode command | DRAFT |
+| [`RDR_WX_STATUS`](#rdr_wx_status) | 9 | 1 | T | 2 | 5 | Weather radar status | DRAFT |
+| [`RDR_TFR_MODE_CMD`](#rdr_tfr_mode_cmd) | 9 | 2 | R | 2 | aperiodic | Terrain-following radar mode command | DRAFT |
+| [`RDR_TFR_STATUS`](#rdr_tfr_status) | 9 | 2 | T | 2 | 5 | Terrain-following radar status | DRAFT |
+| [`RDR_SAR_MODE_CMD`](#rdr_sar_mode_cmd) | 9 | 3 | R | 2 | aperiodic | Synthetic aperture radar mode command | DRAFT |
+| [`RDR_SAR_STATUS`](#rdr_sar_status) | 9 | 3 | T | 2 | 5 | Synthetic aperture radar status | DRAFT |
+| [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd) | 9 | 4 | R | 2 | aperiodic | Targeting radar mode command | DRAFT |
+| [`RDR_TGT_STATUS`](#rdr_tgt_status) | 9 | 4 | T | 2 | 5 | Targeting radar status | DRAFT |
+| [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd) | 9 | 5 | R | 4 | aperiodic | AEWC radar mode command | DRAFT |
+| [`RDR_AEWC_STATUS`](#rdr_aewc_status) | 9 | 5 | T | 2 | 5 | AEWC radar status | DRAFT |
+| [`DSP_PFD_MODE_CMD`](#dsp_pfd_mode_cmd) | 11 | 11 | R | 1 | aperiodic | Primary flight display mode command | DRAFT |
+| [`DSP_PFD_STATUS`](#dsp_pfd_status) | 11 | 11 | T | 2 | 1 | Primary flight display status | DRAFT |
+| [`FMS_MODE_CMD`](#fms_mode_cmd) | 12 | 15 | R | 1 | aperiodic | Flight management mode command | DRAFT |
+| [`FMS_STATUS`](#fms_status) | 12 | 15 | T | 2 | 5 | Flight management status | DRAFT |
+| [`FMS_ATTITUDE_CMD`](#fms_attitude_cmd) | 12 | 16 | R | 7 | aperiodic | Attitude command | DRAFT |
+| [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | 12 | 16 | T | 5 | 10 | Attitude command status | DRAFT |
+| [`FMS_NAV_UPDATE_CMD`](#fms_nav_update_cmd) | 12 | 17 | R | 5 | aperiodic | Autopilot target command | DRAFT |
+| [`FMS_NAV_UPDATE_STATUS`](#fms_nav_update_status) | 12 | 17 | T | 2 | 5 | Autopilot target status | DRAFT |
+| [`FMS_MANEUVER_CMD`](#fms_maneuver_cmd) | 12 | 18 | R | 3 | aperiodic | Maneuver command | DRAFT |
+| [`FMS_MANEUVER_STATUS`](#fms_maneuver_status) | 12 | 18 | T | 2 | 5 | Maneuver status | DRAFT |
+| [`DSP_MFD_MODE_CMD`](#dsp_mfd_mode_cmd) | 13 | 12 | R | 1 | aperiodic | Multi-function display mode command | DRAFT |
+| [`DSP_MFD_STATUS`](#dsp_mfd_status) | 13 | 12 | T | 2 | 1 | Multi-function display status | DRAFT |
+| [`MFD_RDR_WX_CMD`](#mfd_rdr_wx_cmd) | 13 | 20 | T | 3 | 10 | MFD command to the weather radar | PROPOSED |
+| [`MFD_RDR_TFR_CMD`](#mfd_rdr_tfr_cmd) | 13 | 21 | T | 2 | 10 | MFD command to the terrain-following radar | PROPOSED |
+| [`MFD_RDR_SAR_CMD`](#mfd_rdr_sar_cmd) | 13 | 22 | T | 2 | 10 | MFD command to the synthetic aperture radar | PROPOSED |
+| [`MFD_RDR_TGT_CMD`](#mfd_rdr_tgt_cmd) | 13 | 23 | T | 2 | 10 | MFD command to the targeting radar | PROPOSED |
+| [`MFD_RDR_AEWC_CMD`](#mfd_rdr_aewc_cmd) | 13 | 24 | T | 4 | 10 | MFD command to the aewc radar | PROPOSED |
+| [`DSP_EICAS_MODE_CMD`](#dsp_eicas_mode_cmd) | 14 | 13 | R | 1 | aperiodic | EICAS mode command | DRAFT |
+| [`DSP_EICAS_STATUS`](#dsp_eicas_status) | 14 | 13 | T | 2 | 1 | EICAS status | DRAFT |
+| [`DSP_RADAR_MODE_CMD`](#dsp_radar_mode_cmd) | 15 | 14 | R | 1 | aperiodic | Weather radar display mode command | DRAFT |
+| [`DSP_RADAR_STATUS`](#dsp_radar_status) | 15 | 14 | T | 2 | 1 | Weather radar display status | DRAFT |
+| [`DSP_TSD_MODE_CMD`](#dsp_tsd_mode_cmd) | 16 | 15 | R | 1 | aperiodic | Tactical situation display mode command | DRAFT |
+| [`DSP_TSD_STATUS`](#dsp_tsd_status) | 16 | 15 | T | 2 | 1 | Tactical situation display status | DRAFT |
+| [`DSP_SMS_MODE_CMD`](#dsp_sms_mode_cmd) | 17 | 16 | R | 1 | aperiodic | Stores management display mode command | DRAFT |
+| [`DSP_SMS_STATUS`](#dsp_sms_status) | 17 | 16 | T | 2 | 1 | Stores management display status | DRAFT |
+| [`DSP_HUD_MODE_CMD`](#dsp_hud_mode_cmd) | 18 | 17 | R | 1 | aperiodic | Head-up display mode command | DRAFT |
+| [`DSP_HUD_STATUS`](#dsp_hud_status) | 18 | 17 | T | 2 | 1 | Head-up display status | DRAFT |
+| [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
+| [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
+
+## Block transfers
+
+Layout of the descriptor and segment messages is in README.md. Payload layouts come in v2.
+
+| ID | RT | Descriptor SA | Segment SA | Rate (Hz) | Title | Payload |
+|---|---|---|---|---|---|---|
+| `RDR_WX_VIL` | 9 | 6 | 7 | 10 | Weather radar VIL | TBD-v2 |
+| `RDR_WX_PRECIP` | 9 | 8 | 9 | 10 | Weather radar precipitation | TBD-v2 |
+| `RDR_TGT_TRACKS` | 9 | 10 | 11 | 10 | Targeting radar tracks | TBD-v2 |
+| `RDR_AEWC_SECTOR` | 9 | 12 | 13 | 10 | AEWC sector scan | TBD-v2 |
+| `RDR_TFR_ELEVATION` | 9 | 14 | 15 | 10 | TFR elevation profile | TBD-v2 |
+| `RDR_SAR_IMAGE` | 9 | 16 | 17 | 1 | SAR image | TBD-v2 |
+| `FMS_DATA` | 12 | 19 | 20 | 10 | FMS flight data | TBD-v2 |
+
+## Mode codes
+
+| Code | Name | Dir | Data words | Broadcast | Use |
+|---|---|---|---|---|---|
+| 2 | TRANSMIT_STATUS_WORD | T | 0 | no | BC health poll; also how the BC reads the message-error bit after a no-response |
+| 3 | INITIATE_SELF_TEST | T | 0 | yes | Starts initiated BIT; results in the BIT word |
+| 6 | INHIBIT_TERMINAL_FLAG | T | 0 | yes | Terminal flag bit forced to 0 in the status word |
+| 7 | OVERRIDE_INHIBIT_TERMINAL_FLAG | T | 0 | yes | Cancels mode code 6 |
+| 8 | RESET_REMOTE_TERMINAL | T | 0 | yes | Terminal re-initialises: state INITIALIZING, latched faults cleared |
+| 16 | TRANSMIT_VECTOR_WORD | T | 1 | no | After a service request: data word = SA (bits 4-0) the terminal wants serviced |
+| 17 | SYNCHRONIZE_WITH_DATA | R | 1 | yes | Sent to broadcast RT 31 at the start of every minor frame. Data word: bits 15-6 major frame count (mod 1024), bits 5-0 minor frame 0-49 |
+| 18 | TRANSMIT_LAST_COMMAND | T | 1 | no | Returns the last command word received |
+| 19 | TRANSMIT_BIT_WORD | T | 1 | no | Returns the BIT word (same layout as TERM_STATUS word 2) |
+
+## Enumerations
+
+### `terminal_state` (4 bits)
+
+Lifecycle and health state shared by every terminal. Values 0-8 keep their MODE_VALUE_MAP numbers; INITIALIZING moves from -1 to 15.
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | STANDBY |  |  |
+| 1 | NORMAL |  |  |
+| 2 | DEGRADED |  |  |
+| 3 | TEST |  |  |
+| 4 | MAINTENANCE |  |  |
+| 5 | EMERGENCY |  |  |
+| 6 | FAILURE |  |  |
+| 7 | RECOVERY |  |  |
+| 8 | CALIBRATION |  |  |
+| 15 | INITIALIZING | -1 |  |
+
+### `weather_mode` (4 bits)
+
+Weather radar operating mode (radar_enums.weather_radarMode). The legacy WEATHER value (6) is dropped: no radar implements it and nothing sends it. Numbered per radar from 1; legacy = old global number.
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | No operating mode selected (state is not NORMAL) |
+| 1 | SURVEILLANCE | 10 |  |
+| 2 | MAPPING | 11 |  |
+| 3 | TURBULENCE | 12 |  |
+| 4 | WINDSHEAR | 13 |  |
+| 5 | PRECIPITATION | 14 |  |
+
+### `tfr_mode` (4 bits)
+
+TFR operating mode (radar_enums.tfr_radarMode). Numbered per radar from 1; legacy = old global number.
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | No operating mode selected (state is not NORMAL) |
+| 1 | TFR_SEARCH | 20 |  |
+| 2 | TFR_TRACK | 21 |  |
+| 3 | TFR_ACTIVE | 22 |  |
+| 4 | TERRAIN_FOLLOWING | 23 |  |
+| 5 | OBSTACLE_AVOIDANCE | 24 |  |
+| 6 | GROUND_MAPPING | 25 |  |
+
+### `sar_mode` (4 bits)
+
+SAR operating mode (radar_enums.sar_radarMode). Numbered per radar from 1; legacy = old global number.
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | No operating mode selected (state is not NORMAL) |
+| 1 | STRIPMAP | 30 |  |
+| 2 | SPOTLIGHT | 31 |  |
+| 3 | SCANSAR | 32 |  |
+| 4 | INTERFEROMETRIC | 33 |  |
+| 5 | DOPPLER_BEAM | 34 |  |
+
+### `targeting_mode` (4 bits)
+
+Targeting radar operating mode (radar_enums.targeting_radarMode). Numbered per radar from 1; legacy = old global number.
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | No operating mode selected (state is not NORMAL) |
+| 1 | TARGET_SEARCH | 40 |  |
+| 2 | TARGET_TRACK | 41 |  |
+| 3 | LOCK | 42 |  |
+| 4 | TERRAIN_AVOIDANCE | 43 |  |
+| 5 | GROUND_MAPPING | 25 |  |
+
+### `aewc_mode` (4 bits)
+
+AEWC radar operating mode (radar_enums.aewc_radarMode). Numbered per radar from 1; legacy = old global number.
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | No operating mode selected (state is not NORMAL) |
+| 1 | AEWC_SEARCH | 50 |  |
+| 2 | AEWC_SURVEILLANCE | 51 |  |
+| 3 | SECTOR_SCAN | 52 |  |
+| 4 | STEALTH_DETECTION | 53 |  |
+| 5 | ELECTRONIC_PROTECTION | 54 |  |
+| 6 | AEWC_TRACK | 55 |  |
+| 7 | GROUND_MAPPING | 25 |  |
+
+### `display_mode` (4 bits)
+
+Display lighting mode (displays/base_display.DisplayMode)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NOT_SET |  |  |
+| 1 | DAY |  |  |
+| 2 | NIGHT |  |  |
+| 3 | NVG |  |  |
+
+### `ssm` (2 bits)
+
+Sign/status matrix (ARINC 429 BNR convention). All-zero reads as FAILURE_WARNING, so an uninitialised word is never taken for good data.
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | FAILURE_WARNING |  |  |
+| 1 | NO_COMPUTED_DATA |  |  |
+| 2 | FUNCTIONAL_TEST |  |  |
+| 3 | NORMAL |  |  |
+
+### `cmd_status` (4 bits)
+
+Outcome of a command that does more than change mode
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | No command received yet |
+| 1 | ACCEPTED |  | Accepted and in progress |
+| 2 | COMPLETED |  | Done |
+| 3 | REJECTED_INVALID |  | A parameter was out of range or unknown |
+| 4 | REJECTED_STATE |  | Not allowed in the terminal's current state or mode |
+| 5 | FAILED |  | Accepted but could not be completed |
+| 6 | NOT_IMPLEMENTED |  | Recognised but not implemented (for example BARREL_ROLL in fmsControl.py) |
+
+### `control_surface` (4 bits)
+
+Control surfaces, from fmsControl.set_control_surfaces()
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | AILERONS |  |  |
+| 2 | ELEVATOR |  |  |
+| 3 | RUDDER |  |  |
+| 4 | FLAPS |  |  |
+| 5 | SPOILERS |  |  |
+
+### `track_filter` (4 bits)
+
+Which tracks the targeting radar reports; classes from radar_data_fusion (HOSTILE, FRIENDLY, UNKNOWN)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | ALL |  |  |
+| 1 | HOSTILE |  |  |
+| 2 | FRIENDLY |  |  |
+| 3 | UNKNOWN |  |  |
+
+### `maneuver` (4 bits)
+
+Maneuvers fmsControl.execute_maneuver() knows
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | BREAK_RIGHT |  |  |
+| 2 | BREAK_LEFT |  |  |
+| 3 | BARREL_ROLL |  | fmsControl.py reports it as not implemented |
+| 4 | DEFENSIVE_SPLIT_S |  |  |
+| 5 | MAXIMUM_CLIMB |  |  |
+| 6 | DIVE |  |  |
+
+## Messages
+
+### TERM_STATUS
+
+**Terminal status** — every terminal · SA 29 · transmit (terminal to bus) · 5 words · 1 Hz
+
+Replaces: `systemStatusRequest`, `systemStatusResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last TERM_CMD was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+| 2 | 15 | `bit_in_progress` | bool |  | Same layout as the BIT word (mode code 19) |
+| 2 | 14 | `bit_failed` | bool |  | Latched until RESET_REMOTE_TERMINAL |
+| 2 | 13-8 | `spare_2` | spare |  |  |
+| 2 | 7-0 | `fault_count` | uint | raw counts | Faults since reset, saturates at 255 |
+| 3 | 15-8 | `icd_major` | uint | raw counts | ICD version this terminal was built against |
+| 3 | 7-0 | `icd_minor` | uint | raw counts |  |
+| 4 | 15-0 | `last_sync` | uint | raw counts | Data word of the last SYNCHRONIZE_WITH_DATA received |
+
+### TERM_CMD
+
+**Terminal command** — every terminal · SA 29 · receive (bus to terminal) · 1 words · aperiodic
+
+The legacy command_parameter word is gone: nothing in the code consumed it.
+
+Replaces: `systemCommand`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### RDR_WX_STATUS
+
+**Weather radar status** — RT 9 · SA 1 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `weather_radarStatusRequest`, `weather_radarStatusResponse`, `weather_radarModeChangeResponse`, `radarStatusRequest`, `radarStatusResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `weather_mode` | Operating mode; NONE unless state is NORMAL |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### RDR_WX_MODE_CMD
+
+**Weather radar mode command** — RT 9 · SA 1 · receive (bus to terminal) · 3 words · aperiodic
+
+The legacy scan_type had no meaning anywhere in the code; range and tilt are the settings weather_radar.py uses.
+
+Replaces: `weather_radarCommand`, `weather_radarModeChangeRequest`, `weather_radarVILRequest`, `weather_radarPrecipitationRequest`, `radarCommand`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `weather_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-0 | `range_km` | uint | LSB 1 km, range 10 to 200 | Scan range; limits from rmConfig.xml weather_radar scan_range (WeatherRadar.set_range takes km) |
+| 2 | 15-0 | `tilt` | sint | LSB 180/32768 deg, range 0 to 90 | Antenna tilt, up positive; limits from rmConfig.xml weather_radar tilt_range |
+
+### RDR_TFR_STATUS
+
+**Terrain-following radar status** — RT 9 · SA 2 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `tfr_radarStatusRequest`, `tfr_radarStatusResponse`, `tfr_radarModeChangeResponse`, `radarStatusRequest`, `radarStatusResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `tfr_mode` | Operating mode; NONE unless state is NORMAL |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### RDR_TFR_MODE_CMD
+
+**Terrain-following radar mode command** — RT 9 · SA 2 · receive (bus to terminal) · 2 words · aperiodic
+
+The legacy scan_type had no meaning anywhere in the code; set clearance is the setting a TFR is flown with.
+
+Replaces: `tfr_radarCommand`, `tfr_radarModeChangeRequest`, `tfr_radarElevationDataRequest`, `radarCommand`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `tfr_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-0 | `set_clearance` | uint | LSB 1 ft, range 30 to 5000 | Terrain-following set clearance height; limits from rmConfig.xml tfr_radar altitude_range, read as feet |
+
+### RDR_SAR_STATUS
+
+**Synthetic aperture radar status** — RT 9 · SA 3 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `sar_radarStatusRequest`, `sar_radarStatusResponse`, `sar_radarModeChangeResponse`, `radarStatusRequest`, `radarStatusResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `sar_mode` | Operating mode; NONE unless state is NORMAL |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### RDR_SAR_MODE_CMD
+
+**Synthetic aperture radar mode command** — RT 9 · SA 3 · receive (bus to terminal) · 2 words · aperiodic
+
+The legacy image_type is dropped: the SAR operating mode (STRIPMAP, SPOTLIGHT, ...) already selects the image type.
+
+Replaces: `sar_radarCommand`, `sar_radarModeChangeRequest`, `sar_radarImageRequest`, `radarCommand`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `sar_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-0 | `resolution` | uint | LSB 1/100 m, range 0.1 to 10 | Image resolution per pixel; sar_radar.py default 1.0 m, limits from rmConfig.xml sar_radar resolution |
+
+### RDR_TGT_STATUS
+
+**Targeting radar status** — RT 9 · SA 4 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `targeting_radarStatusRequest`, `targeting_radarStatusResponse`, `targeting_radarModeChangeResponse`, `radarStatusRequest`, `radarStatusResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `targeting_mode` | Operating mode; NONE unless state is NORMAL |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### RDR_TGT_MODE_CMD
+
+**Targeting radar mode command** — RT 9 · SA 4 · receive (bus to terminal) · 2 words · aperiodic
+
+Replaces: `targeting_radarCommand`, `targeting_radarModeChangeRequest`, `targeting_radarTrackRequest`, `radarCommand`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `targeting_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-4 | `spare_1` | spare |  |  |
+| 1 | 3-0 | `track_filter` | enum | enum `track_filter` | Which tracks to report (legacy track_type) |
+
+### RDR_AEWC_STATUS
+
+**AEWC radar status** — RT 9 · SA 5 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `aewc_radarStatusRequest`, `aewc_radarStatusResponse`, `aewc_radarModeChangeResponse`, `radarStatusRequest`, `radarStatusResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `aewc_mode` | Operating mode; NONE unless state is NORMAL |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### RDR_AEWC_MODE_CMD
+
+**AEWC radar mode command** — RT 9 · SA 5 · receive (bus to terminal) · 4 words · aperiodic
+
+The legacy sector_type and sector_parameters became these three fields, taken from the sector scan request in Interfaces/predefinedMessages/aewc_radar_messages.py.
+
+Replaces: `aewc_radarCommand`, `aewc_radarModeChangeRequest`, `aewc_radarSectorScanRequest`, `radarCommand`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `aewc_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-0 | `azimuth_start` | sint | LSB 180/32768 deg, range -180 to 179.9945 | Sector start, relative to the nose, right positive (aewc_radar_messages.py default 0) |
+| 2 | 15-0 | `azimuth_end` | sint | LSB 180/32768 deg, range -180 to 179.9945 | Sector end (default 90) |
+| 3 | 15-0 | `elevation` | sint | LSB 180/32768 deg, range -5 to 85 | Up positive (default 0); limits from rmConfig.xml aewc_radar tilt_range |
+
+### FCS_STATUS
+
+**Flight control status** — RT 5 · SA 10 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `flight_control_systemStatusRequest`, `flight_control_systemStatusResponse`, `flight_control_systemModeChangeResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### FCS_MODE_CMD
+
+**Flight control mode command** — RT 5 · SA 10 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `flight_control_systemCommand`, `flight_control_systemModeChangeRequest`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### FCS_SURFACE_CMD
+
+**Control surface command** — RT 5 · SA 11 · receive (bus to terminal) · 2 words · aperiodic
+
+One surface per command. Positions are percent of travel, as fmsControl.py uses; the old FCS handler's -1..+1 scaling is replaced.
+
+Replaces: `flight_control_systemControlInputRequest`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `spare_0` | spare |  |  |
+| 0 | 11-8 | `surface` | enum | enum `control_surface` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts |  |
+| 1 | 15-0 | `position` | sint | LSB 1/100 %, range -100 to 100 | Percent of full travel. AILERONS + = roll right, ELEVATOR + = nose up, RUDDER + = nose right; FLAPS 0-100 % = 0-30 deg; SPOILERS 0-100 % deployed (fmsControl.set_control_surfaces ranges) |
+
+### FCS_SURFACE_STATUS
+
+**Control surface positions** — RT 5 · SA 11 · transmit (terminal to bus) · 7 words · 10 Hz
+
+Every surface, every cycle, instead of one reply per request.
+
+Replaces: `flight_control_systemControlInputResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `ailerons_ssm` | ssm | validity of `ailerons` |  |
+| 0 | 13-12 | `elevator_ssm` | ssm | validity of `elevator` |  |
+| 0 | 11-10 | `rudder_ssm` | ssm | validity of `rudder` |  |
+| 0 | 9-8 | `flaps_ssm` | ssm | validity of `flaps` |  |
+| 0 | 7-6 | `spoilers_ssm` | ssm | validity of `spoilers` |  |
+| 0 | 5-0 | `spare_0` | spare |  |  |
+| 1 | 15-12 | `last_cmd_status` | enum | enum `cmd_status` | Outcome of the last FCS_SURFACE_CMD |
+| 1 | 11-8 | `spare_1` | spare |  |  |
+| 1 | 7-0 | `last_cmd_seq` | uint | raw counts |  |
+| 2 | 15-0 | `ailerons` | sint | LSB 1/100 %, range -100 to 100 | Percent of full travel. AILERONS + = roll right, ELEVATOR + = nose up, RUDDER + = nose right; FLAPS 0-100 % = 0-30 deg; SPOILERS 0-100 % deployed (fmsControl.set_control_surfaces ranges) |
+| 3 | 15-0 | `elevator` | sint | LSB 1/100 %, range -100 to 100 |  |
+| 4 | 15-0 | `rudder` | sint | LSB 1/100 %, range -100 to 100 |  |
+| 5 | 15-0 | `flaps` | sint | LSB 1/100 %, range -100 to 100 |  |
+| 6 | 15-0 | `spoilers` | sint | LSB 1/100 %, range -100 to 100 |  |
+
+### FCS_ATTITUDE
+
+**Aircraft attitude** — RT 5 · SA 12 · transmit (terminal to bus) · 4 words · 50 Hz
+
+Replaces: `flight_control_systemOrientationDataRequest`, `flight_control_systemOrientationDataResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `roll_ssm` | ssm | validity of `roll` |  |
+| 0 | 13-12 | `pitch_ssm` | ssm | validity of `pitch` |  |
+| 0 | 11-10 | `yaw_ssm` | ssm | validity of `yaw` |  |
+| 0 | 9-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `roll` | sint | LSB 180/32768 deg, range -180 to 179.9945 | Right wing down positive |
+| 2 | 15-0 | `pitch` | sint | LSB 180/32768 deg, range -90 to 90 | Nose up positive |
+| 3 | 15-0 | `yaw` | sint | LSB 180/32768 deg, range -180 to 179.9945 | True heading as -180..+180, nose right positive |
+
+### FMS_STATUS
+
+**Flight management status** — RT 12 · SA 15 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `fmsStatusRequest`, `fmsStatusResponse`, `flightManagementSystemStatus`, `fms_modeChangeResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### FMS_MODE_CMD
+
+**Flight management mode command** — RT 12 · SA 15 · receive (bus to terminal) · 1 words · aperiodic
+
+fmsControl SET_MODE takes only the mode, so the legacy command_parameter word is gone.
+
+Replaces: `fmsCommand`, `flightManagementSystemCommand`, `fms_modeChangeRequest`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### FMS_ATTITUDE_CMD
+
+**Attitude command** — RT 12 · SA 16 · receive (bus to terminal) · 7 words · aperiodic
+
+Same parameters as fmsControl UPDATE_ATTITUDE. A field is applied only when its present bit is 1.
+
+Replaces: `fms_attitudeUpdateRequest`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15 | `roll_present` | bool |  |  |
+| 0 | 14 | `pitch_present` | bool |  |  |
+| 0 | 13 | `yaw_present` | bool |  |  |
+| 0 | 12 | `roll_rate_present` | bool |  |  |
+| 0 | 11 | `pitch_rate_present` | bool |  |  |
+| 0 | 10 | `yaw_rate_present` | bool |  |  |
+| 0 | 9-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts |  |
+| 1 | 15-0 | `roll` | sint | LSB 180/32768 deg, range -180 to 179.9945 |  |
+| 2 | 15-0 | `pitch` | sint | LSB 180/32768 deg, range -90 to 90 |  |
+| 3 | 15-0 | `yaw` | sint | LSB 180/32768 deg, range -180 to 179.9945 | True |
+| 4 | 15-0 | `roll_rate` | sint | LSB 1/64 deg/s, range -500 to 500 |  |
+| 5 | 15-0 | `pitch_rate` | sint | LSB 1/64 deg/s, range -500 to 500 |  |
+| 6 | 15-0 | `yaw_rate` | sint | LSB 1/64 deg/s, range -500 to 500 |  |
+
+### FMS_ATTITUDE_STATUS
+
+**Attitude command status** — RT 12 · SA 16 · transmit (terminal to bus) · 5 words · 10 Hz
+
+Replaces: `fms_attitudeUpdateResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `roll_ssm` | ssm | validity of `roll` |  |
+| 0 | 13-12 | `pitch_ssm` | ssm | validity of `pitch` |  |
+| 0 | 11-10 | `yaw_ssm` | ssm | validity of `yaw` |  |
+| 0 | 9-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts |  |
+| 1 | 15-4 | `spare_1` | spare |  |  |
+| 1 | 3-0 | `status` | enum | enum `cmd_status` | Outcome of the last command |
+| 2 | 15-0 | `roll` | sint | LSB 180/32768 deg, range -180 to 179.9945 |  |
+| 3 | 15-0 | `pitch` | sint | LSB 180/32768 deg, range -90 to 90 |  |
+| 4 | 15-0 | `yaw` | sint | LSB 180/32768 deg, range -180 to 179.9945 | True |
+
+### FMS_NAV_UPDATE_CMD
+
+**Autopilot target command** — RT 12 · SA 17 · receive (bus to terminal) · 5 words · aperiodic
+
+The legacy update_type and parameter_count had no meaning in the code. This carries the targets of fmsControl SET_AUTOPILOT; a target is applied only when its present bit is 1.
+
+Replaces: `fms_navigationUpdateRequest`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15 | `altitude_present` | bool |  |  |
+| 0 | 14 | `airspeed_present` | bool |  |  |
+| 0 | 13 | `heading_present` | bool |  |  |
+| 0 | 12 | `vertical_speed_present` | bool |  |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts |  |
+| 1 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 60000 | Limits from fmsControl.set_autopilot_targets |
+| 2 | 15-0 | `airspeed` | uint | LSB 1/10 kt, range 0 to 1500 |  |
+| 3 | 15-0 | `heading` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True |
+| 4 | 15-0 | `vertical_speed` | sint | LSB 1 ft/min, range -30000 to 30000 | Climb positive |
+
+### FMS_NAV_UPDATE_STATUS
+
+**Autopilot target status** — RT 12 · SA 17 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `fms_navigationUpdateResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts |  |
+| 1 | 15-4 | `spare_1` | spare |  |  |
+| 1 | 3-0 | `status` | enum | enum `cmd_status` | Outcome of the last command |
+
+### FMS_MANEUVER_CMD
+
+**Maneuver command** — RT 12 · SA 18 · receive (bus to terminal) · 3 words · aperiodic
+
+Same maneuvers as fmsControl.execute_maneuver(). DIVE is the only one that takes a parameter.
+
+Replaces: `fms_maneuverRequest`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts |  |
+| 1 | 15-4 | `spare_1` | spare |  |  |
+| 1 | 3-0 | `maneuver` | enum | enum `maneuver` |  |
+| 2 | 15-0 | `dive_angle` | sint | LSB 180/32768 deg, range -90 to 0 | DIVE only; 0 means the FMS default of -30 deg |
+
+### FMS_MANEUVER_STATUS
+
+**Maneuver status** — RT 12 · SA 18 · transmit (terminal to bus) · 2 words · 5 Hz
+
+Replaces: `fms_maneuverResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts |  |
+| 1 | 15-8 | `spare_1` | spare |  |  |
+| 1 | 7-4 | `maneuver` | enum | enum `maneuver` | The last maneuver commanded |
+| 1 | 3-0 | `status` | enum | enum `cmd_status` | Outcome of the last command |
+
+### DSP_PFD_STATUS
+
+**Primary flight display status** — RT 11 · SA 11 · transmit (terminal to bus) · 2 words · 1 Hz
+
+Replaces: `displayStatusRequest`, `displayStatusResponse`, `display_mode_response`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `display_mode` | Current lighting mode |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### DSP_PFD_MODE_CMD
+
+**Primary flight display mode command** — RT 11 · SA 11 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### DSP_MFD_STATUS
+
+**Multi-function display status** — RT 13 · SA 12 · transmit (terminal to bus) · 2 words · 1 Hz
+
+Replaces: `displayStatusRequest`, `displayStatusResponse`, `display_mode_response`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `display_mode` | Current lighting mode |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### DSP_MFD_MODE_CMD
+
+**Multi-function display mode command** — RT 13 · SA 12 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### DSP_EICAS_STATUS
+
+**EICAS status** — RT 14 · SA 13 · transmit (terminal to bus) · 2 words · 1 Hz
+
+Replaces: `displayStatusRequest`, `displayStatusResponse`, `display_mode_response`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `display_mode` | Current lighting mode |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### DSP_EICAS_MODE_CMD
+
+**EICAS mode command** — RT 14 · SA 13 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### DSP_RADAR_STATUS
+
+**Weather radar display status** — RT 15 · SA 14 · transmit (terminal to bus) · 2 words · 1 Hz
+
+Replaces: `displayStatusRequest`, `displayStatusResponse`, `display_mode_response`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `display_mode` | Current lighting mode |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### DSP_RADAR_MODE_CMD
+
+**Weather radar display mode command** — RT 15 · SA 14 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### DSP_TSD_STATUS
+
+**Tactical situation display status** — RT 16 · SA 15 · transmit (terminal to bus) · 2 words · 1 Hz
+
+Replaces: `displayStatusRequest`, `displayStatusResponse`, `display_mode_response`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `display_mode` | Current lighting mode |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### DSP_TSD_MODE_CMD
+
+**Tactical situation display mode command** — RT 16 · SA 15 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### DSP_SMS_STATUS
+
+**Stores management display status** — RT 17 · SA 16 · transmit (terminal to bus) · 2 words · 1 Hz
+
+Replaces: `displayStatusRequest`, `displayStatusResponse`, `display_mode_response`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `display_mode` | Current lighting mode |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### DSP_SMS_MODE_CMD
+
+**Stores management display mode command** — RT 17 · SA 16 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### DSP_HUD_STATUS
+
+**Head-up display status** — RT 18 · SA 17 · transmit (terminal to bus) · 2 words · 1 Hz
+
+Replaces: `displayStatusRequest`, `displayStatusResponse`, `display_mode_response`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `mode` | enum | enum `display_mode` | Current lighting mode |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 1 | 14-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+
+### DSP_HUD_MODE_CMD
+
+**Head-up display mode command** — RT 18 · SA 17 · receive (bus to terminal) · 1 words · aperiodic
+
+Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### MFD_RDR_WX_CMD
+
+**MFD command to the weather radar** — RT 13 · SA 20 · transmit (terminal to bus) · 3 words · 10 Hz · **PROPOSED**
+
+Copied by the BC into RT 9 SA 1. Confirm against the display inventory (v2).
+
+Same layout as [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd).
+
+### MFD_RDR_TFR_CMD
+
+**MFD command to the terrain-following radar** — RT 13 · SA 21 · transmit (terminal to bus) · 2 words · 10 Hz · **PROPOSED**
+
+Copied by the BC into RT 9 SA 2. Confirm against the display inventory (v2).
+
+Same layout as [`RDR_TFR_MODE_CMD`](#rdr_tfr_mode_cmd).
+
+### MFD_RDR_SAR_CMD
+
+**MFD command to the synthetic aperture radar** — RT 13 · SA 22 · transmit (terminal to bus) · 2 words · 10 Hz · **PROPOSED**
+
+Copied by the BC into RT 9 SA 3. Confirm against the display inventory (v2).
+
+Same layout as [`RDR_SAR_MODE_CMD`](#rdr_sar_mode_cmd).
+
+### MFD_RDR_TGT_CMD
+
+**MFD command to the targeting radar** — RT 13 · SA 23 · transmit (terminal to bus) · 2 words · 10 Hz · **PROPOSED**
+
+Copied by the BC into RT 9 SA 4. Confirm against the display inventory (v2).
+
+Same layout as [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd).
+
+### MFD_RDR_AEWC_CMD
+
+**MFD command to the aewc radar** — RT 13 · SA 24 · transmit (terminal to bus) · 4 words · 10 Hz · **PROPOSED**
+
+Copied by the BC into RT 9 SA 5. Confirm against the display inventory (v2).
+
+Same layout as [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd).
+
+## Where every legacy message type went
+
+All 89 `MESSAGE_SCHEMAS` types from `FMOFP/MIL_STD_1553B/message_schemas.py`.
+
+| Legacy type | Now |
+|---|---|
+| `aewc_radarCommand` | RDR_AEWC_MODE_CMD |
+| `aewc_radarData` | block RDR_AEWC_SECTOR |
+| `aewc_radarModeChangeRequest` | RDR_AEWC_MODE_CMD |
+| `aewc_radarModeChangeResponse` | RDR_AEWC_STATUS |
+| `aewc_radarSectorScanRequest` | RDR_AEWC_MODE_CMD |
+| `aewc_radarSectorScanResponse` | block RDR_AEWC_SECTOR |
+| `aewc_radarStatusRequest` | RDR_AEWC_STATUS |
+| `aewc_radarStatusResponse` | RDR_AEWC_STATUS |
+| `bitCommand` | mode code 3 |
+| `bitDataResponse` | deferred: v2: detailed BIT results as a block per terminal |
+| `bitStatusRequest` | mode code 19 |
+| `bitStatusResponse` | mode code 19 |
+| `display_data` | retired: As displayDataUpdate |
+| `display_mode_change` | DSP_PFD_MODE_CMD; DSP_MFD_MODE_CMD; DSP_EICAS_MODE_CMD; DSP_RADAR_MODE_CMD; DSP_TSD_MODE_CMD; DSP_SMS_MODE_CMD; DSP_HUD_MODE_CMD |
+| `display_mode_request` | DSP_PFD_MODE_CMD; DSP_MFD_MODE_CMD; DSP_EICAS_MODE_CMD; DSP_RADAR_MODE_CMD; DSP_TSD_MODE_CMD; DSP_SMS_MODE_CMD; DSP_HUD_MODE_CMD |
+| `display_mode_response` | DSP_PFD_STATUS; DSP_MFD_STATUS; DSP_EICAS_STATUS; DSP_RADAR_STATUS; DSP_TSD_STATUS; DSP_SMS_STATUS; DSP_HUD_STATUS |
+| `DISPLAY_VIL_DATA` | block RDR_WX_VIL |
+| `displayCommand` | DSP_PFD_MODE_CMD; DSP_MFD_MODE_CMD; DSP_EICAS_MODE_CMD; DSP_RADAR_MODE_CMD; DSP_TSD_MODE_CMD; DSP_SMS_MODE_CMD; DSP_HUD_MODE_CMD |
+| `displayDataUpdate` | retired: Displays receive the producer's own messages through BC-scheduled RT-to-RT transfers |
+| `displayStatusRequest` | DSP_PFD_STATUS; DSP_MFD_STATUS; DSP_EICAS_STATUS; DSP_RADAR_STATUS; DSP_TSD_STATUS; DSP_SMS_STATUS; DSP_HUD_STATUS |
+| `displayStatusResponse` | DSP_PFD_STATUS; DSP_MFD_STATUS; DSP_EICAS_STATUS; DSP_RADAR_STATUS; DSP_TSD_STATUS; DSP_SMS_STATUS; DSP_HUD_STATUS |
+| `flight_control_systemCommand` | FCS_MODE_CMD |
+| `flight_control_systemControlInputRequest` | FCS_SURFACE_CMD |
+| `flight_control_systemControlInputResponse` | FCS_SURFACE_STATUS |
+| `flight_control_systemModeChangeRequest` | FCS_MODE_CMD |
+| `flight_control_systemModeChangeResponse` | FCS_STATUS |
+| `flight_control_systemOrientationDataRequest` | FCS_ATTITUDE |
+| `flight_control_systemOrientationDataResponse` | FCS_ATTITUDE |
+| `flight_control_systemStatusRequest` | FCS_STATUS |
+| `flight_control_systemStatusResponse` | FCS_STATUS |
+| `flightManagementSystemCommand` | FMS_MODE_CMD |
+| `flightManagementSystemStatus` | FMS_STATUS |
+| `fms_attitudeUpdateRequest` | FMS_ATTITUDE_CMD |
+| `fms_attitudeUpdateResponse` | FMS_ATTITUDE_STATUS |
+| `fms_maneuverRequest` | FMS_MANEUVER_CMD |
+| `fms_maneuverResponse` | FMS_MANEUVER_STATUS |
+| `fms_modeChangeRequest` | FMS_MODE_CMD |
+| `fms_modeChangeResponse` | FMS_STATUS |
+| `fms_navigationUpdateRequest` | FMS_NAV_UPDATE_CMD |
+| `fms_navigationUpdateResponse` | FMS_NAV_UPDATE_STATUS |
+| `fmsCommand` | FMS_MODE_CMD |
+| `fmsDataRequest` | block FMS_DATA |
+| `fmsDataResponse` | block FMS_DATA |
+| `fmsStatusRequest` | FMS_STATUS |
+| `fmsStatusResponse` | FMS_STATUS |
+| `radarCommand` | RDR_WX_MODE_CMD; RDR_TFR_MODE_CMD; RDR_SAR_MODE_CMD; RDR_TGT_MODE_CMD; RDR_AEWC_MODE_CMD |
+| `radarDataRequest` | block RDR_WX_VIL |
+| `radarDataResponse` | block RDR_WX_VIL; block RDR_WX_PRECIP |
+| `radarStatusRequest` | RDR_WX_STATUS; RDR_TFR_STATUS; RDR_SAR_STATUS; RDR_TGT_STATUS; RDR_AEWC_STATUS |
+| `radarStatusResponse` | RDR_WX_STATUS; RDR_TFR_STATUS; RDR_SAR_STATUS; RDR_TGT_STATUS; RDR_AEWC_STATUS |
+| `sar_radarCommand` | RDR_SAR_MODE_CMD |
+| `sar_radarData` | block RDR_SAR_IMAGE |
+| `sar_radarImageRequest` | RDR_SAR_MODE_CMD |
+| `sar_radarImageResponse` | block RDR_SAR_IMAGE |
+| `sar_radarModeChangeRequest` | RDR_SAR_MODE_CMD |
+| `sar_radarModeChangeResponse` | RDR_SAR_STATUS |
+| `sar_radarStatusRequest` | RDR_SAR_STATUS |
+| `sar_radarStatusResponse` | RDR_SAR_STATUS |
+| `systemCommand` | TERM_CMD |
+| `systemDataRequest` | deferred: v2: each terminal's periodic data messages replace generic data requests |
+| `systemDataResponse` | deferred: As systemDataRequest |
+| `systemStatusRequest` | TERM_STATUS |
+| `systemStatusResponse` | TERM_STATUS |
+| `targeting_radarCommand` | RDR_TGT_MODE_CMD |
+| `targeting_radarData` | block RDR_TGT_TRACKS |
+| `targeting_radarModeChangeRequest` | RDR_TGT_MODE_CMD |
+| `targeting_radarModeChangeResponse` | RDR_TGT_STATUS |
+| `targeting_radarStatusRequest` | RDR_TGT_STATUS |
+| `targeting_radarStatusResponse` | RDR_TGT_STATUS |
+| `targeting_radarTrackRequest` | RDR_TGT_MODE_CMD |
+| `targeting_radarTrackResponse` | block RDR_TGT_TRACKS |
+| `tfr_radarCommand` | RDR_TFR_MODE_CMD |
+| `tfr_radarData` | block RDR_TFR_ELEVATION |
+| `tfr_radarElevationDataRequest` | RDR_TFR_MODE_CMD |
+| `tfr_radarElevationDataResponse` | block RDR_TFR_ELEVATION |
+| `tfr_radarModeChangeRequest` | RDR_TFR_MODE_CMD |
+| `tfr_radarModeChangeResponse` | RDR_TFR_STATUS |
+| `tfr_radarStatusRequest` | RDR_TFR_STATUS |
+| `tfr_radarStatusResponse` | RDR_TFR_STATUS |
+| `weather_radarCommand` | RDR_WX_MODE_CMD |
+| `weather_radarData` | block RDR_WX_VIL; block RDR_WX_PRECIP |
+| `weather_radarModeChangeRequest` | RDR_WX_MODE_CMD |
+| `weather_radarModeChangeResponse` | RDR_WX_STATUS |
+| `weather_radarPrecipitationRequest` | RDR_WX_MODE_CMD |
+| `weather_radarPrecipitationResponse` | block RDR_WX_PRECIP |
+| `weather_radarStatusRequest` | RDR_WX_STATUS |
+| `weather_radarStatusResponse` | RDR_WX_STATUS |
+| `weather_radarVILRequest` | RDR_WX_MODE_CMD |
+| `weather_radarVILResponse` | block RDR_WX_VIL |
+

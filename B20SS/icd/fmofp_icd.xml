@@ -1,0 +1,536 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FMOFP MIL-STD-1553B Interface Control Document - machine-readable source of truth.
+  Readable version: README.md (conventions) + ICD_TABLES.md (generated from this file).
+  Check after every edit:   py B20SS/icd/tools/icd_tool.py check
+  Regenerate the tables:    py B20SS/icd/tools/icd_tool.py render
+  Word indices are 0-based data words. Bits are numbered 15 (MSB) .. 0 (LSB);
+  bits="11-8" means (word >> 8) & 0xF.
+-->
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="0" status="DRAFT" date="2026-10-10">
+  <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
+  <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
+  <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
+
+  <bus word_bits="16" byte_order="big-endian" bit_numbering="15=MSB" bit_rate_mbps="1"
+       minor_frame_ms="20" minor_frames_per_major="50" rates_hz="50 10 5 1"
+       broadcast_rt="31" status_sa="29" wraparound_sa="30" max_bus_load_percent="50"
+       stale_after_periods="3"/>
+  <transport type="udp" host="127.0.0.1" port_base="51000" bc_port_offset="32" monitor_port_offset="33" magic="0x1553" response_timeout_ms="5"/>
+
+  <enums>
+    <enum id="terminal_state" bits="4" doc="Lifecycle and health state shared by every terminal. Values 0-8 keep their MODE_VALUE_MAP numbers; INITIALIZING moves from -1 to 15.">
+      <value name="STANDBY" value="0"/>
+      <value name="NORMAL" value="1"/>
+      <value name="DEGRADED" value="2"/>
+      <value name="TEST" value="3"/>
+      <value name="MAINTENANCE" value="4"/>
+      <value name="EMERGENCY" value="5"/>
+      <value name="FAILURE" value="6"/>
+      <value name="RECOVERY" value="7"/>
+      <value name="CALIBRATION" value="8"/>
+      <value name="INITIALIZING" value="15" legacy="-1"/>
+    </enum>
+    <enum id="weather_mode" bits="4" doc="Weather radar operating mode (radar_enums.weather_radarMode). The legacy WEATHER value (6) is dropped: no radar implements it and nothing sends it. Numbered per radar from 1; legacy = old global number.">
+      <value name="NONE" value="0" doc="No operating mode selected (state is not NORMAL)"/>
+      <value name="SURVEILLANCE" value="1" legacy="10"/>
+      <value name="MAPPING" value="2" legacy="11"/>
+      <value name="TURBULENCE" value="3" legacy="12"/>
+      <value name="WINDSHEAR" value="4" legacy="13"/>
+      <value name="PRECIPITATION" value="5" legacy="14"/>
+    </enum>
+    <enum id="tfr_mode" bits="4" doc="TFR operating mode (radar_enums.tfr_radarMode). Numbered per radar from 1; legacy = old global number.">
+      <value name="NONE" value="0" doc="No operating mode selected (state is not NORMAL)"/>
+      <value name="TFR_SEARCH" value="1" legacy="20"/>
+      <value name="TFR_TRACK" value="2" legacy="21"/>
+      <value name="TFR_ACTIVE" value="3" legacy="22"/>
+      <value name="TERRAIN_FOLLOWING" value="4" legacy="23"/>
+      <value name="OBSTACLE_AVOIDANCE" value="5" legacy="24"/>
+      <value name="GROUND_MAPPING" value="6" legacy="25"/>
+    </enum>
+    <enum id="sar_mode" bits="4" doc="SAR operating mode (radar_enums.sar_radarMode). Numbered per radar from 1; legacy = old global number.">
+      <value name="NONE" value="0" doc="No operating mode selected (state is not NORMAL)"/>
+      <value name="STRIPMAP" value="1" legacy="30"/>
+      <value name="SPOTLIGHT" value="2" legacy="31"/>
+      <value name="SCANSAR" value="3" legacy="32"/>
+      <value name="INTERFEROMETRIC" value="4" legacy="33"/>
+      <value name="DOPPLER_BEAM" value="5" legacy="34"/>
+    </enum>
+    <enum id="targeting_mode" bits="4" doc="Targeting radar operating mode (radar_enums.targeting_radarMode). Numbered per radar from 1; legacy = old global number.">
+      <value name="NONE" value="0" doc="No operating mode selected (state is not NORMAL)"/>
+      <value name="TARGET_SEARCH" value="1" legacy="40"/>
+      <value name="TARGET_TRACK" value="2" legacy="41"/>
+      <value name="LOCK" value="3" legacy="42"/>
+      <value name="TERRAIN_AVOIDANCE" value="4" legacy="43"/>
+      <value name="GROUND_MAPPING" value="5" legacy="25"/>
+    </enum>
+    <enum id="aewc_mode" bits="4" doc="AEWC radar operating mode (radar_enums.aewc_radarMode). Numbered per radar from 1; legacy = old global number.">
+      <value name="NONE" value="0" doc="No operating mode selected (state is not NORMAL)"/>
+      <value name="AEWC_SEARCH" value="1" legacy="50"/>
+      <value name="AEWC_SURVEILLANCE" value="2" legacy="51"/>
+      <value name="SECTOR_SCAN" value="3" legacy="52"/>
+      <value name="STEALTH_DETECTION" value="4" legacy="53"/>
+      <value name="ELECTRONIC_PROTECTION" value="5" legacy="54"/>
+      <value name="AEWC_TRACK" value="6" legacy="55"/>
+      <value name="GROUND_MAPPING" value="7" legacy="25"/>
+    </enum>
+    <enum id="display_mode" bits="4" doc="Display lighting mode (displays/base_display.DisplayMode)">
+      <value name="NOT_SET" value="0"/>
+      <value name="DAY" value="1"/>
+      <value name="NIGHT" value="2"/>
+      <value name="NVG" value="3"/>
+    </enum>
+    <enum id="ssm" bits="2" doc="Sign/status matrix (ARINC 429 BNR convention). All-zero reads as FAILURE_WARNING, so an uninitialised word is never taken for good data.">
+      <value name="FAILURE_WARNING" value="0"/>
+      <value name="NO_COMPUTED_DATA" value="1"/>
+      <value name="FUNCTIONAL_TEST" value="2"/>
+      <value name="NORMAL" value="3"/>
+    </enum>
+    <enum id="cmd_status" bits="4" doc="Outcome of a command that does more than change mode">
+      <value name="NONE" value="0" doc="No command received yet"/>
+      <value name="ACCEPTED" value="1" doc="Accepted and in progress"/>
+      <value name="COMPLETED" value="2" doc="Done"/>
+      <value name="REJECTED_INVALID" value="3" doc="A parameter was out of range or unknown"/>
+      <value name="REJECTED_STATE" value="4" doc="Not allowed in the terminal's current state or mode"/>
+      <value name="FAILED" value="5" doc="Accepted but could not be completed"/>
+      <value name="NOT_IMPLEMENTED" value="6" doc="Recognised but not implemented (for example BARREL_ROLL in fmsControl.py)"/>
+    </enum>
+    <enum id="control_surface" bits="4" doc="Control surfaces, from fmsControl.set_control_surfaces()">
+      <value name="NONE" value="0"/>
+      <value name="AILERONS" value="1"/>
+      <value name="ELEVATOR" value="2"/>
+      <value name="RUDDER" value="3"/>
+      <value name="FLAPS" value="4"/>
+      <value name="SPOILERS" value="5"/>
+    </enum>
+    <enum id="track_filter" bits="4" doc="Which tracks the targeting radar reports; classes from radar_data_fusion (HOSTILE, FRIENDLY, UNKNOWN)">
+      <value name="ALL" value="0"/>
+      <value name="HOSTILE" value="1"/>
+      <value name="FRIENDLY" value="2"/>
+      <value name="UNKNOWN" value="3"/>
+    </enum>
+    <enum id="maneuver" bits="4" doc="Maneuvers fmsControl.execute_maneuver() knows">
+      <value name="NONE" value="0"/>
+      <value name="BREAK_RIGHT" value="1"/>
+      <value name="BREAK_LEFT" value="2"/>
+      <value name="BARREL_ROLL" value="3" doc="fmsControl.py reports it as not implemented"/>
+      <value name="DEFENSIVE_SPLIT_S" value="4"/>
+      <value name="MAXIMUM_CLIMB" value="5"/>
+      <value name="DIVE" value="6"/>
+    </enum>
+  </enums>
+
+  <terminals>
+    <terminal rt="0" id="reserved_0" name="Reserved (was 'Unnamed System')" status="reserved"/>
+    <terminal rt="1" id="avionics" name="Avionics - LRU health, built-in test, FM fitness, software configuration" status="existing" source="Systems/avionics/hardwareHealth, Systems/builtInTestSystems, Systems/fmFitness, Systems/configurationManagement" note="BIT merged here (Alee, 2026-10-10). FM fitness and SW configuration are here too: Alee said to fold them into another terminal, and both are health/maintenance functions"/>
+    <terminal rt="2" id="comms" name="Communications" status="existing" source="Systems/comms/messaging_service.py"/>
+    <terminal rt="3" id="enginemanagement" name="Engine management - ECU, fuel, thrust" status="existing" source="Systems/engineManagement"/>
+    <terminal rt="4" id="enviornmentalcontrolsystem" name="Environmental control system" status="existing" source="Systems/enviornmentalControlSystem" note="id keeps the repo's spelling"/>
+    <terminal rt="5" id="flightcontrolsys" name="Flight control - FCC, GCAS, performance monitor" status="existing" source="Systems/flightControlSys"/>
+    <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
+    <terminal rt="7" id="nav" name="Navigation - GPS, INS, fusion" status="existing" source="Systems/nav"/>
+    <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
+    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before"/>
+    <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
+    <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address"/>
+    <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys"/>
+    <terminal rt="13" id="mfd" name="Multi-function display" status="new" source="Interfaces/userInterface/displays/mfd.py"/>
+    <terminal rt="14" id="eicas" name="Engine indicating and crew alerting display" status="new" source="Interfaces/userInterface/displays"/>
+    <terminal rt="15" id="radar_display" name="Weather radar display" status="new" source="Interfaces/userInterface/displays/radar"/>
+    <terminal rt="16" id="tsd" name="Tactical situation display" status="new" source="Interfaces/userInterface/displays/tsd.py"/>
+    <terminal rt="17" id="sms" name="Stores management display" status="new" source="Interfaces/userInterface/displays"/>
+    <terminal rt="18" id="hud" name="Head-up display" status="new" source="Interfaces/userInterface (HUDContainer)"/>
+    <terminal rt="19" id="hydraulics" name="Hydraulics" status="new" source="Systems/hydraulics"/>
+    <terminal rt="20" id="airframe" name="Airframe systems" status="new" source="Systems/airframeSystemManagement"/>
+    <terminal rt="21" id="flightsurfaces" name="Flight surfaces" status="new" source="Systems/flightSurfaces"/>
+    <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
+    <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
+  </terminals>
+
+  <messages>
+
+    <!-- ===== Every terminal: status and command at SA 29 ===== -->
+    <message id="TERM_STATUS" rt="all" sa="29" dir="T" words="5" rate="1" title="Terminal status" replaces="systemStatusRequest systemStatusResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last TERM_CMD was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+      <field name="bit_in_progress" word="2" bits="15" type="bool" doc="Same layout as the BIT word (mode code 19)"/>
+      <field name="bit_failed" word="2" bits="14" type="bool" doc="Latched until RESET_REMOTE_TERMINAL"/>
+      <field name="spare_2" word="2" bits="13-8" type="spare"/>
+      <field name="fault_count" word="2" bits="7-0" type="uint" doc="Faults since reset, saturates at 255"/>
+      <field name="icd_major" word="3" bits="15-8" type="uint" doc="ICD version this terminal was built against"/>
+      <field name="icd_minor" word="3" bits="7-0" type="uint"/>
+      <field name="last_sync" word="4" bits="15-0" type="uint" doc="Data word of the last SYNCHRONIZE_WITH_DATA received"/>
+    </message>
+    <message id="TERM_CMD" rt="all" sa="29" dir="R" words="1" rate="aperiodic" title="Terminal command" replaces="systemCommand">
+      <doc>The legacy command_parameter word is gone: nothing in the code consumed it.</doc>
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+
+    <!-- ===== RT 9 radar computer: one subaddress per radar, as in rtAddressConfig.xml ===== -->
+    <message id="RDR_WX_STATUS" rt="9" sa="1" dir="T" words="2" rate="5" title="Weather radar status" replaces="weather_radarStatusRequest weather_radarStatusResponse weather_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="weather_mode" doc="Operating mode; NONE unless state is NORMAL"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="RDR_WX_MODE_CMD" rt="9" sa="1" dir="R" words="3" rate="aperiodic" title="Weather radar mode command" replaces="weather_radarCommand weather_radarModeChangeRequest weather_radarVILRequest weather_radarPrecipitationRequest radarCommand">
+      <doc>The legacy scan_type had no meaning anywhere in the code; range and tilt are the settings weather_radar.py uses.</doc>
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="weather_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="range_km" word="1" bits="15-0" type="uint" doc="Scan range; limits from rmConfig.xml weather_radar scan_range (WeatherRadar.set_range takes km)" lsb="1" units="km" min="10" max="200"/>
+      <field name="tilt" word="2" bits="15-0" type="sint" doc="Antenna tilt, up positive; limits from rmConfig.xml weather_radar tilt_range" lsb="180/32768" units="deg" min="0" max="90"/>
+    </message>
+    <message id="RDR_TFR_STATUS" rt="9" sa="2" dir="T" words="2" rate="5" title="Terrain-following radar status" replaces="tfr_radarStatusRequest tfr_radarStatusResponse tfr_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="tfr_mode" doc="Operating mode; NONE unless state is NORMAL"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="RDR_TFR_MODE_CMD" rt="9" sa="2" dir="R" words="2" rate="aperiodic" title="Terrain-following radar mode command" replaces="tfr_radarCommand tfr_radarModeChangeRequest tfr_radarElevationDataRequest radarCommand">
+      <doc>The legacy scan_type had no meaning anywhere in the code; set clearance is the setting a TFR is flown with.</doc>
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="tfr_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="set_clearance" word="1" bits="15-0" type="uint" doc="Terrain-following set clearance height; limits from rmConfig.xml tfr_radar altitude_range, read as feet" lsb="1" units="ft" min="30" max="5000"/>
+    </message>
+    <message id="RDR_SAR_STATUS" rt="9" sa="3" dir="T" words="2" rate="5" title="Synthetic aperture radar status" replaces="sar_radarStatusRequest sar_radarStatusResponse sar_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="sar_mode" doc="Operating mode; NONE unless state is NORMAL"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="RDR_SAR_MODE_CMD" rt="9" sa="3" dir="R" words="2" rate="aperiodic" title="Synthetic aperture radar mode command" replaces="sar_radarCommand sar_radarModeChangeRequest sar_radarImageRequest radarCommand">
+      <doc>The legacy image_type is dropped: the SAR operating mode (STRIPMAP, SPOTLIGHT, ...) already selects the image type.</doc>
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="sar_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="resolution" word="1" bits="15-0" type="uint" doc="Image resolution per pixel; sar_radar.py default 1.0 m, limits from rmConfig.xml sar_radar resolution" lsb="1/100" units="m" min="0.1" max="10"/>
+    </message>
+    <message id="RDR_TGT_STATUS" rt="9" sa="4" dir="T" words="2" rate="5" title="Targeting radar status" replaces="targeting_radarStatusRequest targeting_radarStatusResponse targeting_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="targeting_mode" doc="Operating mode; NONE unless state is NORMAL"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="RDR_TGT_MODE_CMD" rt="9" sa="4" dir="R" words="2" rate="aperiodic" title="Targeting radar mode command" replaces="targeting_radarCommand targeting_radarModeChangeRequest targeting_radarTrackRequest radarCommand">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="targeting_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="spare_1" word="1" bits="15-4" type="spare"/>
+      <field name="track_filter" word="1" bits="3-0" type="enum" doc="Which tracks to report (legacy track_type)" enum="track_filter"/>
+    </message>
+    <message id="RDR_AEWC_STATUS" rt="9" sa="5" dir="T" words="2" rate="5" title="AEWC radar status" replaces="aewc_radarStatusRequest aewc_radarStatusResponse aewc_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="aewc_mode" doc="Operating mode; NONE unless state is NORMAL"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="RDR_AEWC_MODE_CMD" rt="9" sa="5" dir="R" words="4" rate="aperiodic" title="AEWC radar mode command" replaces="aewc_radarCommand aewc_radarModeChangeRequest aewc_radarSectorScanRequest radarCommand">
+      <doc>The legacy sector_type and sector_parameters became these three fields, taken from the sector scan request in Interfaces/predefinedMessages/aewc_radar_messages.py.</doc>
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="aewc_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="azimuth_start" word="1" bits="15-0" type="sint" doc="Sector start, relative to the nose, right positive (aewc_radar_messages.py default 0)" lsb="180/32768" units="deg" min="-180" max="179.9945"/>
+      <field name="azimuth_end" word="2" bits="15-0" type="sint" doc="Sector end (default 90)" lsb="180/32768" units="deg" min="-180" max="179.9945"/>
+      <field name="elevation" word="3" bits="15-0" type="sint" doc="Up positive (default 0); limits from rmConfig.xml aewc_radar tilt_range" lsb="180/32768" units="deg" min="-5" max="85"/>
+    </message>
+
+    <!-- ===== RT 5 flight control ===== -->
+    <message id="FCS_STATUS" rt="5" sa="10" dir="T" words="2" rate="5" title="Flight control status" replaces="flight_control_systemStatusRequest flight_control_systemStatusResponse flight_control_systemModeChangeResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="FCS_MODE_CMD" rt="5" sa="10" dir="R" words="1" rate="aperiodic" title="Flight control mode command" replaces="flight_control_systemCommand flight_control_systemModeChangeRequest">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="FCS_SURFACE_CMD" rt="5" sa="11" dir="R" words="2" rate="aperiodic" title="Control surface command" replaces="flight_control_systemControlInputRequest">
+      <doc>One surface per command. Positions are percent of travel, as fmsControl.py uses; the old FCS handler's -1..+1 scaling is replaced.</doc>
+      <field name="spare_0" word="0" bits="15-12" type="spare"/>
+      <field name="surface" word="0" bits="11-8" type="enum" enum="control_surface"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="position" word="1" bits="15-0" type="sint" doc="Percent of full travel. AILERONS + = roll right, ELEVATOR + = nose up, RUDDER + = nose right; FLAPS 0-100 % = 0-30 deg; SPOILERS 0-100 % deployed (fmsControl.set_control_surfaces ranges)" lsb="1/100" units="%" min="-100" max="100"/>
+    </message>
+    <message id="FCS_SURFACE_STATUS" rt="5" sa="11" dir="T" words="7" rate="10" title="Control surface positions" replaces="flight_control_systemControlInputResponse">
+      <doc>Every surface, every cycle, instead of one reply per request.</doc>
+      <field name="ailerons_ssm" word="0" bits="15-14" type="ssm" for="ailerons"/>
+      <field name="elevator_ssm" word="0" bits="13-12" type="ssm" for="elevator"/>
+      <field name="rudder_ssm" word="0" bits="11-10" type="ssm" for="rudder"/>
+      <field name="flaps_ssm" word="0" bits="9-8" type="ssm" for="flaps"/>
+      <field name="spoilers_ssm" word="0" bits="7-6" type="ssm" for="spoilers"/>
+      <field name="spare_0" word="0" bits="5-0" type="spare"/>
+      <field name="last_cmd_status" word="1" bits="15-12" type="enum" enum="cmd_status" doc="Outcome of the last FCS_SURFACE_CMD"/>
+      <field name="spare_1" word="1" bits="11-8" type="spare"/>
+      <field name="last_cmd_seq" word="1" bits="7-0" type="uint"/>
+      <field name="ailerons" word="2" bits="15-0" type="sint" doc="Percent of full travel. AILERONS + = roll right, ELEVATOR + = nose up, RUDDER + = nose right; FLAPS 0-100 % = 0-30 deg; SPOILERS 0-100 % deployed (fmsControl.set_control_surfaces ranges)" lsb="1/100" units="%" min="-100" max="100"/>
+      <field name="elevator" word="3" bits="15-0" type="sint" lsb="1/100" units="%" min="-100" max="100"/>
+      <field name="rudder" word="4" bits="15-0" type="sint" lsb="1/100" units="%" min="-100" max="100"/>
+      <field name="flaps" word="5" bits="15-0" type="sint" lsb="1/100" units="%" min="-100" max="100"/>
+      <field name="spoilers" word="6" bits="15-0" type="sint" lsb="1/100" units="%" min="-100" max="100"/>
+    </message>
+    <message id="FCS_ATTITUDE" rt="5" sa="12" dir="T" words="4" rate="50" title="Aircraft attitude" replaces="flight_control_systemOrientationDataRequest flight_control_systemOrientationDataResponse">
+      <field name="roll_ssm" word="0" bits="15-14" type="ssm" for="roll"/>
+      <field name="pitch_ssm" word="0" bits="13-12" type="ssm" for="pitch"/>
+      <field name="yaw_ssm" word="0" bits="11-10" type="ssm" for="yaw"/>
+      <field name="spare_0" word="0" bits="9-0" type="spare"/>
+      <field name="roll" word="1" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="Right wing down positive"/>
+      <field name="pitch" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90" doc="Nose up positive"/>
+      <field name="yaw" word="3" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="True heading as -180..+180, nose right positive"/>
+    </message>
+
+    <!-- ===== RT 12 flight management ===== -->
+    <message id="FMS_STATUS" rt="12" sa="15" dir="T" words="2" rate="5" title="Flight management status" replaces="fmsStatusRequest fmsStatusResponse flightManagementSystemStatus fms_modeChangeResponse">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="FMS_MODE_CMD" rt="12" sa="15" dir="R" words="1" rate="aperiodic" title="Flight management mode command" replaces="fmsCommand flightManagementSystemCommand fms_modeChangeRequest">
+      <doc>fmsControl SET_MODE takes only the mode, so the legacy command_parameter word is gone.</doc>
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="FMS_ATTITUDE_CMD" rt="12" sa="16" dir="R" words="7" rate="aperiodic" title="Attitude command" replaces="fms_attitudeUpdateRequest">
+      <doc>Same parameters as fmsControl UPDATE_ATTITUDE. A field is applied only when its present bit is 1.</doc>
+      <field name="roll_present" word="0" bits="15" type="bool"/>
+      <field name="pitch_present" word="0" bits="14" type="bool"/>
+      <field name="yaw_present" word="0" bits="13" type="bool"/>
+      <field name="roll_rate_present" word="0" bits="12" type="bool"/>
+      <field name="pitch_rate_present" word="0" bits="11" type="bool"/>
+      <field name="yaw_rate_present" word="0" bits="10" type="bool"/>
+      <field name="spare_0" word="0" bits="9-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="roll" word="1" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945"/>
+      <field name="pitch" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
+      <field name="yaw" word="3" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="True"/>
+      <field name="roll_rate" word="4" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
+      <field name="pitch_rate" word="5" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
+      <field name="yaw_rate" word="6" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
+    </message>
+    <message id="FMS_ATTITUDE_STATUS" rt="12" sa="16" dir="T" words="5" rate="10" title="Attitude command status" replaces="fms_attitudeUpdateResponse">
+      <field name="roll_ssm" word="0" bits="15-14" type="ssm" for="roll"/>
+      <field name="pitch_ssm" word="0" bits="13-12" type="ssm" for="pitch"/>
+      <field name="yaw_ssm" word="0" bits="11-10" type="ssm" for="yaw"/>
+      <field name="spare_0" word="0" bits="9-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="spare_1" word="1" bits="15-4" type="spare"/>
+      <field name="status" word="1" bits="3-0" type="enum" enum="cmd_status" doc="Outcome of the last command"/>
+      <field name="roll" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945"/>
+      <field name="pitch" word="3" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
+      <field name="yaw" word="4" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="True"/>
+    </message>
+    <message id="FMS_NAV_UPDATE_CMD" rt="12" sa="17" dir="R" words="5" rate="aperiodic" title="Autopilot target command" replaces="fms_navigationUpdateRequest">
+      <doc>The legacy update_type and parameter_count had no meaning in the code. This carries the targets of fmsControl SET_AUTOPILOT; a target is applied only when its present bit is 1.</doc>
+      <field name="altitude_present" word="0" bits="15" type="bool"/>
+      <field name="airspeed_present" word="0" bits="14" type="bool"/>
+      <field name="heading_present" word="0" bits="13" type="bool"/>
+      <field name="vertical_speed_present" word="0" bits="12" type="bool"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="altitude" word="1" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="60000" doc="Limits from fmsControl.set_autopilot_targets"/>
+      <field name="airspeed" word="2" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="1500"/>
+      <field name="heading" word="3" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True"/>
+      <field name="vertical_speed" word="4" bits="15-0" type="sint" lsb="1" units="ft/min" min="-30000" max="30000" doc="Climb positive"/>
+    </message>
+    <message id="FMS_NAV_UPDATE_STATUS" rt="12" sa="17" dir="T" words="2" rate="5" title="Autopilot target status" replaces="fms_navigationUpdateResponse">
+      <field name="spare_0" word="0" bits="15-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="spare_1" word="1" bits="15-4" type="spare"/>
+      <field name="status" word="1" bits="3-0" type="enum" enum="cmd_status" doc="Outcome of the last command"/>
+    </message>
+    <message id="FMS_MANEUVER_CMD" rt="12" sa="18" dir="R" words="3" rate="aperiodic" title="Maneuver command" replaces="fms_maneuverRequest">
+      <doc>Same maneuvers as fmsControl.execute_maneuver(). DIVE is the only one that takes a parameter.</doc>
+      <field name="spare_0" word="0" bits="15-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="spare_1" word="1" bits="15-4" type="spare"/>
+      <field name="maneuver" word="1" bits="3-0" type="enum" enum="maneuver"/>
+      <field name="dive_angle" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="0" doc="DIVE only; 0 means the FMS default of -30 deg"/>
+    </message>
+    <message id="FMS_MANEUVER_STATUS" rt="12" sa="18" dir="T" words="2" rate="5" title="Maneuver status" replaces="fms_maneuverResponse">
+      <field name="spare_0" word="0" bits="15-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="spare_1" word="1" bits="15-8" type="spare"/>
+      <field name="maneuver" word="1" bits="7-4" type="enum" enum="maneuver" doc="The last maneuver commanded"/>
+      <field name="status" word="1" bits="3-0" type="enum" enum="cmd_status" doc="Outcome of the last command"/>
+    </message>
+
+    <!-- ===== Displays: one terminal each; each keeps its old rtAddressConfig.xml subaddress ===== -->
+    <message id="DSP_PFD_STATUS" rt="11" sa="11" dir="T" words="2" rate="1" title="Primary flight display status" replaces="displayStatusRequest displayStatusResponse display_mode_response">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="display_mode" doc="Current lighting mode"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="DSP_PFD_MODE_CMD" rt="11" sa="11" dir="R" words="1" rate="aperiodic" title="Primary flight display mode command" replaces="displayCommand display_mode_request display_mode_change">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="display_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="DSP_MFD_STATUS" rt="13" sa="12" dir="T" words="2" rate="1" title="Multi-function display status" replaces="displayStatusRequest displayStatusResponse display_mode_response">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="display_mode" doc="Current lighting mode"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="DSP_MFD_MODE_CMD" rt="13" sa="12" dir="R" words="1" rate="aperiodic" title="Multi-function display mode command" replaces="displayCommand display_mode_request display_mode_change">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="display_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="DSP_EICAS_STATUS" rt="14" sa="13" dir="T" words="2" rate="1" title="EICAS status" replaces="displayStatusRequest displayStatusResponse display_mode_response">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="display_mode" doc="Current lighting mode"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="DSP_EICAS_MODE_CMD" rt="14" sa="13" dir="R" words="1" rate="aperiodic" title="EICAS mode command" replaces="displayCommand display_mode_request display_mode_change">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="display_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="DSP_RADAR_STATUS" rt="15" sa="14" dir="T" words="2" rate="1" title="Weather radar display status" replaces="displayStatusRequest displayStatusResponse display_mode_response">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="display_mode" doc="Current lighting mode"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="DSP_RADAR_MODE_CMD" rt="15" sa="14" dir="R" words="1" rate="aperiodic" title="Weather radar display mode command" replaces="displayCommand display_mode_request display_mode_change">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="display_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="DSP_TSD_STATUS" rt="16" sa="15" dir="T" words="2" rate="1" title="Tactical situation display status" replaces="displayStatusRequest displayStatusResponse display_mode_response">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="display_mode" doc="Current lighting mode"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="DSP_TSD_MODE_CMD" rt="16" sa="15" dir="R" words="1" rate="aperiodic" title="Tactical situation display mode command" replaces="displayCommand display_mode_request display_mode_change">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="display_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="DSP_SMS_STATUS" rt="17" sa="16" dir="T" words="2" rate="1" title="Stores management display status" replaces="displayStatusRequest displayStatusResponse display_mode_response">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="display_mode" doc="Current lighting mode"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="DSP_SMS_MODE_CMD" rt="17" sa="16" dir="R" words="1" rate="aperiodic" title="Stores management display mode command" replaces="displayCommand display_mode_request display_mode_change">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="display_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="DSP_HUD_STATUS" rt="18" sa="17" dir="T" words="2" rate="1" title="Head-up display status" replaces="displayStatusRequest displayStatusResponse display_mode_response">
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="mode" word="0" bits="11-8" type="enum" enum="display_mode" doc="Current lighting mode"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="spare_1" word="1" bits="14-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+    </message>
+    <message id="DSP_HUD_MODE_CMD" rt="18" sa="17" dir="R" words="1" rate="aperiodic" title="Head-up display mode command" replaces="displayCommand display_mode_request display_mode_change">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="requested_mode" word="0" bits="11-8" type="enum" enum="display_mode"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+
+    <!-- MFD pilot commands to the radars. A terminal cannot start a transfer, so the BC copies
+         each of these RT-to-RT into RT 9 every 100 ms; the radar acts only when cmd_seq changes. -->
+    <message id="MFD_RDR_WX_CMD" rt="13" sa="20" dir="T" rate="10" title="MFD command to the weather radar" status="PROPOSED" layout_of="RDR_WX_MODE_CMD">
+      <doc>Copied by the BC into RT 9 SA 1. Confirm against the display inventory (v2).</doc>
+    </message>
+    <message id="MFD_RDR_TFR_CMD" rt="13" sa="21" dir="T" rate="10" title="MFD command to the terrain-following radar" status="PROPOSED" layout_of="RDR_TFR_MODE_CMD">
+      <doc>Copied by the BC into RT 9 SA 2. Confirm against the display inventory (v2).</doc>
+    </message>
+    <message id="MFD_RDR_SAR_CMD" rt="13" sa="22" dir="T" rate="10" title="MFD command to the synthetic aperture radar" status="PROPOSED" layout_of="RDR_SAR_MODE_CMD">
+      <doc>Copied by the BC into RT 9 SA 3. Confirm against the display inventory (v2).</doc>
+    </message>
+    <message id="MFD_RDR_TGT_CMD" rt="13" sa="23" dir="T" rate="10" title="MFD command to the targeting radar" status="PROPOSED" layout_of="RDR_TGT_MODE_CMD">
+      <doc>Copied by the BC into RT 9 SA 4. Confirm against the display inventory (v2).</doc>
+    </message>
+    <message id="MFD_RDR_AEWC_CMD" rt="13" sa="24" dir="T" rate="10" title="MFD command to the aewc radar" status="PROPOSED" layout_of="RDR_AEWC_MODE_CMD">
+      <doc>Copied by the BC into RT 9 SA 5. Confirm against the display inventory (v2).</doc>
+    </message>
+  </messages>
+
+  <!-- Payloads larger than one message use the block transfer format in README.md.
+       v1 fixes the addresses and rates; the payload layouts come in v2. -->
+  <blocks>
+    <block id="RDR_WX_VIL" rt="9" desc_sa="6" seg_sa="7" rate="10" title="Weather radar VIL" payload="TBD-v2" replaces="weather_radarVILResponse DISPLAY_VIL_DATA weather_radarData radarDataRequest radarDataResponse"/>
+    <block id="RDR_WX_PRECIP" rt="9" desc_sa="8" seg_sa="9" rate="10" title="Weather radar precipitation" payload="TBD-v2" replaces="weather_radarPrecipitationResponse weather_radarData radarDataResponse"/>
+    <block id="RDR_TGT_TRACKS" rt="9" desc_sa="10" seg_sa="11" rate="10" title="Targeting radar tracks" payload="TBD-v2" replaces="targeting_radarTrackResponse targeting_radarData"/>
+    <block id="RDR_AEWC_SECTOR" rt="9" desc_sa="12" seg_sa="13" rate="10" title="AEWC sector scan" payload="TBD-v2" replaces="aewc_radarSectorScanResponse aewc_radarData"/>
+    <block id="RDR_TFR_ELEVATION" rt="9" desc_sa="14" seg_sa="15" rate="10" title="TFR elevation profile" payload="TBD-v2" replaces="tfr_radarElevationDataResponse tfr_radarData"/>
+    <block id="RDR_SAR_IMAGE" rt="9" desc_sa="16" seg_sa="17" rate="1" title="SAR image" payload="TBD-v2" replaces="sar_radarImageResponse sar_radarData"/>
+    <block id="FMS_DATA" rt="12" desc_sa="19" seg_sa="20" rate="10" title="FMS flight data" payload="TBD-v2" replaces="fmsDataRequest fmsDataResponse"/>
+  </blocks>
+
+  <mode_codes>
+    <mode_code code="2" name="TRANSMIT_STATUS_WORD" dir="T" data_words="0" broadcast_allowed="no" doc="BC health poll; also how the BC reads the message-error bit after a no-response"/>
+    <mode_code code="3" name="INITIATE_SELF_TEST" dir="T" data_words="0" broadcast_allowed="yes" doc="Starts initiated BIT; results in the BIT word" replaces="bitCommand"/>
+    <mode_code code="6" name="INHIBIT_TERMINAL_FLAG" dir="T" data_words="0" broadcast_allowed="yes" doc="Terminal flag bit forced to 0 in the status word"/>
+    <mode_code code="7" name="OVERRIDE_INHIBIT_TERMINAL_FLAG" dir="T" data_words="0" broadcast_allowed="yes" doc="Cancels mode code 6"/>
+    <mode_code code="8" name="RESET_REMOTE_TERMINAL" dir="T" data_words="0" broadcast_allowed="yes" doc="Terminal re-initialises: state INITIALIZING, latched faults cleared"/>
+    <mode_code code="16" name="TRANSMIT_VECTOR_WORD" dir="T" data_words="1" broadcast_allowed="no" doc="After a service request: data word = SA (bits 4-0) the terminal wants serviced"/>
+    <mode_code code="17" name="SYNCHRONIZE_WITH_DATA" dir="R" data_words="1" broadcast_allowed="yes" doc="Sent to broadcast RT 31 at the start of every minor frame. Data word: bits 15-6 major frame count (mod 1024), bits 5-0 minor frame 0-49"/>
+    <mode_code code="18" name="TRANSMIT_LAST_COMMAND" dir="T" data_words="1" broadcast_allowed="no" doc="Returns the last command word received"/>
+    <mode_code code="19" name="TRANSMIT_BIT_WORD" dir="T" data_words="1" broadcast_allowed="no" doc="Returns the BIT word (same layout as TERM_STATUS word 2)" replaces="bitStatusRequest bitStatusResponse"/>
+    <!-- Not used on this single simulated bus: 0 dynamic bus control, 1 synchronize (17 is used instead),
+         4/5 transmitter shutdown and override, 20/21 selected transmitter shutdown and override. -->
+  </mode_codes>
+
+  <!-- Legacy message types that do not become a message of their own. Every MESSAGE_SCHEMAS entry in
+       message_schemas.py must appear in a replaces= list above or here; icd_tool.py check enforces it. -->
+  <legacy_mapping>
+    <legacy type="displayDataUpdate" disposition="retired" reason="Displays receive the producer's own messages through BC-scheduled RT-to-RT transfers"/>
+    <legacy type="display_data" disposition="retired" reason="As displayDataUpdate"/>
+    <legacy type="bitDataResponse" disposition="deferred" reason="v2: detailed BIT results as a block per terminal"/>
+    <legacy type="systemDataRequest" disposition="deferred" reason="v2: each terminal's periodic data messages replace generic data requests"/>
+    <legacy type="systemDataResponse" disposition="deferred" reason="As systemDataRequest"/>
+  </legacy_mapping>
+</icd>
