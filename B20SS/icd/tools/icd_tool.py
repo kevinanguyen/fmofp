@@ -1,14 +1,24 @@
-"""Check and render the FMOFP bus ICD (B20SS/icd/fmofp_icd.xml).
+"""Check, render and generate code from the FMOFP bus ICD (B20SS/icd/fmofp_icd.xml).
 
-    py B20SS/icd/tools/icd_tool.py check    # validate; exit code 1 on any error
-    py B20SS/icd/tools/icd_tool.py render   # check, then regenerate B20SS/icd/ICD_TABLES.md
+    py B20SS/icd/tools/icd_tool.py check              # validate; exit code 1 on any error
+    py B20SS/icd/tools/icd_tool.py render             # check, then regenerate B20SS/icd/ICD_TABLES.md
+    py B20SS/icd/tools/icd_tool.py gen-cpp --out DIR  # check, then write the C++ headers and tests
 
-Standard library only, so it runs anywhere the Python side runs.
+Standard library only, so it runs anywhere the Python side runs, including as a
+build step of the C++ (B20SS/ofp/icd/CMakeLists.txt).
 
 `check` enforces the rules the old message_schemas.py could not: every bit of
-every word is defined, every enum value fits its field, scaled ranges are
-representable, no two messages share an RT/subaddress/direction, and every
-legacy message type is accounted for.
+every word is defined, every enum value fits its field and defines a fail-safe
+zero, scaled ranges are representable, no two messages share an
+RT/subaddress/direction, and every legacy message type is accounted for.
+
+`gen-cpp` writes, under DIR:
+    include/fmofp/icd/version.hpp   the ICD version the code was built from
+    include/fmofp/icd/enums.hpp     one enum class per ICD enum, with validity checks
+    include/fmofp/icd/messages.hpp  one struct per message with encode()/decode()
+    icd_roundtrip_test.cpp          a GoogleTest round-trip test for every message
+The generated code uses only fmofp/bus/word.hpp for bit access, so the headers are
+the only place a message layout exists on the C++ side.
 """
 
 import argparse
@@ -119,6 +129,8 @@ def message_rts(icd, msg):
 def check_enums(icd):
     for eid, enum in icd.enums.items():
         names, values = set(), set()
+        if not 1 <= enum["bits"] <= 8:
+            icd.error(f"enum {eid}", f"{enum['bits']} bits; enums are 1-8 bits wide")
         for name, value, _, _ in enum["values"]:
             where = f"enum {eid}.{name}"
             if name in names:
@@ -129,6 +141,10 @@ def check_enums(icd):
                 icd.error(where, f"value {value} does not fit in {enum['bits']} bits")
             names.add(name)
             values.add(value)
+        # An all-zero word must never read as good data (README section 4), so
+        # every enum needs a defined, safe meaning for 0.
+        if 0 not in values:
+            icd.error(f"enum {eid}", "no value 0; an uninitialised field must decode to a defined, safe value")
 
 
 def check_terminals(icd):
@@ -456,13 +472,502 @@ def render(icd):
     return "\n".join(out)
 
 
+# --------------------------------------------------------------------- C++ generation
+
+def pascal(identifier):
+    """RDR_WX_STATUS -> RdrWxStatus, terminal_state -> TerminalState."""
+    return "".join(part.capitalize() for part in identifier.lower().split("_"))
+
+
+def enum_type(enum_id):
+    return pascal(enum_id)
+
+
+def cpp_int_type(ftype, width):
+    bits = 8 if width <= 8 else 16
+    return f"std::{'u' if ftype == 'uint' else ''}int{bits}_t"
+
+
+def raw_limits(field, width):
+    """(raw_min, raw_max, lsb or None) for a uint/sint field.
+
+    Limits come from the field's min/max in engineering units, rounded to the
+    nearest raw count, and never exceed what the bit width can hold.
+    """
+    signed = field["type"] == "sint"
+    width_min = -(1 << (width - 1)) if signed else 0
+    width_max = (1 << (width - 1)) - 1 if signed else (1 << width) - 1
+    if field.get("lsb") is None:
+        return width_min, width_max, None
+    lsb = Fraction(field["lsb"])
+    raw_min = width_min if field.get("min") is None else max(width_min, round(Fraction(field["min"]) / lsb))
+    raw_max = width_max if field.get("max") is None else min(width_max, round(Fraction(field["max"]) / lsb))
+    return raw_min, raw_max, lsb
+
+
+def member_type(field, width):
+    ftype = field["type"]
+    if ftype == "bool":
+        return "bool"
+    if ftype in ("enum", "ssm"):
+        return enum_type(field["enum"] if ftype == "enum" else "ssm")
+    if field.get("lsb") is not None:
+        return "double"
+    return cpp_int_type(ftype, width)
+
+
+def member_comment(field):
+    parts = []
+    if field.get("units"):
+        parts.append(field["units"])
+    if field.get("lsb"):
+        parts.append(f"LSB {field['lsb']}")
+    if field.get("min") is not None or field.get("max") is not None:
+        parts.append(f"{field.get('min', '')} .. {field.get('max', '')}")
+    if field["type"] == "ssm":
+        parts.append(f"validity of {field['for']}")
+    if field.get("doc"):
+        parts.append(field["doc"])
+    return ", ".join(parts)
+
+
+def cpp_header(icd, what):
+    root = icd.root
+    return [
+        f"// {what}",
+        "//",
+        f"// GENERATED by B20SS/icd/tools/icd_tool.py gen-cpp from fmofp_icd.xml",
+        f"// (ICD {root.get('version_major')}.{root.get('version_minor')} {root.get('status')}, "
+        f"{root.get('date')}). Do not edit; change the ICD and rebuild.",
+        "",
+    ]
+
+
+def gen_version_hpp(icd):
+    root = icd.root
+    out = cpp_header(icd, "The ICD version this code was generated from; TERM_STATUS reports it.")
+    out += [
+        "#ifndef FMOFP_ICD_VERSION_HPP",
+        "#define FMOFP_ICD_VERSION_HPP",
+        "",
+        "#include <cstdint>",
+        "",
+        "namespace fmofp::icd {",
+        "",
+        f"constexpr std::uint8_t kIcdMajor = {int(root.get('version_major'))}U;",
+        f"constexpr std::uint8_t kIcdMinor = {int(root.get('version_minor'))}U;",
+        f"constexpr const char* kIcdStatus = \"{root.get('status')}\";",
+        f"constexpr const char* kIcdDate = \"{root.get('date')}\";",
+        "",
+        "}  // namespace fmofp::icd",
+        "",
+        "#endif",
+    ]
+    return "\n".join(out) + "\n"
+
+
+def gen_enums_hpp(icd):
+    out = cpp_header(icd, "Enumerations of the FMOFP bus ICD.")
+    out += [
+        "#ifndef FMOFP_ICD_ENUMS_HPP",
+        "#define FMOFP_ICD_ENUMS_HPP",
+        "",
+        "#include <cstdint>",
+        "",
+        "#include <fmofp/bus/word.hpp>",
+        "",
+        "namespace fmofp::icd {",
+        "",
+        "// Enumerator names mirror the ICD exactly (ICD_TABLES.md, Enumerations).",
+        "// is_valid() says whether a value is one the ICD defines; decode() rejects",
+        "// anything else with Status::kInvalidEnum.",
+    ]
+    for eid, enum in icd.enums.items():
+        name = enum_type(eid)
+        out.append("")
+        if enum.get("doc"):
+            out.append(f"// {enum['doc']}")
+        out.append(f"enum class {name} : std::uint8_t {{")
+        for vname, value, _, vdoc in enum["values"]:
+            comment = f"  // {vdoc}" if vdoc else ""
+            out.append(f"    {vname} = {value}U,{comment}")
+        out.append("};")
+        out.append("")
+        out.append(f"constexpr bool is_valid({name} v) noexcept {{")
+        out.append("    switch (v) {")
+        for vname, _, _, _ in enum["values"]:
+            out.append(f"        case {name}::{vname}:")
+        out.append("            return true;")
+        out.append("    }")
+        out.append("    return false;")
+        out.append("}")
+        out.append("")
+        out.append(f"constexpr bool is_valid_raw_{eid}(bus::Word raw) noexcept {{")
+        out.append(f"    return raw <= 0xFFU && is_valid(static_cast<{name}>(raw));")
+        out.append("}")
+        out.append("")
+        out.append(f"constexpr const char* to_string({name} v) noexcept {{")
+        out.append("    switch (v) {")
+        for vname, _, _, _ in enum["values"]:
+            out.append(f"        case {name}::{vname}:")
+            out.append(f"            return \"{vname}\";")
+        out.append("    }")
+        out.append("    return \"?\";")
+        out.append("}")
+    out += ["", "}  // namespace fmofp::icd", "", "#endif"]
+    return "\n".join(out) + "\n"
+
+
+def field_geometry(field):
+    hi, lo = parse_bits(field["bits"])
+    return hi, lo, hi - lo + 1
+
+
+def emit_encode(field):
+    """Lines that place one field into w[]; `result` accumulates the Status."""
+    name, ftype = field["name"], field["type"]
+    if ftype == "spare":
+        return []
+    hi, lo, width = field_geometry(field)
+    word = f"w[{field['word']}]"
+    if ftype == "bool":
+        return [f"    {word} = bus::set_bit({word}, {hi}U, {name});"]
+    if ftype in ("enum", "ssm"):
+        return [
+            f"    if (!is_valid({name})) {{",
+            "        result = worst(result, Status::kInvalidArgument);",
+            "    }",
+            f"    {word} = bus::set_field({word}, {hi}U, {lo}U, static_cast<bus::Word>({name}));",
+        ]
+    raw_min, raw_max, lsb = raw_limits(field, width)
+    if lsb is not None:
+        placed = f"bus::to_twos(raw, {width}U)" if ftype == "sint" else "static_cast<bus::Word>(raw)"
+        return [
+            "    {",
+            "        std::int32_t raw = 0;",
+            f"        result = worst(result, bus::encode_scaled({name}, {lsb.numerator}, {lsb.denominator}, "
+            f"{raw_min}, {raw_max}, raw));",
+            f"        {word} = bus::set_field({word}, {hi}U, {lo}U, {placed});",
+            "    }",
+        ]
+    if ftype == "uint":
+        if width == 16:
+            return [f"    {word} = bus::set_field({word}, {hi}U, {lo}U, {name});"]
+        return [
+            "    {",
+            f"        const std::uint32_t v = {name};",
+            f"        if (v > {raw_max}U) {{",
+            "            result = worst(result, Status::kClamped);",
+            "        }",
+            f"        {word} = bus::set_field({word}, {hi}U, {lo}U, "
+            f"static_cast<bus::Word>(v > {raw_max}U ? {raw_max}U : v));",
+            "    }",
+        ]
+    return [
+        "    {",
+        f"        std::int32_t v = {name};",
+        f"        if (v < {raw_min} || v > {raw_max}) {{",
+        "            result = worst(result, Status::kClamped);",
+        f"            v = v < {raw_min} ? {raw_min} : {raw_max};",
+        "        }",
+        f"        {word} = bus::set_field({word}, {hi}U, {lo}U, bus::to_twos(v, {width}U));",
+        "    }",
+    ]
+
+
+def emit_decode(field):
+    """Lines that read one field from in[] into m; returns early on a bad enum."""
+    name, ftype = field["name"], field["type"]
+    if ftype == "spare":
+        return []
+    hi, lo, width = field_geometry(field)
+    word = f"in[{field['word']}]"
+    get = f"bus::get_field({word}, {hi}U, {lo}U)"
+    if ftype == "bool":
+        return [f"    m.{name} = bus::get_bit({word}, {hi}U);"]
+    if ftype in ("enum", "ssm"):
+        eid = field["enum"] if ftype == "enum" else "ssm"
+        return [
+            "    {",
+            f"        const bus::Word raw = {get};",
+            f"        if (!is_valid_raw_{eid}(raw)) {{",
+            "            return Status::kInvalidEnum;",
+            "        }",
+            f"        m.{name} = static_cast<{enum_type(eid)}>(raw);",
+            "    }",
+        ]
+    _, _, lsb = raw_limits(field, width)
+    if lsb is not None:
+        raw = f"bus::from_twos({get}, {width}U)" if ftype == "sint" else f"static_cast<std::int32_t>({get})"
+        return [f"    m.{name} = bus::decode_scaled({raw}, {lsb.numerator}, {lsb.denominator});"]
+    ctype = cpp_int_type(ftype, width)
+    if ftype == "uint":
+        return [f"    m.{name} = static_cast<{ctype}>({get});"]
+    return [f"    m.{name} = static_cast<{ctype}>(bus::from_twos({get}, {width}U));"]
+
+
+def message_constants(msg, indent="    "):
+    rt = "kEveryTerminal" if msg["rt"] == "all" else f"{int(msg['rt'])}U"
+    direction = "Direction::kTransmit" if msg["dir"] == "T" else "Direction::kReceive"
+    rate = "kAperiodic" if msg["rate"] == "aperiodic" else f"{int(msg['rate'])}U"
+    return [
+        f"{indent}static constexpr std::uint8_t kRt = {rt};",
+        f"{indent}static constexpr std::uint8_t kSubaddress = {int(msg['sa'])}U;",
+        f"{indent}static constexpr Direction kDirection = {direction};",
+        f"{indent}static constexpr std::uint8_t kRateHz = {rate};",
+    ]
+
+
+def gen_messages_hpp(icd):
+    out = cpp_header(icd, "Messages of the FMOFP bus ICD: one struct per message with encode() and decode().")
+    out += [
+        "#ifndef FMOFP_ICD_MESSAGES_HPP",
+        "#define FMOFP_ICD_MESSAGES_HPP",
+        "",
+        "#include <array>",
+        "#include <cstdint>",
+        "",
+        "#include <fmofp/bus/status.hpp>",
+        "#include <fmofp/bus/word.hpp>",
+        "#include <fmofp/icd/enums.hpp>",
+        "",
+        "namespace fmofp::icd {",
+        "",
+        "enum class Direction : std::uint8_t { kTransmit, kReceive };",
+        "",
+        "// kRt of a message that every terminal carries (TERM_STATUS, TERM_CMD).",
+        "constexpr std::uint8_t kEveryTerminal = 0xFFU;",
+        "// kRateHz of a message sent only on demand.",
+        "constexpr std::uint8_t kAperiodic = 0U;",
+        "",
+        "// encode(): fills `out` from the members. Returns kOk; kClamped if a value",
+        "// had to be limited to its field's range (then mark that field's SSM",
+        "// NO_COMPUTED_DATA); kInvalidArgument for NaN/infinity or an enum value",
+        "// the ICD does not define. `out` is always fully written.",
+        "// decode(): fills `out` from the words. Returns kOk, or kInvalidEnum",
+        "// (leaving `out` untouched) if an enum field holds an undefined value.",
+    ]
+    for msg in icd.messages:
+        name = pascal(msg["id"])
+        out.append("")
+        out.append(f"// {msg['id']} - {msg.get('title', '')}")
+        out.append(f"// {where_text(icd, msg)}" + (f" - {msg['status']}" if msg.get("status") else ""))
+        if msg.get("doc"):
+            out.append(f"// {msg['doc']}")
+        if msg.get("layout_of"):
+            base = pascal(msg["layout_of"])
+            out.append(f"// Same layout as {msg['layout_of']}.")
+            out.append(f"struct {name} : {base} {{")
+            out += message_constants(msg)
+            out.append("};")
+            continue
+        out.append(f"struct {name} {{")
+        out += message_constants(msg)
+        out.append(f"    static constexpr std::uint8_t kWords = {int(msg['words'])}U;")
+        out.append("    using Words = std::array<bus::Word, kWords>;")
+        out.append("")
+        for field in msg["fields"]:
+            if field["type"] == "spare":
+                continue
+            _, _, width = field_geometry(field)
+            comment = member_comment(field)
+            out.append(f"    {member_type(field, width)} {field['name']}{{}};" + (f"  // {comment}" if comment else ""))
+        out.append("")
+        out.append("    [[nodiscard]] Status encode(Words& out) const noexcept;")
+        out.append(f"    [[nodiscard]] static Status decode(const Words& in, {name}& out) noexcept;")
+        out.append("};")
+        out.append("")
+        out.append(f"inline Status {name}::encode(Words& out) const noexcept {{")
+        out.append("    Words w{};")
+        out.append("    Status result = Status::kOk;")
+        for field in msg["fields"]:
+            out += emit_encode(field)
+        out.append("    out = w;")
+        out.append("    return result;")
+        out.append("}")
+        out.append("")
+        out.append(f"inline Status {name}::decode(const Words& in, {name}& out) noexcept {{")
+        out.append(f"    {name} m{{}};")
+        for field in msg["fields"]:
+            out += emit_decode(field)
+        out.append("    out = m;")
+        out.append("    return Status::kOk;")
+        out.append("}")
+
+    out += [
+        "",
+        "// Every message in the ICD, for schedule building and tests.",
+        "struct MessageInfo {",
+        "    const char* id;",
+        "    std::uint8_t rt;  // kEveryTerminal for TERM_STATUS / TERM_CMD",
+        "    std::uint8_t subaddress;",
+        "    Direction direction;",
+        "    std::uint8_t words;",
+        "    std::uint8_t rate_hz;  // kAperiodic for on-demand messages",
+        "};",
+        "",
+        f"inline constexpr std::array<MessageInfo, {len(icd.messages)}> kMessages = {{{{",
+    ]
+    for msg in icd.messages:
+        name = pascal(msg["id"])
+        out.append(f"    {{\"{msg['id']}\", {name}::kRt, {name}::kSubaddress, {name}::kDirection, "
+                   f"{name}::kWords, {name}::kRateHz}},")
+    out += ["}};", "", "}  // namespace fmofp::icd", "", "#endif"]
+    return "\n".join(out) + "\n"
+
+
+def probe_value(icd, field):
+    """A representative non-zero value for a field, and how the test compares it."""
+    ftype = field["type"]
+    _, _, width = field_geometry(field)
+    if ftype == "bool":
+        return "true", None
+    if ftype in ("enum", "ssm"):
+        eid = field["enum"] if ftype == "enum" else "ssm"
+        values = icd.enums[eid]["values"]
+        pick = values[1] if len(values) > 1 else values[0]
+        if eid == "ssm":
+            pick = next(v for v in values if v[0] == "NORMAL")
+        return f"{enum_type(eid)}::{pick[0]}", None
+    raw_min, raw_max, lsb = raw_limits(field, width)
+    if lsb is not None:
+        raw = raw_min + (raw_max - raw_min) * 5 // 8
+        return repr(float(Fraction(raw) * lsb)), float(lsb) * 0.5 + 1e-9
+    if ftype == "uint":
+        return f"{0xA5A5 & ((1 << width) - 1)}U", None
+    return str(-(1 << (width - 2))) if width >= 2 else "0", None
+
+
+def undefined_enum_raw(icd, field):
+    """A raw value that fits the field's bits but is not an enumerator, or None if every value is defined."""
+    eid = field["enum"] if field["type"] == "enum" else "ssm"
+    _, _, width = field_geometry(field)
+    defined = {value for _, value, _, _ in icd.enums[eid]["values"]}
+    return next((raw for raw in range(1 << width) if raw not in defined), None)
+
+
+def gen_roundtrip_test(icd):
+    out = cpp_header(icd, "Tests for every generated enum and message: round trips, fail-safe zeros, "
+                          "and rejection of undefined enum values.")
+    out += [
+        "#include <gtest/gtest.h>",
+        "",
+        "#include <fmofp/icd/messages.hpp>",
+        "",
+        "namespace {",
+        "",
+        "using fmofp::Status;",
+        "using fmofp::bus::Word;",
+        "using namespace fmofp::icd;  // NOLINT: generated test",
+    ]
+    for eid, enum in icd.enums.items():
+        name = enum_type(eid)
+        out += ["", f"TEST(IcdEnum, {name}) {{"]
+        for vname, value, _, _ in enum["values"]:
+            out.append(f"    EXPECT_TRUE(is_valid({name}::{vname}));")
+            out.append(f"    EXPECT_TRUE(is_valid_raw_{eid}(Word{{{value}U}}));")
+            out.append(f"    EXPECT_STREQ(\"{vname}\", to_string({name}::{vname}));")
+        defined = {value for _, value, _, _ in enum["values"]}
+        for raw in range(1 << enum["bits"]):
+            if raw not in defined:
+                out.append(f"    EXPECT_FALSE(is_valid_raw_{eid}(Word{{{raw}U}}));")
+                out.append(f"    EXPECT_FALSE(is_valid(static_cast<{name}>({raw}U)));")
+                out.append(f"    EXPECT_STREQ(\"?\", to_string(static_cast<{name}>({raw}U)));")
+                break
+        out.append("    EXPECT_FALSE(is_valid_raw_%s(Word{0x100U}));" % eid)
+        out.append("}")
+    for msg in icd.messages:
+        if msg.get("layout_of"):
+            continue
+        name = pascal(msg["id"])
+        fields = [f for f in msg["fields"] if f["type"] != "spare"]
+        out += [
+            "",
+            f"TEST(IcdRoundTrip, {name}) {{",
+            f"    {name} m{{}};",
+        ]
+        comparisons = []
+        for field in fields:
+            value, tol = probe_value(icd, field)
+            out.append(f"    m.{field['name']} = {value};")
+            if tol is None:
+                comparisons.append(f"    EXPECT_EQ(m.{field['name']}, d.{field['name']});")
+            else:
+                comparisons.append(f"    EXPECT_NEAR(m.{field['name']}, d.{field['name']}, {tol!r});")
+        out += [
+            f"    {name}::Words w{{}};",
+            "    ASSERT_EQ(Status::kOk, m.encode(w));",
+            f"    {name} d{{}};",
+            f"    ASSERT_EQ(Status::kOk, {name}::decode(w, d));",
+        ]
+        out += comparisons
+        out += [
+            f"    {name}::Words again{{}};",
+            "    ASSERT_EQ(Status::kOk, d.encode(again));",
+            "    EXPECT_EQ(w, again);",
+            "}",
+            "",
+            f"TEST(IcdZeroWords, {name}) {{",
+            "    // All-zero words are the fail-safe state and must always decode.",
+            f"    const {name}::Words zero{{}};",
+            f"    {name} d{{}};",
+            f"    EXPECT_EQ(Status::kOk, {name}::decode(zero, d));",
+            "}",
+        ]
+        # The first enum field with an undefined raw value available gives a
+        # corrupted-word test for the message; encode must refuse the same value.
+        for field in fields:
+            if field["type"] not in ("enum", "ssm"):
+                continue
+            raw = undefined_enum_raw(icd, field)
+            if raw is None:
+                continue
+            hi, lo, _ = field_geometry(field)
+            etype = enum_type(field["enum"] if field["type"] == "enum" else "ssm")
+            out += [
+                "",
+                f"TEST(IcdUndefinedEnum, {name}) {{",
+                f"    // {field['name']} holds {raw}, which the ICD does not define.",
+                f"    {name}::Words w{{}};",
+                f"    w[{field['word']}] = fmofp::bus::set_field(w[{field['word']}], {hi}U, {lo}U, Word{{{raw}U}});",
+                f"    {name} d{{}};",
+                f"    EXPECT_EQ(Status::kInvalidEnum, {name}::decode(w, d));",
+                f"    {name} m{{}};",
+                f"    m.{field['name']} = static_cast<{etype}>({raw}U);",
+                f"    {name}::Words out{{}};",
+                "    EXPECT_EQ(Status::kInvalidArgument, m.encode(out));",
+                "}",
+            ]
+            break
+    out += ["", "}  // namespace"]
+    return "\n".join(out) + "\n"
+
+
+def gen_cpp(icd, out_dir):
+    include = out_dir / "include" / "fmofp" / "icd"
+    include.mkdir(parents=True, exist_ok=True)
+    written = []
+    for path, text in (
+        (include / "version.hpp", gen_version_hpp(icd)),
+        (include / "enums.hpp", gen_enums_hpp(icd)),
+        (include / "messages.hpp", gen_messages_hpp(icd)),
+        (out_dir / "icd_roundtrip_test.cpp", gen_roundtrip_test(icd)),
+    ):
+        path.write_text(text, encoding="utf-8", newline="\n")
+        written.append(path)
+    return written
+
+
 # --------------------------------------------------------------------- main
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["check", "render"])
+    parser.add_argument("command", choices=["check", "render", "gen-cpp"])
     parser.add_argument("--icd", type=Path, default=ICD_XML)
+    parser.add_argument("--out", type=Path, help="gen-cpp: directory to write into")
     args = parser.parse_args(argv)
+    if args.command == "gen-cpp" and args.out is None:
+        parser.error("gen-cpp needs --out DIR")
 
     icd = load(args.icd)
     ok = check(icd)
@@ -480,6 +985,9 @@ def main(argv=None):
     if args.command == "render":
         TABLES_MD.write_text(render(icd) + "\n", encoding="utf-8", newline="\n")
         print(f"wrote {TABLES_MD}")
+    elif args.command == "gen-cpp":
+        for path in gen_cpp(icd, args.out):
+            print(f"wrote {path}")
     return 0
 
 

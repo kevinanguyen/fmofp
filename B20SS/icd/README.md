@@ -9,7 +9,7 @@ This is the contract for every message on the simulated 1553B bus. The C++ fligh
 | `fmofp_icd.xml` | The ICD itself: the single source of truth. Edit this. |
 | `ICD_TABLES.md` | Every terminal, message, field, enum and mode code, generated from the XML. Don't edit by hand. |
 | `README.md` | This file: the rules that apply to every message (word format, timing, transport, validity). |
-| `tools/icd_tool.py` | Checks the XML and regenerates `ICD_TABLES.md`. Standard-library Python. |
+| `tools/icd_tool.py` | Checks the XML, regenerates `ICD_TABLES.md`, and generates the C++ message code (`gen-cpp`, run by the `B20SS/ofp` build). Standard-library Python. |
 
 After any edit to the XML:
 

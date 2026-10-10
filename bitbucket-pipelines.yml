@@ -62,6 +62,31 @@ pipelines:
             script: *test-script
 
         - step:
+            # Matches the `cpp` job in .github/workflows/ci.yml: the C++ flight
+            # software (B20SS/ofp) built with -Werror, its tests, cppcheck, and
+            # the same build again under ASan + UBSan. The ICD check first,
+            # since the C++ is generated from it.
+            name: C++ OFP (GCC, cppcheck, ASan/UBSan)
+            image: ubuntu:24.04
+            script:
+              - export DEBIAN_FRONTEND=noninteractive
+              - apt-get update -qq
+              - apt-get install -y --no-install-recommends
+                  g++ cmake ninja-build libgtest-dev cppcheck gcovr python3 git
+              - git config --global --add safe.directory '*'
+              - python3 B20SS/icd/tools/icd_tool.py check
+              - python3 B20SS/icd/tools/icd_tool.py render
+              - git diff --exit-code -- B20SS/icd/ICD_TABLES.md
+              - cd B20SS/ofp
+              - cmake --preset linux-gcc
+              - cmake --build --preset linux-gcc
+              - ctest --preset linux-gcc
+              - cmake --build --preset linux-gcc --target cppcheck
+              - cmake --preset linux-asan
+              - cmake --build --preset linux-asan
+              - ctest --preset linux-asan
+
+        - step:
             name: Lint (ruff)
             image: python:3.11-slim
             script:

@@ -1,0 +1,52 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "windows-ucrt64",
+      "displayName": "Windows, MSYS2 UCRT64 GCC",
+      "description": "Run from an MSYS2 UCRT64 shell (C:/msys64/ucrt64.exe) so g++, ninja and gtest are on PATH",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "linux-gcc",
+      "displayName": "Linux GCC",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "linux-asan",
+      "displayName": "Linux GCC with AddressSanitizer and UndefinedBehaviorSanitizer",
+      "inherits": "linux-gcc",
+      "cacheVariables": { "OFP_SANITIZE": "ON" }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage build (gcov/gcovr), any GCC host",
+      "inherits": "base",
+      "cacheVariables": { "OFP_COVERAGE": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-ucrt64", "configurePreset": "windows-ucrt64" },
+    { "name": "linux-gcc", "configurePreset": "linux-gcc" },
+    { "name": "linux-asan", "configurePreset": "linux-asan" },
+    { "name": "coverage", "configurePreset": "coverage", "targets": ["all", "coverage"] }
+  ],
+  "testPresets": [
+    { "name": "windows-ucrt64", "configurePreset": "windows-ucrt64", "output": { "outputOnFailure": true } },
+    { "name": "linux-gcc", "configurePreset": "linux-gcc", "output": { "outputOnFailure": true } },
+    { "name": "linux-asan", "configurePreset": "linux-asan", "output": { "outputOnFailure": true } }
+  ]
+}

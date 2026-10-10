@@ -143,6 +143,55 @@ jobs:
           cd B20SS
           python FMOFP/Tests/run_all_tests.py
 
+  # The C++ flight software (B20SS/ofp) and the ICD it is generated from. Two
+  # legs: a plain GCC build with cppcheck, and the same build under
+  # AddressSanitizer + UndefinedBehaviorSanitizer, which MinGW cannot provide on
+  # the Windows development machines. Both build with -Werror; see
+  # B20SS/ofp/CLAUDE.md for the rules the flags enforce.
+  cpp:
+    name: C++ OFP (${{ matrix.preset }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [linux-gcc, linux-asan]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            g++ cmake ninja-build libgtest-dev cppcheck gcovr python3
+
+      # The XML is the single source of every bus message. `check` enforces the
+      # ICD's own rules; the render + diff fails the build if someone changed
+      # the XML without regenerating ICD_TABLES.md.
+      - name: Check the ICD and its rendered tables
+        run: |
+          python3 B20SS/icd/tools/icd_tool.py check
+          python3 B20SS/icd/tools/icd_tool.py render
+          git diff --exit-code -- B20SS/icd/ICD_TABLES.md
+
+      - name: Configure
+        working-directory: B20SS/ofp
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        working-directory: B20SS/ofp
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        working-directory: B20SS/ofp
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: cppcheck
+        if: matrix.preset == 'linux-gcc'
+        working-directory: B20SS/ofp
+        run: cmake --build --preset ${{ matrix.preset }} --target cppcheck
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
