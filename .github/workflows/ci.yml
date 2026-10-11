@@ -169,7 +169,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            g++ cmake ninja-build libgtest-dev cppcheck gcovr python3
+            g++ cmake ninja-build libgtest-dev cppcheck gcovr python3 python3-numpy
 
       # The XML is the single source of every bus message. `check` enforces the
       # ICD's own rules; the render + diff fails the build if someone changed
