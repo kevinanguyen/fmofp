@@ -7,6 +7,9 @@ on:
     branches: [ main, 'port/**' ]
   pull_request:
     branches: [ main ]
+  # Manual runs from the Actions tab or `gh workflow run`, for re-checking a
+  # branch without pushing to it.
+  workflow_dispatch:
 
 jobs:
   test:
