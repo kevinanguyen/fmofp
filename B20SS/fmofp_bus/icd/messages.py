@@ -2033,11 +2033,11 @@ class FmsEnergy:
     WORDS: ClassVar[int] = 6
 
     ssm: Ssm = Ssm.FAILURE_WARNING  # validity of specific_excess_power, Validity of all five values
-    specific_excess_power: float = 0.0  # m/s, LSB 1/100, -327.68 .. 327.67
+    specific_excess_power: float = 0.0  # m/s, LSB 1/50, -655.36 .. 655.34
     max_sustained_turn_rate: float = 0.0  # deg/s, LSB 1/10, 0 .. 6553.5
     max_instantaneous_turn_rate: float = 0.0  # deg/s, LSB 1/10, 0 .. 6553.5
-    max_climb_rate: float = 0.0  # ft/min, LSB 2, -65536 .. 65534
-    energy_advantage: float = 0.0  # LSB 1/10, -3276.8 .. 3276.7, 10 x specific_excess_power
+    max_climb_rate: float = 0.0  # ft/min, LSB 4, -131072 .. 131068
+    energy_advantage: float = 0.0  # LSB 1/5, -6553.6 .. 6553.4, 10 x specific_excess_power
 
     def encode(self) -> Tuple[Status, List[int]]:
         w = [0] * 6
@@ -2045,7 +2045,7 @@ class FmsEnergy:
         if not is_valid(Ssm, self.ssm):
             result = worst(result, Status.INVALID_ARGUMENT)
         w[0] = _w.set_field(w[0], 15, 14, int(self.ssm))
-        s, raw = _w.encode_scaled(self.specific_excess_power, 1, 100, -32768, 32767)
+        s, raw = _w.encode_scaled(self.specific_excess_power, 1, 50, -32768, 32767)
         result = worst(result, s)
         w[1] = _w.set_field(w[1], 15, 0, _w.to_twos(raw, 16))
         s, raw = _w.encode_scaled(self.max_sustained_turn_rate, 1, 10, 0, 65535)
@@ -2054,10 +2054,10 @@ class FmsEnergy:
         s, raw = _w.encode_scaled(self.max_instantaneous_turn_rate, 1, 10, 0, 65535)
         result = worst(result, s)
         w[3] = _w.set_field(w[3], 15, 0, raw)
-        s, raw = _w.encode_scaled(self.max_climb_rate, 2, 1, -32768, 32767)
+        s, raw = _w.encode_scaled(self.max_climb_rate, 4, 1, -32768, 32767)
         result = worst(result, s)
         w[4] = _w.set_field(w[4], 15, 0, _w.to_twos(raw, 16))
-        s, raw = _w.encode_scaled(self.energy_advantage, 1, 10, -32768, 32767)
+        s, raw = _w.encode_scaled(self.energy_advantage, 1, 5, -32768, 32767)
         result = worst(result, s)
         w[5] = _w.set_field(w[5], 15, 0, _w.to_twos(raw, 16))
         return result, w
@@ -2071,11 +2071,11 @@ class FmsEnergy:
         if not is_valid(Ssm, raw):
             return Status.INVALID_ENUM, None
         m.ssm = Ssm(raw)
-        m.specific_excess_power = _w.decode_scaled(_w.from_twos(_w.get_field(words[1], 15, 0), 16), 1, 100)
+        m.specific_excess_power = _w.decode_scaled(_w.from_twos(_w.get_field(words[1], 15, 0), 16), 1, 50)
         m.max_sustained_turn_rate = _w.decode_scaled(_w.get_field(words[2], 15, 0), 1, 10)
         m.max_instantaneous_turn_rate = _w.decode_scaled(_w.get_field(words[3], 15, 0), 1, 10)
-        m.max_climb_rate = _w.decode_scaled(_w.from_twos(_w.get_field(words[4], 15, 0), 16), 2, 1)
-        m.energy_advantage = _w.decode_scaled(_w.from_twos(_w.get_field(words[5], 15, 0), 16), 1, 10)
+        m.max_climb_rate = _w.decode_scaled(_w.from_twos(_w.get_field(words[4], 15, 0), 16), 4, 1)
+        m.energy_advantage = _w.decode_scaled(_w.from_twos(_w.get_field(words[5], 15, 0), 16), 1, 5)
         return Status.OK, m
 
 

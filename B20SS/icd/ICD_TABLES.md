@@ -973,11 +973,11 @@ fmsControl.calculate_energy_maneuverability(), from nav_altitude, airspeed, angl
 |---|---|---|---|---|---|
 | 0 | 15-14 | `ssm` | ssm | validity of `specific_excess_power` | Validity of all five values |
 | 0 | 13-0 | `spare_0` | spare |  |  |
-| 1 | 15-0 | `specific_excess_power` | sint | LSB 1/100 m/s, range -327.68 to 327.67 |  |
+| 1 | 15-0 | `specific_excess_power` | sint | LSB 1/50 m/s, range -655.36 to 655.34 |  |
 | 2 | 15-0 | `max_sustained_turn_rate` | uint | LSB 1/10 deg/s, range 0 to 6553.5 |  |
 | 3 | 15-0 | `max_instantaneous_turn_rate` | uint | LSB 1/10 deg/s, range 0 to 6553.5 |  |
-| 4 | 15-0 | `max_climb_rate` | sint | LSB 2 ft/min, range -65536 to 65534 |  |
-| 5 | 15-0 | `energy_advantage` | sint | LSB 1/10, range -3276.8 to 3276.7 | 10 x specific_excess_power |
+| 4 | 15-0 | `max_climb_rate` | sint | LSB 4 ft/min, range -131072 to 131068 |  |
+| 5 | 15-0 | `energy_advantage` | sint | LSB 1/5, range -6553.6 to 6553.4 | 10 x specific_excess_power |
 
 ### DSP_PFD_STATUS
 

@@ -1,12 +1,17 @@
 // The bus controller process.
 //
 //   fmofp_bc --rt 1 --rt 5 [--port-base 51000] [--frames 0] [--free-run]
-//            [--no-monitor] [--timeout-ms 5] [--report] [--strict]
+//            [--no-monitor] [--timeout-ms 5] [--report] [--strict] [--script FILE]
 //
 // --frames N runs N minor frames (0 = until killed). --report prints one line
 // per major frame. --strict exits 1 if any terminal failed to answer or any
-// frame overran, which is how the Phase 1 gate is scored.
+// frame overran, which is how the Phase 1 gate is scored. --script FILE sends
+// commands at given frames: one per line, "frame rt sa word word ..." with
+// the data words in hex (lines starting with # are comments). That is how the
+// tests command a partition over the bus.
 
+#include <array>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -25,7 +30,113 @@ struct Options {
     unsigned long frames{0};
     bool report{false};
     bool strict{false};
+    const char* script{nullptr};
 };
+
+// A command from --script: data to a terminal in a given minor frame.
+struct ScriptedCommand {
+    unsigned long frame{0};
+    std::uint8_t rt{0};
+    std::uint8_t sa{0};
+    std::uint8_t count{0};
+    std::array<fmofp::bus::Word, fmofp::bus::kMaxDataWords> words{};
+};
+
+constexpr std::size_t kMaxScriptedCommands = 128;
+constexpr std::size_t kMaxScriptLine = 512;
+
+std::array<ScriptedCommand, kMaxScriptedCommands> g_script{};
+std::size_t g_script_count = 0;
+
+bool parse_field(char*& cursor, int base, unsigned long max, unsigned long& out) {
+    char* end = nullptr;
+    const unsigned long v = std::strtoul(cursor, &end, base);
+    if (end == cursor || v > max) {
+        return false;
+    }
+    cursor = end;
+    out = v;
+    return true;
+}
+
+// Reads the script; false with a message on stderr if a line is malformed.
+bool load_script(const char* path) {
+    std::FILE* f = std::fopen(path, "r");
+    if (f == nullptr) {
+        std::fprintf(stderr, "bc: cannot open script %s\n", path);
+        return false;
+    }
+    char line[kMaxScriptLine];
+    unsigned line_number = 0;
+    bool ok = true;
+    while (ok && std::fgets(line, sizeof line, f) != nullptr) {
+        ++line_number;
+        char* cursor = line;
+        while (*cursor == ' ' || *cursor == '\t') {
+            ++cursor;
+        }
+        if (*cursor == '\0' || *cursor == '\n' || *cursor == '\r' || *cursor == '#') {
+            continue;
+        }
+        if (g_script_count >= kMaxScriptedCommands) {
+            std::fprintf(stderr, "bc: script has more than %zu commands\n", kMaxScriptedCommands);
+            ok = false;
+            break;
+        }
+        ScriptedCommand& c = g_script[g_script_count];
+        unsigned long frame = 0;
+        unsigned long rt = 0;
+        unsigned long sa = 0;
+        ok = parse_field(cursor, 10, 1000000000UL, frame) && parse_field(cursor, 10, 30, rt) &&
+             parse_field(cursor, 10, 30, sa) && sa >= 1;
+        c.frame = frame;
+        c.rt = static_cast<std::uint8_t>(rt);
+        c.sa = static_cast<std::uint8_t>(sa);
+        c.count = 0;
+        while (ok) {
+            while (*cursor == ' ' || *cursor == '\t') {
+                ++cursor;
+            }
+            if (*cursor == '\0' || *cursor == '\n' || *cursor == '\r' || *cursor == '#') {
+                break;
+            }
+            unsigned long word = 0;
+            if (c.count >= fmofp::bus::kMaxDataWords || !parse_field(cursor, 16, 0xFFFFUL, word)) {
+                ok = false;
+                break;
+            }
+            c.words[c.count] = static_cast<fmofp::bus::Word>(word);
+            ++c.count;
+        }
+        ok = ok && c.count >= 1;
+        if (!ok) {
+            std::fprintf(stderr, "bc: script %s line %u: expected 'frame rt sa hexword...'\n", path, line_number);
+            break;
+        }
+        ++g_script_count;
+    }
+    (void)std::fclose(f);
+    return ok;
+}
+
+// Queues the script's commands for `frame`. Returns how many were queued.
+unsigned queue_scripted(fmofp::bc::BusController& bc, unsigned long frame) {
+    unsigned queued = 0;
+    for (std::size_t i = 0; i < g_script_count; ++i) {
+        const ScriptedCommand& c = g_script[i];
+        if (c.frame != frame) {
+            continue;
+        }
+        const Status s = bc.queue_receive(c.rt, c.sa, c.words.data(), c.count);
+        if (s != Status::kOk) {
+            std::fprintf(stderr, "bc: frame %lu: could not queue scripted command to RT %u SA %u: %s\n", frame,
+                         c.rt, c.sa, fmofp::to_string(s));
+        } else {
+            ++queued;
+        }
+    }
+    return queued;
+}
 
 bool parse_number(const char* text, unsigned long max, unsigned long& out) {
     if (text == nullptr) {
@@ -68,6 +179,9 @@ bool parse(int argc, char** argv, Options& o) {
             o.report = true;
         } else if (std::strcmp(a, "--strict") == 0) {
             o.strict = true;
+        } else if (std::strcmp(a, "--script") == 0 && next != nullptr) {
+            o.script = next;
+            ++i;
         } else {
             return false;
         }
@@ -97,7 +211,10 @@ int main(int argc, char** argv) {
     if (!parse(argc, argv, o)) {
         std::fprintf(stderr,
                      "usage: fmofp_bc --rt N [--rt N ...] [--port-base N] [--frames N] [--free-run] "
-                     "[--no-monitor] [--timeout-ms N] [--report] [--strict]\n");
+                     "[--no-monitor] [--timeout-ms N] [--report] [--strict] [--script FILE]\n");
+        return 2;
+    }
+    if (o.script != nullptr && !load_script(o.script)) {
         return 2;
     }
 
@@ -129,7 +246,9 @@ int main(int argc, char** argv) {
                 o.bc.mode == fmofp::bc::BcMode::kRealTime ? "real time, 20 ms minor frames" : "free running",
                 o.bc.port_base, o.bc.monitor_enabled ? "monitor on" : "monitor off");
 
+    unsigned long scripted_sent = 0;
     for (unsigned long frame = 0; o.frames == 0 || frame < o.frames; ++frame) {
+        scripted_sent += queue_scripted(bc, frame);
         const Status f = bc.run_minor_frame();
         if (f != Status::kOk && f != Status::kTimeout && f != Status::kMalformed) {
             std::fprintf(stderr, "bc: frame %lu failed: %s\n", frame, fmofp::to_string(f));
@@ -142,6 +261,9 @@ int main(int argc, char** argv) {
     }
 
     print_stats(bc);
+    if (o.script != nullptr) {
+        std::printf("bc: script: %lu commands sent of %zu\n", scripted_sent, g_script_count);
+    }
     bool failed = bc.stats().overruns != 0;
     for (std::uint8_t i = 0; i < o.bc.terminal_count; ++i) {
         const fmofp::bc::TerminalStats& t = bc.terminal(o.bc.terminals[i]);

@@ -35,3 +35,14 @@ target_link_libraries(fmofp_nav PRIVATE ofp::nav ofp::rt_process ofp::bc ofp::wa
 
 add_executable(fmofp_nav_tool nav/tools/nav_tool.cpp)
 target_link_libraries(fmofp_nav_tool PRIVATE ofp::nav ofp::warnings)
+
+# Flight management: flight modes and their envelopes, attitude commands and
+# maneuvers, autopilot targets, thrust and gear, flight data and energy.
+add_library(ofp_fms STATIC fms/src/flight_management.cpp)
+add_library(ofp::fms ALIAS ofp_fms)
+add_dependencies(ofp_fms ofp_icd_generate)
+target_include_directories(ofp_fms PUBLIC fms/include)
+target_link_libraries(ofp_fms PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
+
+add_executable(fmofp_fms fms/src/main.cpp)
+target_link_libraries(fmofp_fms PRIVATE ofp::fms ofp::rt_process ofp::bc ofp::warnings)

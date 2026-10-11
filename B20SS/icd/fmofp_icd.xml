@@ -547,11 +547,11 @@
       <doc>fmsControl.calculate_energy_maneuverability(), from nav_altitude, airspeed, angle of attack and the flight profile's engine_power and max_g_force: specific excess power Ps = v (T - D) / W with T = engine_power x 150000 N, D = 0.5 x 1.225 e^(-h/10000) v^2 (0.02 + |aoa|/100) x 30, W = 15000 x 9.81; sustained turn rate = deg(g sqrt((T/W)^2 - 1) / v) when T/W is above 1, else 0; instantaneous turn rate = deg(g sqrt(max_g^2 - 1) / v); climb = Ps x 196.85 ft/min; energy_advantage = 10 Ps. v is at least 1 m/s in the turn rates.</doc>
       <field name="ssm" word="0" bits="15-14" type="ssm" for="specific_excess_power" doc="Validity of all five values"/>
       <field name="spare_0" word="0" bits="13-0" type="spare"/>
-      <field name="specific_excess_power" word="1" bits="15-0" type="sint" lsb="1/100" units="m/s" min="-327.68" max="327.67"/>
+      <field name="specific_excess_power" word="1" bits="15-0" type="sint" lsb="1/50" units="m/s" min="-655.36" max="655.34"/>
       <field name="max_sustained_turn_rate" word="2" bits="15-0" type="uint" lsb="1/10" units="deg/s" min="0" max="6553.5"/>
       <field name="max_instantaneous_turn_rate" word="3" bits="15-0" type="uint" lsb="1/10" units="deg/s" min="0" max="6553.5"/>
-      <field name="max_climb_rate" word="4" bits="15-0" type="sint" lsb="2" units="ft/min" min="-65536" max="65534"/>
-      <field name="energy_advantage" word="5" bits="15-0" type="sint" lsb="1/10" min="-3276.8" max="3276.7" doc="10 x specific_excess_power"/>
+      <field name="max_climb_rate" word="4" bits="15-0" type="sint" lsb="4" units="ft/min" min="-131072" max="131068"/>
+      <field name="energy_advantage" word="5" bits="15-0" type="sint" lsb="1/5" min="-6553.6" max="6553.4" doc="10 x specific_excess_power"/>
     </message>
 
     <!-- ===== Displays: one terminal each; each keeps its old rtAddressConfig.xml subaddress ===== -->

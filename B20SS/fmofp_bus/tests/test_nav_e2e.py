@@ -38,28 +38,43 @@ class PlantThread(threading.Thread):
 
 @needs("FMOFP_BC", "FMOFP_NAV")
 class NavigationEndToEndTest(unittest.TestCase):
+    nav = None
+    plant_thread = None
+    plant = None
+    monitor = None
+
     @classmethod
     def setUpClass(cls):
-        cls.model = PlantModel(seed=3)
-        cls.model.hold = dict(speed=450.0, heading=90.0, altitude=30000.0, vertical_speed=0.0, pitch=0.0, roll=0.0)
-        cls.plant = PlantTerminal(cls.model, PORT_BASE)
-        assert cls.plant.init() == Status.OK, "plant port in use?"
-        cls.plant_thread = PlantThread(cls.plant)
-        cls.plant_thread.start()
-        cls.monitor = Monitor(PORT_BASE)
-        assert cls.monitor.open() == Status.OK, "monitor port in use?"
-        cls.nav = subprocess.Popen([os.environ["FMOFP_NAV"], "--port-base", str(PORT_BASE), "--quiet"],
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=binary_env())
-        time.sleep(0.3)
+        try:
+            cls.model = PlantModel(seed=3)
+            cls.model.hold = dict(speed=450.0, heading=90.0, altitude=30000.0, vertical_speed=0.0, pitch=0.0, roll=0.0)
+            cls.plant = PlantTerminal(cls.model, PORT_BASE)
+            assert cls.plant.init() == Status.OK, "plant port in use?"
+            cls.plant_thread = PlantThread(cls.plant)
+            cls.plant_thread.start()
+            cls.monitor = Monitor(PORT_BASE)
+            assert cls.monitor.open() == Status.OK, "monitor port in use?"
+            cls.nav = subprocess.Popen([os.environ["FMOFP_NAV"], "--port-base", str(PORT_BASE), "--quiet"],
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=binary_env())
+            time.sleep(0.3)
+        except BaseException:
+            cls.tearDownClass()  # a partition left running would answer the next run
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.nav.kill()
-        cls.nav.wait(timeout=10)
-        cls.plant_thread.stop.set()
-        cls.plant_thread.join(timeout=2)
-        cls.plant.shutdown()
-        cls.monitor.close()
+        if cls.nav is not None:
+            cls.nav.kill()
+            cls.nav.wait(timeout=10)
+            cls.nav.stdout.close()
+            cls.nav = None
+        if cls.plant_thread is not None:
+            cls.plant_thread.stop.set()
+            cls.plant_thread.join(timeout=2)
+        if cls.plant is not None:
+            cls.plant.shutdown()
+        if cls.monitor is not None:
+            cls.monitor.close()
 
     def run_bus(self, frames):
         result = subprocess.run(
