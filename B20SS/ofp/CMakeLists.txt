@@ -80,6 +80,7 @@ if(OFP_COVERAGE AND OFP_GCOVR AND OFP_BUILD_TESTS)
             --filter ${CMAKE_CURRENT_SOURCE_DIR}/bc/include
             --filter ${CMAKE_CURRENT_SOURCE_DIR}/partitions/common
             --filter ${CMAKE_CURRENT_SOURCE_DIR}/partitions/fcs
+            --filter ${CMAKE_CURRENT_SOURCE_DIR}/partitions/nav
             --filter ${CMAKE_BINARY_DIR}/icd/generated/include
             --print-summary --txt
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}

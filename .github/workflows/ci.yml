@@ -205,6 +205,8 @@ jobs:
         env:
           FMOFP_BC: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/bc/fmofp_bc
           FMOFP_FCS: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_fcs
+          FMOFP_NAV: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_nav
+          FMOFP_NAV_TOOL: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_nav_tool
         run: |
           python3 B20SS/icd/tools/icd_tool.py gen-py
           git diff --exit-code -- B20SS/fmofp_bus/icd

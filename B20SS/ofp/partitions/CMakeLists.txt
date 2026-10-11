@@ -20,3 +20,18 @@ target_link_libraries(ofp_fcs PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
 
 add_executable(fmofp_fcs fcs/src/main.cpp)
 target_link_libraries(fmofp_fcs PRIVATE ofp::fcs ofp::rt_process ofp::bc ofp::warnings)
+
+# Navigation: the GPS solver and the GPS / dead-reckoning fusion as a library,
+# fmofp_nav on the bus, and fmofp_nav_tool, which exposes the pure functions on
+# stdin/stdout so the Python tests can run the original Python beside them.
+add_library(ofp_nav STATIC nav/src/gps_solver.cpp nav/src/navigation.cpp)
+add_library(ofp::nav ALIAS ofp_nav)
+add_dependencies(ofp_nav ofp_icd_generate)
+target_include_directories(ofp_nav PUBLIC nav/include)
+target_link_libraries(ofp_nav PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
+
+add_executable(fmofp_nav nav/src/main.cpp)
+target_link_libraries(fmofp_nav PRIVATE ofp::nav ofp::rt_process ofp::bc ofp::warnings)
+
+add_executable(fmofp_nav_tool nav/tools/nav_tool.cpp)
+target_link_libraries(fmofp_nav_tool PRIVATE ofp::nav ofp::warnings)

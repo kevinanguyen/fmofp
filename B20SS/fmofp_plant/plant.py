@@ -1,7 +1,7 @@
 """The plant terminal.
 
     py -m fmofp_plant [--port-base 51000] [--syncs 0] [--seed N] [--terrain-ft 0]
-                      [--lat 35.4147] [--lon -97.3866]
+                      [--lat 0.0] [--lon 0.0]
                       [--gps-noise-m 3.0] [--gps-clock-bias-us 1.0] [--gps-outage]
                       [--hold altitude=1500,vertical_speed=-4500,...] [--quiet]
 
@@ -37,10 +37,14 @@ SYNCS_PER_GPS = SYNC_HZ // GPS_HZ
 HOLDABLE = ("altitude", "speed", "heading", "pitch", "roll", "vertical_speed", "angle_of_attack", "g_force",
             "flaps", "terrain_clearance", "latitude", "longitude")
 
-# The INS's starting position in inertialNavigationSystem.py: the one place in the
-# Python that named a real spot on the map.
-HOME_LATITUDE = 35.4147
-HOME_LONGITUDE = -97.3866
+# Where the Python aircraft lived: flightManagementSystem's navigation dict starts
+# at latitude 0, longitude 0, and the GPS truth followed it, so every fix in the
+# frozen Python was made here. It is also a spot the 12-satellite constellation
+# serves well (five satellites, a fix good to a few metres). The INS's starting
+# point, 35.4147 N 97.3866 W, was never used by anything, and from there the
+# constellation shows four coplanar satellites whose fixes are off by kilometres.
+HOME_LATITUDE = 0.0
+HOME_LONGITUDE = 0.0
 
 # WGS-84 and the constellation, as globalPositionSystem.py has them.
 WGS84_A = 6_378_137.0
