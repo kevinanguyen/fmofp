@@ -51,6 +51,17 @@ def from_twos(raw, width):
     return bits - (sign << 1) if bits & sign else bits
 
 
+def to_twos32(value):
+    """Two's-complement representation of `value` in a 32-bit double word."""
+    return value & 0xFFFFFFFF
+
+
+def from_twos32(raw):
+    """Sign-extends a 32-bit two's-complement value."""
+    raw &= 0xFFFFFFFF
+    return raw - 0x100000000 if raw & 0x80000000 else raw
+
+
 def _llround(x):
     """Round half away from zero, as C's llround does (Python's round() is to even)."""
     return int(math.copysign(math.floor(abs(x) + 0.5), x))

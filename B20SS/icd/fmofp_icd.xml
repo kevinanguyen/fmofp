@@ -5,14 +5,16 @@
   Check after every edit:   py B20SS/icd/tools/icd_tool.py check
   Regenerate the tables:    py B20SS/icd/tools/icd_tool.py render
   Word indices are 0-based data words. Bits are numbered 15 (MSB) .. 0 (LSB);
-  bits="11-8" means (word >> 8) & 0xF.
+  bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
+  (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="1" status="DRAFT" date="2026-10-10">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="2" status="DRAFT" date="2026-10-11">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
 
   <revision version="1.1-draft" date="2026-10-10" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">First partition (flight control): the plant terminal RT 27 and PLANT_SENSORS, relayed to the FCS as FCS_SENSORS; FCS_GCAS_ALERTS and FCS_PERF_STATUS outputs; the relays section, which also makes the BC deliver the MFD's radar commands. Kevin owns the ICD from this revision.</revision>
+  <revision version="1.2-draft" date="2026-10-11" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Navigation and flight management partitions: PLANT_GPS pseudoranges, the nav terminal's NAV_SENSORS/NAV_GPS inputs and NAV_SOLUTION; the FMS's relayed inputs (FMS_ATTITUDE_IN, FMS_SENSORS, FMS_NAV_SOLUTION), FMS_FLIGHT_DATA (replacing the FMS_DATA block), FMS_FLIGHT_MODE_CMD, FMS_CONTROL_CMD/STATUS, FMS_ENERGY; FMS_STATUS, FMS_ATTITUDE_STATUS and FMS_NAV_UPDATE_STATUS grown to report what the Python returned. Double-word (32-bit) fields; a producer may be relayed to several consumers. Enums fms_flight_mode, countermeasures_state, targeting_state, weapons_state.</revision>
   <bus word_bits="16" byte_order="big-endian" bit_numbering="15=MSB" bit_rate_mbps="1"
        minor_frame_ms="20" minor_frames_per_major="50" rates_hz="50 10 5 1"
        broadcast_rt="31" status_sa="29" wraparound_sa="30" max_bus_load_percent="50"
@@ -131,6 +133,30 @@
       <value name="CAUTION" value="2" doc="Severity-2 alert active (ALT LOW)"/>
       <value name="WARNING" value="3" doc="Severity-1 alert active (PULLUP, SINK RATE or TERRAIN)"/>
     </enum>
+    <enum id="fms_flight_mode" bits="4" doc="FMS flight mode (fmsControl.available_modes), numbered as flightManagementSystem.send_fms_data did. Each selects a flight profile - max bank 30/80/45/60/90 deg, max pitch 20/60/30/45/85 deg, max g 2.5/9/5/7/9.5, max AoA 15/25/20/22/30 deg, engine power 0.7/1.0/0.6/0.9/1.0, turn rate limit 3/20/5/15/25 deg/s - for NORMAL/COMBAT/STEALTH/TRAINING/EMERGENCY">
+      <value name="NORMAL" value="0"/>
+      <value name="COMBAT" value="1"/>
+      <value name="STEALTH" value="2"/>
+      <value name="TRAINING" value="3"/>
+      <value name="EMERGENCY" value="4"/>
+    </enum>
+    <enum id="countermeasures_state" bits="2" doc="fmsControl tactical_systems countermeasures, set by the flight mode">
+      <value name="STANDBY" value="0"/>
+      <value name="READY" value="1"/>
+      <value name="PASSIVE" value="2"/>
+      <value name="ACTIVE" value="3"/>
+    </enum>
+    <enum id="targeting_state" bits="2" doc="fmsControl tactical_systems targeting, set by the flight mode">
+      <value name="STANDBY" value="0"/>
+      <value name="ACTIVE" value="1"/>
+      <value name="PASSIVE" value="2"/>
+      <value name="READY" value="3"/>
+    </enum>
+    <enum id="weapons_state" bits="2" doc="fmsControl tactical_systems weapons, set by the flight mode">
+      <value name="SAFE" value="0"/>
+      <value name="ARMED" value="1"/>
+      <value name="READY" value="2"/>
+    </enum>
   </enums>
 
   <terminals>
@@ -141,12 +167,12 @@
     <terminal rt="4" id="enviornmentalcontrolsystem" name="Environmental control system" status="existing" source="Systems/enviornmentalControlSystem" note="id keeps the repo's spelling"/>
     <terminal rt="5" id="flightcontrolsys" name="Flight control - FCC, GCAS, performance monitor" status="existing" source="Systems/flightControlSys"/>
     <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
-    <terminal rt="7" id="nav" name="Navigation - GPS, INS, fusion" status="existing" source="Systems/nav"/>
+    <terminal rt="7" id="nav" name="Navigation - GPS position solver and GPS/dead-reckoning fusion" status="existing" source="Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py" note="Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2)"/>
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
     <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before"/>
     <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
     <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address"/>
-    <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys"/>
+    <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py" note="Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object"/>
     <terminal rt="13" id="mfd" name="Multi-function display" status="new" source="Interfaces/userInterface/displays/mfd.py"/>
     <terminal rt="14" id="eicas" name="Engine indicating and crew alerting display" status="new" source="Interfaces/userInterface/displays"/>
     <terminal rt="15" id="radar_display" name="Weather radar display" status="new" source="Interfaces/userInterface/displays/radar"/>
@@ -321,20 +347,67 @@
     </message>
 
     <!-- ===== RT 12 flight management ===== -->
-    <message id="FMS_STATUS" rt="12" sa="15" dir="T" words="2" rate="5" title="Flight management status" replaces="fmsStatusRequest fmsStatusResponse flightManagementSystemStatus fms_modeChangeResponse">
+    <!-- ===== Navigation (RT 7): the GPS position solver and the GPS / dead-reckoning fusion (v1.2) ===== -->
+    <message id="NAV_SENSORS" rt="7" sa="13" dir="R" layout_of="PLANT_SENSORS" rate="50" title="Sensed flight state, for navigation">
+      <doc>PLANT_SENSORS relayed to navigation. Airspeed (as ground speed), heading and vertical speed drive the dead-reckoning prediction between GPS fixes, with the rates flightManagementSystem.update_flight_data derived.</doc>
+    </message>
+    <message id="NAV_GPS" rt="7" sa="14" dir="R" layout_of="PLANT_GPS" rate="1" title="GPS pseudoranges, for navigation">
+      <doc>PLANT_GPS relayed to navigation, which solves the position fix from it (globalPositionSystem.GPSReceiver._wls_solve, then _ecef_to_wgs84).</doc>
+    </message>
+    <message id="NAV_SOLUTION" rt="7" sa="15" dir="T" words="8" rate="10" title="Navigation solution">
+      <doc>The fused position (fuseData.NavDataFusion: one scalar Kalman filter per axis, predicted by dead reckoning every frame and corrected by each GPS fix). position_ssm and altitude_ssm are NO_COMPUTED_DATA until the first fix has been incorporated; after that the estimate is always computed, and gps_valid plus fix_age say how fresh the last fix is. gps_valid is 1 when the last GPS epoch gave a fix (at least 4 satellites, solvable geometry). clock_bias is the receiver clock bias the solver estimated.</doc>
+      <field name="position_ssm" word="0" bits="15-14" type="ssm" for="latitude" doc="Validity of latitude and longitude"/>
+      <field name="altitude_ssm" word="0" bits="13-12" type="ssm" for="altitude"/>
+      <field name="gps_valid" word="0" bits="11" type="bool"/>
+      <field name="spare_0" word="0" bits="10-8" type="spare"/>
+      <field name="sats_used" word="0" bits="7-4" type="uint" doc="Satellites in the last fix, 0-12"/>
+      <field name="spare_1" word="0" bits="3-0" type="spare"/>
+      <field name="latitude" word="1-2" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="WGS-84, north positive"/>
+      <field name="longitude" word="3-4" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999" doc="WGS-84, east positive"/>
+      <field name="altitude" word="5" bits="15-0" type="sint" lsb="1" units="ft" min="-32768" max="32767" doc="Height above the WGS-84 ellipsoid, as the GPS reports it"/>
+      <field name="fix_count" word="6" bits="15-8" type="uint" doc="Fixes incorporated since start, saturates at 255"/>
+      <field name="fix_age" word="6" bits="7-0" type="uint" doc="Seconds since the last fix, saturates at 255; 255 before the first"/>
+      <field name="clock_bias" word="7" bits="15-0" type="sint" lsb="1/100" units="us" min="-327.68" max="327.67" doc="Receiver clock bias from the solver"/>
+    </message>
+
+    <!-- Inputs the bus controller relays to the FMS (v1.2). -->
+    <message id="FMS_ATTITUDE_IN" rt="12" sa="12" dir="R" layout_of="FCS_ATTITUDE" rate="50" title="Measured attitude, from the FCS">
+      <doc>FCS_ATTITUDE relayed to the FMS: the attitude FMS_FLIGHT_DATA reports, and the "current" values an attitude command leaves alone. flightManagementSystem.update_flight_data copied the FCS attitude the same way.</doc>
+    </message>
+    <message id="FMS_SENSORS" rt="12" sa="13" dir="R" layout_of="PLANT_SENSORS" rate="50" title="Sensed flight state, for the FMS">
+      <doc>PLANT_SENSORS relayed to the FMS: airspeed, pressure altitude, vertical speed, heading, g and angle of attack for FMS_FLIGHT_DATA and the energy calculations.</doc>
+    </message>
+    <message id="FMS_NAV_SOLUTION" rt="12" sa="14" dir="R" layout_of="NAV_SOLUTION" rate="10" title="Navigation solution, for the FMS">
+      <doc>NAV_SOLUTION relayed to the FMS: the position and fused altitude FMS_FLIGHT_DATA reports (navService wrote the fused position into the FMS navigation dict).</doc>
+    </message>
+    <message id="FMS_STATUS" rt="12" sa="15" dir="T" words="3" rate="5" title="Flight management status" replaces="fmsStatusRequest fmsStatusResponse flightManagementSystemStatus fms_modeChangeResponse">
+      <doc>Word 0 and the top of word 1 are the terminal-state part every subsystem has. The rest is the FMS flight mode (fmsControl.set_mode) and the tactical systems it sets (fmsControl._update_tactical_systems).</doc>
       <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="spare_0" word="0" bits="11-8" type="spare"/>
-      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
-      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last FMS_MODE_CMD processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last FMS_MODE_CMD was rejected"/>
       <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
-      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="countermeasures" word="1" bits="13-12" type="enum" enum="countermeasures_state"/>
+      <field name="targeting" word="1" bits="11-10" type="enum" enum="targeting_state"/>
+      <field name="weapons" word="1" bits="9-8" type="enum" enum="weapons_state"/>
+      <field name="stealth_mode" word="1" bits="7" type="bool" doc="1 = stealth mode ON"/>
+      <field name="spare_1" word="1" bits="6-1" type="spare"/>
       <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+      <field name="flight_mode" word="2" bits="15-12" type="enum" enum="fms_flight_mode" doc="The flight mode in force; it selects the flight profile limits"/>
+      <field name="flight_mode_status" word="2" bits="11-8" type="enum" enum="cmd_status" doc="Outcome of the last FMS_FLIGHT_MODE_CMD"/>
+      <field name="flight_mode_cmd_seq" word="2" bits="7-0" type="uint" doc="cmd_seq of the last FMS_FLIGHT_MODE_CMD processed"/>
     </message>
     <message id="FMS_MODE_CMD" rt="12" sa="15" dir="R" words="1" rate="aperiodic" title="Flight management mode command" replaces="fmsCommand flightManagementSystemCommand fms_modeChangeRequest">
       <doc>fmsControl SET_MODE takes only the mode, so the legacy command_parameter word is gone.</doc>
       <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="spare_0" word="0" bits="11-8" type="spare"/>
       <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="FMS_FLIGHT_MODE_CMD" rt="12" sa="20" dir="R" words="1" rate="aperiodic" title="Flight mode command">
+      <doc>fmsControl.set_mode: NORMAL, COMBAT, STEALTH, TRAINING or EMERGENCY. Selects the flight profile limits that attitude commands and maneuvers are held to, and the tactical systems states in FMS_STATUS.</doc>
+      <field name="flight_mode" word="0" bits="15-12" type="enum" enum="fms_flight_mode"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint"/>
     </message>
     <message id="FMS_ATTITUDE_CMD" rt="12" sa="16" dir="R" words="7" rate="aperiodic" title="Attitude command" replaces="fms_attitudeUpdateRequest">
       <doc>Same parameters as fmsControl UPDATE_ATTITUDE. A field is applied only when its present bit is 1.</doc>
@@ -353,17 +426,26 @@
       <field name="pitch_rate" word="5" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
       <field name="yaw_rate" word="6" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
     </message>
-    <message id="FMS_ATTITUDE_STATUS" rt="12" sa="16" dir="T" words="5" rate="10" title="Attitude command status" replaces="fms_attitudeUpdateResponse">
+    <message id="FMS_ATTITUDE_STATUS" rt="12" sa="16" dir="T" words="8" rate="10" title="Attitude command status" replaces="fms_attitudeUpdateResponse">
+      <doc>The attitude the FMS holds after envelope limiting (fmsControl.update_attitude): the commanded values, absent ones taken from the measured attitude, each held to the flight profile of the mode in force. A *_limited bit is 1 while that limit is active (the Python's envelope_warnings). The SSMs are NO_COMPUTED_DATA until the first attitude command. The measured attitude is in FMS_FLIGHT_DATA.</doc>
       <field name="roll_ssm" word="0" bits="15-14" type="ssm" for="roll"/>
       <field name="pitch_ssm" word="0" bits="13-12" type="ssm" for="pitch"/>
       <field name="yaw_ssm" word="0" bits="11-10" type="ssm" for="yaw"/>
       <field name="spare_0" word="0" bits="9-8" type="spare"/>
       <field name="last_cmd_seq" word="0" bits="7-0" type="uint"/>
-      <field name="spare_1" word="1" bits="15-4" type="spare"/>
+      <field name="bank_limited" word="1" bits="15" type="bool" doc="Roll held to the profile's max_bank_angle (BANK_ANGLE)"/>
+      <field name="pitch_limited" word="1" bits="14" type="bool" doc="Pitch held to max_pitch_angle (PITCH_ANGLE)"/>
+      <field name="roll_rate_limited" word="1" bits="13" type="bool" doc="Roll rate held to 3 x turn_rate_limit (ROLL_RATE)"/>
+      <field name="pitch_rate_limited" word="1" bits="12" type="bool" doc="Pitch rate held to 2 x turn_rate_limit (PITCH_RATE)"/>
+      <field name="yaw_rate_limited" word="1" bits="11" type="bool" doc="Yaw rate held to turn_rate_limit (YAW_RATE)"/>
+      <field name="spare_1" word="1" bits="10-4" type="spare"/>
       <field name="status" word="1" bits="3-0" type="enum" enum="cmd_status" doc="Outcome of the last command"/>
       <field name="roll" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945"/>
       <field name="pitch" word="3" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
       <field name="yaw" word="4" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="True"/>
+      <field name="roll_rate" word="5" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
+      <field name="pitch_rate" word="6" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
+      <field name="yaw_rate" word="7" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-500" max="500"/>
     </message>
     <message id="FMS_NAV_UPDATE_CMD" rt="12" sa="17" dir="R" words="5" rate="aperiodic" title="Autopilot target command" replaces="fms_navigationUpdateRequest">
       <doc>The legacy update_type and parameter_count had no meaning in the code. This carries the targets of fmsControl SET_AUTOPILOT; a target is applied only when its present bit is 1.</doc>
@@ -378,11 +460,16 @@
       <field name="heading" word="3" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True"/>
       <field name="vertical_speed" word="4" bits="15-0" type="sint" lsb="1" units="ft/min" min="-30000" max="30000" doc="Climb positive"/>
     </message>
-    <message id="FMS_NAV_UPDATE_STATUS" rt="12" sa="17" dir="T" words="2" rate="5" title="Autopilot target status" replaces="fms_navigationUpdateResponse">
+    <message id="FMS_NAV_UPDATE_STATUS" rt="12" sa="17" dir="T" words="6" rate="5" title="Autopilot target status" replaces="fms_navigationUpdateResponse">
+      <doc>The targets in force after fmsControl.set_autopilot_targets limited them: altitude 0-60000 ft, airspeed 100-1000 kt, heading wrapped to 0-360, vertical speed -8000 .. 6000 ft/min. Before any command they are the Python's initial targets: 30000 ft, 450 kt, 0 deg, 0 ft/min.</doc>
       <field name="spare_0" word="0" bits="15-8" type="spare"/>
       <field name="last_cmd_seq" word="0" bits="7-0" type="uint"/>
       <field name="spare_1" word="1" bits="15-4" type="spare"/>
       <field name="status" word="1" bits="3-0" type="enum" enum="cmd_status" doc="Outcome of the last command"/>
+      <field name="altitude" word="2" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="60000"/>
+      <field name="airspeed" word="3" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="1500"/>
+      <field name="heading" word="4" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True"/>
+      <field name="vertical_speed" word="5" bits="15-0" type="sint" lsb="1" units="ft/min" min="-30000" max="30000" doc="Climb positive"/>
     </message>
     <message id="FMS_MANEUVER_CMD" rt="12" sa="18" dir="R" words="3" rate="aperiodic" title="Maneuver command" replaces="fms_maneuverRequest">
       <doc>Same maneuvers as fmsControl.execute_maneuver(). DIVE is the only one that takes a parameter.</doc>
@@ -398,6 +485,73 @@
       <field name="spare_1" word="1" bits="15-8" type="spare"/>
       <field name="maneuver" word="1" bits="7-4" type="enum" enum="maneuver" doc="The last maneuver commanded"/>
       <field name="status" word="1" bits="3-0" type="enum" enum="cmd_status" doc="Outcome of the last command"/>
+    </message>
+    <message id="FMS_FLIGHT_DATA" rt="12" sa="19" dir="T" words="21" rate="10" title="FMS flight data" replaces="fmsDataRequest fmsDataResponse">
+      <doc>What flightManagementSystem.get_flight_data() gave the displays: attitude from the FCS (FMS_ATTITUDE_IN), air data from the sensors (FMS_SENSORS), position and fused altitude from navigation (FMS_NAV_SOLUTION), and the values the Python derived - mach = airspeed / (661.4788 x 0.98); energy_state = min(100, (0.5 x 15000 x v^2 + 15000 x 9.81 x h) / 1e10 x 100) with v in m/s from airspeed and h in m from nav_altitude. ground_speed is the airspeed, since the plant has no wind. track and sideslip were never computed by the Python and are sent NO_COMPUTED_DATA. Replaces the FMS_DATA block of v1.</doc>
+      <field name="roll_ssm" word="0" bits="15-14" type="ssm" for="roll"/>
+      <field name="pitch_ssm" word="0" bits="13-12" type="ssm" for="pitch"/>
+      <field name="heading_ssm" word="0" bits="11-10" type="ssm" for="heading"/>
+      <field name="airspeed_ssm" word="0" bits="9-8" type="ssm" for="airspeed"/>
+      <field name="altitude_ssm" word="0" bits="7-6" type="ssm" for="altitude"/>
+      <field name="vertical_speed_ssm" word="0" bits="5-4" type="ssm" for="vertical_speed"/>
+      <field name="g_ssm" word="0" bits="3-2" type="ssm" for="g_force"/>
+      <field name="aoa_ssm" word="0" bits="1-0" type="ssm" for="angle_of_attack"/>
+      <field name="position_ssm" word="1" bits="15-14" type="ssm" for="latitude" doc="Validity of latitude and longitude"/>
+      <field name="nav_altitude_ssm" word="1" bits="13-12" type="ssm" for="nav_altitude"/>
+      <field name="mach_ssm" word="1" bits="11-10" type="ssm" for="mach"/>
+      <field name="ground_speed_ssm" word="1" bits="9-8" type="ssm" for="ground_speed"/>
+      <field name="track_ssm" word="1" bits="7-6" type="ssm" for="track"/>
+      <field name="sideslip_ssm" word="1" bits="5-4" type="ssm" for="sideslip"/>
+      <field name="energy_ssm" word="1" bits="3-2" type="ssm" for="energy_state"/>
+      <field name="spare_1" word="1" bits="1-0" type="spare"/>
+      <field name="flight_mode" word="2" bits="15-12" type="enum" enum="fms_flight_mode" doc="The legacy status.mode the PFD showed"/>
+      <field name="spare_2" word="2" bits="11-0" type="spare"/>
+      <field name="latitude" word="3-4" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="WGS-84, north positive"/>
+      <field name="longitude" word="5-6" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999" doc="WGS-84, east positive"/>
+      <field name="altitude" word="7" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Pressure altitude from the sensors"/>
+      <field name="nav_altitude" word="8" bits="15-0" type="sint" lsb="1" units="ft" min="-32768" max="32767" doc="The navigation solution's fused altitude: what the Python's navigation.altitude was"/>
+      <field name="airspeed" word="9" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="1500" doc="Indicated airspeed"/>
+      <field name="mach" word="10" bits="15-0" type="uint" lsb="1/1000" units="mach" min="0" max="5"/>
+      <field name="ground_speed" word="11" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="1500"/>
+      <field name="vertical_speed" word="12" bits="15-0" type="sint" lsb="1" units="ft/min" min="-30000" max="30000" doc="Climb positive"/>
+      <field name="heading" word="13" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True"/>
+      <field name="track" word="14" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True ground track"/>
+      <field name="roll" word="15" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="Right wing down positive"/>
+      <field name="pitch" word="16" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90" doc="Nose up positive"/>
+      <field name="g_force" word="17" bits="15-0" type="sint" lsb="1/1000" units="g" min="-20" max="20"/>
+      <field name="angle_of_attack" word="18" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
+      <field name="sideslip" word="19" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
+      <field name="energy_state" word="20" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="The Python's tactical energy_state"/>
+    </message>
+    <message id="FMS_CONTROL_CMD" rt="12" sa="21" dir="R" words="2" rate="aperiodic" title="Thrust and landing gear command">
+      <doc>fmsControl SET_THRUST and SET_LANDING_GEAR, which message_schemas.py never carried. Each part is applied only when its present bit is 1. Gear accepts UP and DOWN only.</doc>
+      <field name="thrust_present" word="0" bits="15" type="bool"/>
+      <field name="gear_present" word="0" bits="14" type="bool"/>
+      <field name="gear" word="0" bits="13-12" type="enum" enum="gear_position" doc="UP or DOWN; anything else is REJECTED_INVALID"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="thrust" word="1" bits="15-0" type="uint" lsb="1/10000" min="0" max="1" doc="Requested thrust, 0-1 (fmsControl.set_thrust thrust_level)"/>
+    </message>
+    <message id="FMS_CONTROL_STATUS" rt="12" sa="21" dir="T" words="3" rate="5" title="Thrust and landing gear status">
+      <doc>fmsControl.set_thrust holds thrust to 0.1 .. 0.9 (1.0 with the afterburner lit), sets throttle_position = int(thrust x 100), lights the afterburner above 0.9 and puts it out below 0.85. Before any command: thrust 0.5, throttle 50, afterburner off, gear UP.</doc>
+      <field name="spare_0" word="0" bits="15-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint"/>
+      <field name="afterburner" word="1" bits="15" type="bool"/>
+      <field name="gear" word="1" bits="14-13" type="enum" enum="gear_position" doc="The commanded gear position"/>
+      <field name="throttle_position" word="1" bits="12-6" type="uint" doc="Percent, 0-100: int(thrust x 100)"/>
+      <field name="spare_1" word="1" bits="5-4" type="spare"/>
+      <field name="status" word="1" bits="3-0" type="enum" enum="cmd_status" doc="Outcome of the last command"/>
+      <field name="thrust" word="2" bits="15-0" type="uint" lsb="1/10000" min="0" max="1" doc="Thrust in force, 0-1"/>
+    </message>
+    <message id="FMS_ENERGY" rt="12" sa="22" dir="T" words="6" rate="1" title="Energy maneuverability">
+      <doc>fmsControl.calculate_energy_maneuverability(), from nav_altitude, airspeed, angle of attack and the flight profile's engine_power and max_g_force: specific excess power Ps = v (T - D) / W with T = engine_power x 150000 N, D = 0.5 x 1.225 e^(-h/10000) v^2 (0.02 + |aoa|/100) x 30, W = 15000 x 9.81; sustained turn rate = deg(g sqrt((T/W)^2 - 1) / v) when T/W is above 1, else 0; instantaneous turn rate = deg(g sqrt(max_g^2 - 1) / v); climb = Ps x 196.85 ft/min; energy_advantage = 10 Ps. v is at least 1 m/s in the turn rates.</doc>
+      <field name="ssm" word="0" bits="15-14" type="ssm" for="specific_excess_power" doc="Validity of all five values"/>
+      <field name="spare_0" word="0" bits="13-0" type="spare"/>
+      <field name="specific_excess_power" word="1" bits="15-0" type="sint" lsb="1/100" units="m/s" min="-327.68" max="327.67"/>
+      <field name="max_sustained_turn_rate" word="2" bits="15-0" type="uint" lsb="1/10" units="deg/s" min="0" max="6553.5"/>
+      <field name="max_instantaneous_turn_rate" word="3" bits="15-0" type="uint" lsb="1/10" units="deg/s" min="0" max="6553.5"/>
+      <field name="max_climb_rate" word="4" bits="15-0" type="sint" lsb="2" units="ft/min" min="-65536" max="65534"/>
+      <field name="energy_advantage" word="5" bits="15-0" type="sint" lsb="1/10" min="-3276.8" max="3276.7" doc="10 x specific_excess_power"/>
     </message>
 
     <!-- ===== Displays: one terminal each; each keeps its old rtAddressConfig.xml subaddress ===== -->
@@ -537,6 +691,23 @@
       <field name="flaps" word="10" bits="15-0" type="uint" lsb="1/100" units="deg" min="0" max="30" doc="fmsControl flaps range"/>
       <field name="terrain_clearance" word="11" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Height above terrain. From the plant until the radar terminal publishes it"/>
     </message>
+    <message id="PLANT_GPS" rt="27" sa="2" dir="T" words="25" rate="1" title="GPS pseudoranges from the plant">
+      <doc>What the simulated GPS receiver measures each epoch: for every satellite of the 12-satellite constellation of globalPositionSystem._build_constellation() that is at least 5 degrees above the horizon, pseudorange = geometric range + c x (receiver clock bias - satellite clock bias) + measurement noise (3 m, 1 sigma). The noise is drawn once per epoch here, in the plant; the solver in the navigation terminal is deterministic. epoch increments with each new set; a pseudorange whose satellite bit is 0 in visible_mask is not valid.</doc>
+      <field name="epoch" word="0" bits="15-12" type="uint" doc="Increments (mod 16) with every new measurement set"/>
+      <field name="visible_mask" word="0" bits="11-0" type="uint" doc="Bit n-1 = satellite n (1-12) has a valid pseudorange"/>
+      <field name="pseudorange_1" word="1-2" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_2" word="3-4" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_3" word="5-6" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_4" word="7-8" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_5" word="9-10" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_6" word="11-12" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_7" word="13-14" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_8" word="15-16" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_9" word="17-18" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_10" word="19-20" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_11" word="21-22" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+      <field name="pseudorange_12" word="23-24" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
+    </message>
     <message id="FCS_SENSORS" rt="5" sa="13" dir="R" words="12" rate="50" title="Sensed flight state as received by the flight control computer" layout_of="PLANT_SENSORS">
       <doc>Relayed by the bus controller from PLANT_SENSORS in the same minor frame (relays section). The FCS computes FCS_ATTITUDE, GCAS and the performance envelope from it.</doc>
     </message>
@@ -574,10 +745,16 @@
 
   <!-- RT-to-RT transfers the bus controller performs: in the minor frame where it polls `from`,
        it writes the same words into `to` straight away. The two must share a layout (one is
-       layout_of the other); `from` transmits periodically, `to` receives. This is how a producer's
-       data reaches its consumers, and how a display's command reaches the terminal it is for. -->
+       layout_of the other); `from` transmits periodically, `to` receives. A producer may feed
+       several consumers (one relay each, at most four). This is how a producer's data reaches its
+       consumers, and how a display's command reaches the terminal it is for. -->
   <relays>
     <relay from="PLANT_SENSORS" to="FCS_SENSORS"/>
+    <relay from="PLANT_SENSORS" to="FMS_SENSORS"/>
+    <relay from="PLANT_SENSORS" to="NAV_SENSORS"/>
+    <relay from="PLANT_GPS" to="NAV_GPS"/>
+    <relay from="FCS_ATTITUDE" to="FMS_ATTITUDE_IN"/>
+    <relay from="NAV_SOLUTION" to="FMS_NAV_SOLUTION"/>
     <relay from="MFD_RDR_WX_CMD" to="RDR_WX_MODE_CMD"/>
     <relay from="MFD_RDR_TFR_CMD" to="RDR_TFR_MODE_CMD"/>
     <relay from="MFD_RDR_SAR_CMD" to="RDR_SAR_MODE_CMD"/>
@@ -586,7 +763,8 @@
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
-       v1 fixes the addresses and rates; the payload layouts come in v2. -->
+       v1 fixes the addresses and rates; the payload layouts come in v2. (The FMS_DATA block of v1
+       became the FMS_FLIGHT_DATA message in v1.2: the flight data fits in one message.) -->
   <blocks>
     <block id="RDR_WX_VIL" rt="9" desc_sa="6" seg_sa="7" rate="10" title="Weather radar VIL" payload="TBD-v2" replaces="weather_radarVILResponse DISPLAY_VIL_DATA weather_radarData radarDataRequest radarDataResponse"/>
     <block id="RDR_WX_PRECIP" rt="9" desc_sa="8" seg_sa="9" rate="10" title="Weather radar precipitation" payload="TBD-v2" replaces="weather_radarPrecipitationResponse weather_radarData radarDataResponse"/>
@@ -594,7 +772,6 @@
     <block id="RDR_AEWC_SECTOR" rt="9" desc_sa="12" seg_sa="13" rate="10" title="AEWC sector scan" payload="TBD-v2" replaces="aewc_radarSectorScanResponse aewc_radarData"/>
     <block id="RDR_TFR_ELEVATION" rt="9" desc_sa="14" seg_sa="15" rate="10" title="TFR elevation profile" payload="TBD-v2" replaces="tfr_radarElevationDataResponse tfr_radarData"/>
     <block id="RDR_SAR_IMAGE" rt="9" desc_sa="16" seg_sa="17" rate="1" title="SAR image" payload="TBD-v2" replaces="sar_radarImageResponse sar_radarData"/>
-    <block id="FMS_DATA" rt="12" desc_sa="19" seg_sa="20" rate="10" title="FMS flight data" payload="TBD-v2" replaces="fmsDataRequest fmsDataResponse"/>
   </blocks>
 
   <mode_codes>

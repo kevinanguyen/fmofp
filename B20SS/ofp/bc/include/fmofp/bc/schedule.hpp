@@ -27,17 +27,26 @@ constexpr std::uint32_t kUsPerWord = 20;
 constexpr std::uint32_t kUsPerMessageGap = 12;
 constexpr std::uint32_t kMinorFrameBudgetUs = 10 * 1000;
 
+// A producer may be relayed to this many consumers (icd_tool.py MAX_RELAYS_PER_SOURCE).
+constexpr std::size_t kMaxRelaysPerMessage = 4;
+
+// One consumer of a relayed transmit message: the terminal and subaddress
+// that receive the same words straight after the poll.
+struct RelayTarget {
+    std::uint8_t rt{0};
+    std::uint8_t subaddress{0};
+};
+
 struct ScheduledMessage {
     std::uint8_t rt{0};
     std::uint8_t subaddress{0};
     bool transmit{false};  // T: the terminal sends; R: the BC sends it data
     std::uint8_t words{0};
     std::uint8_t rate_hz{0};  // 50, 10, 5 or 1
-    // For a transmit message that is relayed (ICD relays section): the
-    // terminal and subaddress that receive the same words straight after the
-    // poll. relay_rt 0 means no relay (RT 0 is reserved and never a consumer).
-    std::uint8_t relay_rt{0};
-    std::uint8_t relay_subaddress{0};
+    // For a transmit message that is relayed (ICD relays section): its
+    // consumers, relay_count of them.
+    std::array<RelayTarget, kMaxRelaysPerMessage> relays{};
+    std::uint8_t relay_count{0};
 };
 
 struct Slot {
@@ -45,10 +54,10 @@ struct Slot {
     std::uint8_t subaddress{0};
     bool transmit{false};
     std::uint8_t words{0};
-    std::uint8_t relay_rt{0};
-    std::uint8_t relay_subaddress{0};
+    std::array<RelayTarget, kMaxRelaysPerMessage> relays{};
+    std::uint8_t relay_count{0};
 
-    [[nodiscard]] constexpr bool has_relay() const noexcept { return relay_rt != 0U; }
+    [[nodiscard]] constexpr bool has_relay() const noexcept { return relay_count != 0U; }
 };
 
 struct FrameSlots {

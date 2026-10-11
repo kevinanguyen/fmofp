@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.1 (DRAFT, 2026-10-10). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.2 (DRAFT, 2026-10-11). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -13,12 +13,12 @@
 | 4 | `enviornmentalcontrolsystem` | Environmental control system | existing | Systems/enviornmentalControlSystem | id keeps the repo's spelling |
 | 5 | `flightcontrolsys` | Flight control - FCC, GCAS, performance monitor | existing | Systems/flightControlSys |  |
 | 6 | `missionplanning` | Mission planning | existing | Systems/missionPlanning/missionService.py |  |
-| 7 | `nav` | Navigation - GPS, INS, fusion | existing | Systems/nav |  |
+| 7 | `nav` | Navigation - GPS position solver and GPS/dead-reckoning fusion | existing | Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py | Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2) |
 | 8 | `powermanagement` | Power management | existing | Systems/powerManagement |  |
 | 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before |
 | 10 | `sensormanagement` | Sensor management | existing | Systems/sensorManagement |  |
 | 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address |
-| 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys |  |
+| 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py | Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object |
 | 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py |  |
 | 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays |  |
 | 15 | `radar_display` | Weather radar display | new | Interfaces/userInterface/displays/radar |  |
@@ -46,6 +46,9 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`FCS_SENSORS`](#fcs_sensors) | 5 | 13 | R | 12 | 50 | Sensed flight state as received by the flight control computer | DRAFT |
 | [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | 5 | 14 | T | 4 | 5 | Ground collision avoidance alerts | DRAFT |
 | [`FCS_PERF_STATUS`](#fcs_perf_status) | 5 | 15 | T | 4 | 1 | Flight envelope monitoring | DRAFT |
+| [`NAV_SENSORS`](#nav_sensors) | 7 | 13 | R | 12 | 50 | Sensed flight state, for navigation | DRAFT |
+| [`NAV_GPS`](#nav_gps) | 7 | 14 | R | 25 | 1 | GPS pseudoranges, for navigation | DRAFT |
+| [`NAV_SOLUTION`](#nav_solution) | 7 | 15 | T | 8 | 10 | Navigation solution | DRAFT |
 | [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd) | 9 | 1 | R | 3 | aperiodic | Weather radar mode command | DRAFT |
 | [`RDR_WX_STATUS`](#rdr_wx_status) | 9 | 1 | T | 2 | 5 | Weather radar status | DRAFT |
 | [`RDR_TFR_MODE_CMD`](#rdr_tfr_mode_cmd) | 9 | 2 | R | 2 | aperiodic | Terrain-following radar mode command | DRAFT |
@@ -58,14 +61,22 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`RDR_AEWC_STATUS`](#rdr_aewc_status) | 9 | 5 | T | 2 | 5 | AEWC radar status | DRAFT |
 | [`DSP_PFD_MODE_CMD`](#dsp_pfd_mode_cmd) | 11 | 11 | R | 1 | aperiodic | Primary flight display mode command | DRAFT |
 | [`DSP_PFD_STATUS`](#dsp_pfd_status) | 11 | 11 | T | 2 | 1 | Primary flight display status | DRAFT |
+| [`FMS_ATTITUDE_IN`](#fms_attitude_in) | 12 | 12 | R | 4 | 50 | Measured attitude, from the FCS | DRAFT |
+| [`FMS_SENSORS`](#fms_sensors) | 12 | 13 | R | 12 | 50 | Sensed flight state, for the FMS | DRAFT |
+| [`FMS_NAV_SOLUTION`](#fms_nav_solution) | 12 | 14 | R | 8 | 10 | Navigation solution, for the FMS | DRAFT |
 | [`FMS_MODE_CMD`](#fms_mode_cmd) | 12 | 15 | R | 1 | aperiodic | Flight management mode command | DRAFT |
-| [`FMS_STATUS`](#fms_status) | 12 | 15 | T | 2 | 5 | Flight management status | DRAFT |
+| [`FMS_STATUS`](#fms_status) | 12 | 15 | T | 3 | 5 | Flight management status | DRAFT |
 | [`FMS_ATTITUDE_CMD`](#fms_attitude_cmd) | 12 | 16 | R | 7 | aperiodic | Attitude command | DRAFT |
-| [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | 12 | 16 | T | 5 | 10 | Attitude command status | DRAFT |
+| [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | 12 | 16 | T | 8 | 10 | Attitude command status | DRAFT |
 | [`FMS_NAV_UPDATE_CMD`](#fms_nav_update_cmd) | 12 | 17 | R | 5 | aperiodic | Autopilot target command | DRAFT |
-| [`FMS_NAV_UPDATE_STATUS`](#fms_nav_update_status) | 12 | 17 | T | 2 | 5 | Autopilot target status | DRAFT |
+| [`FMS_NAV_UPDATE_STATUS`](#fms_nav_update_status) | 12 | 17 | T | 6 | 5 | Autopilot target status | DRAFT |
 | [`FMS_MANEUVER_CMD`](#fms_maneuver_cmd) | 12 | 18 | R | 3 | aperiodic | Maneuver command | DRAFT |
 | [`FMS_MANEUVER_STATUS`](#fms_maneuver_status) | 12 | 18 | T | 2 | 5 | Maneuver status | DRAFT |
+| [`FMS_FLIGHT_DATA`](#fms_flight_data) | 12 | 19 | T | 21 | 10 | FMS flight data | DRAFT |
+| [`FMS_FLIGHT_MODE_CMD`](#fms_flight_mode_cmd) | 12 | 20 | R | 1 | aperiodic | Flight mode command | DRAFT |
+| [`FMS_CONTROL_CMD`](#fms_control_cmd) | 12 | 21 | R | 2 | aperiodic | Thrust and landing gear command | DRAFT |
+| [`FMS_CONTROL_STATUS`](#fms_control_status) | 12 | 21 | T | 3 | 5 | Thrust and landing gear status | DRAFT |
+| [`FMS_ENERGY`](#fms_energy) | 12 | 22 | T | 6 | 1 | Energy maneuverability | DRAFT |
 | [`DSP_MFD_MODE_CMD`](#dsp_mfd_mode_cmd) | 13 | 12 | R | 1 | aperiodic | Multi-function display mode command | DRAFT |
 | [`DSP_MFD_STATUS`](#dsp_mfd_status) | 13 | 12 | T | 2 | 1 | Multi-function display status | DRAFT |
 | [`MFD_RDR_WX_CMD`](#mfd_rdr_wx_cmd) | 13 | 20 | T | 3 | 10 | MFD command to the weather radar | PROPOSED |
@@ -84,6 +95,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`DSP_HUD_MODE_CMD`](#dsp_hud_mode_cmd) | 18 | 17 | R | 1 | aperiodic | Head-up display mode command | DRAFT |
 | [`DSP_HUD_STATUS`](#dsp_hud_status) | 18 | 17 | T | 2 | 1 | Head-up display status | DRAFT |
 | [`PLANT_SENSORS`](#plant_sensors) | 27 | 1 | T | 12 | 50 | Sensed flight state from the plant | DRAFT |
+| [`PLANT_GPS`](#plant_gps) | 27 | 2 | T | 25 | 1 | GPS pseudoranges from the plant | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
 | [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
 
@@ -99,7 +111,6 @@ Layout of the descriptor and segment messages is in README.md. Payload layouts c
 | `RDR_AEWC_SECTOR` | 9 | 12 | 13 | 10 | AEWC sector scan | TBD-v2 |
 | `RDR_TFR_ELEVATION` | 9 | 14 | 15 | 10 | TFR elevation profile | TBD-v2 |
 | `RDR_SAR_IMAGE` | 9 | 16 | 17 | 1 | SAR image | TBD-v2 |
-| `FMS_DATA` | 12 | 19 | 20 | 10 | FMS flight data | TBD-v2 |
 
 ## Relays (RT-to-RT transfers)
 
@@ -108,6 +119,11 @@ In the minor frame where the bus controller polls `from`, it writes the same wor
 | From | To | Words | Rate (Hz) |
 |---|---|---|---|
 | [`PLANT_SENSORS`](#plant_sensors) | [`FCS_SENSORS`](#fcs_sensors) | 12 | 50 |
+| [`PLANT_SENSORS`](#plant_sensors) | [`FMS_SENSORS`](#fms_sensors) | 12 | 50 |
+| [`PLANT_SENSORS`](#plant_sensors) | [`NAV_SENSORS`](#nav_sensors) | 12 | 50 |
+| [`PLANT_GPS`](#plant_gps) | [`NAV_GPS`](#nav_gps) | 25 | 1 |
+| [`FCS_ATTITUDE`](#fcs_attitude) | [`FMS_ATTITUDE_IN`](#fms_attitude_in) | 4 | 50 |
+| [`NAV_SOLUTION`](#nav_solution) | [`FMS_NAV_SOLUTION`](#fms_nav_solution) | 8 | 10 |
 | [`MFD_RDR_WX_CMD`](#mfd_rdr_wx_cmd) | [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd) | 3 | 10 |
 | [`MFD_RDR_TFR_CMD`](#mfd_rdr_tfr_cmd) | [`RDR_TFR_MODE_CMD`](#rdr_tfr_mode_cmd) | 2 | 10 |
 | [`MFD_RDR_SAR_CMD`](#mfd_rdr_sar_cmd) | [`RDR_SAR_MODE_CMD`](#rdr_sar_mode_cmd) | 2 | 10 |
@@ -310,6 +326,50 @@ Overall ground collision avoidance state (groundCollisionAvoidanceSys.get_data: 
 | 1 | ARMED |  | Running, no alert |
 | 2 | CAUTION |  | Severity-2 alert active (ALT LOW) |
 | 3 | WARNING |  | Severity-1 alert active (PULLUP, SINK RATE or TERRAIN) |
+
+### `fms_flight_mode` (4 bits)
+
+FMS flight mode (fmsControl.available_modes), numbered as flightManagementSystem.send_fms_data did. Each selects a flight profile - max bank 30/80/45/60/90 deg, max pitch 20/60/30/45/85 deg, max g 2.5/9/5/7/9.5, max AoA 15/25/20/22/30 deg, engine power 0.7/1.0/0.6/0.9/1.0, turn rate limit 3/20/5/15/25 deg/s - for NORMAL/COMBAT/STEALTH/TRAINING/EMERGENCY
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NORMAL |  |  |
+| 1 | COMBAT |  |  |
+| 2 | STEALTH |  |  |
+| 3 | TRAINING |  |  |
+| 4 | EMERGENCY |  |  |
+
+### `countermeasures_state` (2 bits)
+
+fmsControl tactical_systems countermeasures, set by the flight mode
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | STANDBY |  |  |
+| 1 | READY |  |  |
+| 2 | PASSIVE |  |  |
+| 3 | ACTIVE |  |  |
+
+### `targeting_state` (2 bits)
+
+fmsControl tactical_systems targeting, set by the flight mode
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | STANDBY |  |  |
+| 1 | ACTIVE |  |  |
+| 2 | PASSIVE |  |  |
+| 3 | READY |  |  |
+
+### `weapons_state` (2 bits)
+
+fmsControl tactical_systems weapons, set by the flight mode
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | SAFE |  |  |
+| 1 | ARMED |  |  |
+| 2 | READY |  |  |
 
 ## Messages
 
@@ -590,9 +650,72 @@ Replaces: `flight_control_systemOrientationDataRequest`, `flight_control_systemO
 | 2 | 15-0 | `pitch` | sint | LSB 180/32768 deg, range -90 to 90 | Nose up positive |
 | 3 | 15-0 | `yaw` | sint | LSB 180/32768 deg, range -180 to 179.9945 | True heading as -180..+180, nose right positive |
 
+### NAV_SENSORS
+
+**Sensed flight state, for navigation** — RT 7 · SA 13 · receive (bus to terminal) · 12 words · 50 Hz
+
+PLANT_SENSORS relayed to navigation. Airspeed (as ground speed), heading and vertical speed drive the dead-reckoning prediction between GPS fixes, with the rates flightManagementSystem.update_flight_data derived.
+
+Same layout as [`PLANT_SENSORS`](#plant_sensors).
+
+### NAV_GPS
+
+**GPS pseudoranges, for navigation** — RT 7 · SA 14 · receive (bus to terminal) · 25 words · 1 Hz
+
+PLANT_GPS relayed to navigation, which solves the position fix from it (globalPositionSystem.GPSReceiver._wls_solve, then _ecef_to_wgs84).
+
+Same layout as [`PLANT_GPS`](#plant_gps).
+
+### NAV_SOLUTION
+
+**Navigation solution** — RT 7 · SA 15 · transmit (terminal to bus) · 8 words · 10 Hz
+
+The fused position (fuseData.NavDataFusion: one scalar Kalman filter per axis, predicted by dead reckoning every frame and corrected by each GPS fix). position_ssm and altitude_ssm are NO_COMPUTED_DATA until the first fix has been incorporated; after that the estimate is always computed, and gps_valid plus fix_age say how fresh the last fix is. gps_valid is 1 when the last GPS epoch gave a fix (at least 4 satellites, solvable geometry). clock_bias is the receiver clock bias the solver estimated.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `position_ssm` | ssm | validity of `latitude` | Validity of latitude and longitude |
+| 0 | 13-12 | `altitude_ssm` | ssm | validity of `altitude` |  |
+| 0 | 11 | `gps_valid` | bool |  |  |
+| 0 | 10-8 | `spare_0` | spare |  |  |
+| 0 | 7-4 | `sats_used` | uint | raw counts | Satellites in the last fix, 0-12 |
+| 0 | 3-0 | `spare_1` | spare |  |  |
+| 1-2 | 31-0 | `latitude` | sint | LSB 180/2147483648 deg, range -90 to 90 | WGS-84, north positive |
+| 3-4 | 31-0 | `longitude` | sint | LSB 180/2147483648 deg, range -180 to 179.9999999 | WGS-84, east positive |
+| 5 | 15-0 | `altitude` | sint | LSB 1 ft, range -32768 to 32767 | Height above the WGS-84 ellipsoid, as the GPS reports it |
+| 6 | 15-8 | `fix_count` | uint | raw counts | Fixes incorporated since start, saturates at 255 |
+| 6 | 7-0 | `fix_age` | uint | raw counts | Seconds since the last fix, saturates at 255; 255 before the first |
+| 7 | 15-0 | `clock_bias` | sint | LSB 1/100 us, range -327.68 to 327.67 | Receiver clock bias from the solver |
+
+### FMS_ATTITUDE_IN
+
+**Measured attitude, from the FCS** — RT 12 · SA 12 · receive (bus to terminal) · 4 words · 50 Hz
+
+FCS_ATTITUDE relayed to the FMS: the attitude FMS_FLIGHT_DATA reports, and the "current" values an attitude command leaves alone. flightManagementSystem.update_flight_data copied the FCS attitude the same way.
+
+Same layout as [`FCS_ATTITUDE`](#fcs_attitude).
+
+### FMS_SENSORS
+
+**Sensed flight state, for the FMS** — RT 12 · SA 13 · receive (bus to terminal) · 12 words · 50 Hz
+
+PLANT_SENSORS relayed to the FMS: airspeed, pressure altitude, vertical speed, heading, g and angle of attack for FMS_FLIGHT_DATA and the energy calculations.
+
+Same layout as [`PLANT_SENSORS`](#plant_sensors).
+
+### FMS_NAV_SOLUTION
+
+**Navigation solution, for the FMS** — RT 12 · SA 14 · receive (bus to terminal) · 8 words · 10 Hz
+
+NAV_SOLUTION relayed to the FMS: the position and fused altitude FMS_FLIGHT_DATA reports (navService wrote the fused position into the FMS navigation dict).
+
+Same layout as [`NAV_SOLUTION`](#nav_solution).
+
 ### FMS_STATUS
 
-**Flight management status** — RT 12 · SA 15 · transmit (terminal to bus) · 2 words · 5 Hz
+**Flight management status** — RT 12 · SA 15 · transmit (terminal to bus) · 3 words · 5 Hz
+
+Word 0 and the top of word 1 are the terminal-state part every subsystem has. The rest is the FMS flight mode (fmsControl.set_mode) and the tactical systems it sets (fmsControl._update_tactical_systems).
 
 Replaces: `fmsStatusRequest`, `fmsStatusResponse`, `flightManagementSystemStatus`, `fms_modeChangeResponse`
 
@@ -600,11 +723,18 @@ Replaces: `fmsStatusRequest`, `fmsStatusResponse`, `flightManagementSystemStatus
 |---|---|---|---|---|---|
 | 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
 | 0 | 11-8 | `spare_0` | spare |  |  |
-| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
-| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last FMS_MODE_CMD processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last FMS_MODE_CMD was rejected |
 | 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
-| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 13-12 | `countermeasures` | enum | enum `countermeasures_state` |  |
+| 1 | 11-10 | `targeting` | enum | enum `targeting_state` |  |
+| 1 | 9-8 | `weapons` | enum | enum `weapons_state` |  |
+| 1 | 7 | `stealth_mode` | bool |  | 1 = stealth mode ON |
+| 1 | 6-1 | `spare_1` | spare |  |  |
 | 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+| 2 | 15-12 | `flight_mode` | enum | enum `fms_flight_mode` | The flight mode in force; it selects the flight profile limits |
+| 2 | 11-8 | `flight_mode_status` | enum | enum `cmd_status` | Outcome of the last FMS_FLIGHT_MODE_CMD |
+| 2 | 7-0 | `flight_mode_cmd_seq` | uint | raw counts | cmd_seq of the last FMS_FLIGHT_MODE_CMD processed |
 
 ### FMS_MODE_CMD
 
@@ -619,6 +749,18 @@ Replaces: `fmsCommand`, `flightManagementSystemCommand`, `fms_modeChangeRequest`
 | 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
 | 0 | 11-8 | `spare_0` | spare |  |  |
 | 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### FMS_FLIGHT_MODE_CMD
+
+**Flight mode command** — RT 12 · SA 20 · receive (bus to terminal) · 1 words · aperiodic
+
+fmsControl.set_mode: NORMAL, COMBAT, STEALTH, TRAINING or EMERGENCY. Selects the flight profile limits that attitude commands and maneuvers are held to, and the tactical systems states in FMS_STATUS.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `flight_mode` | enum | enum `fms_flight_mode` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts |  |
 
 ### FMS_ATTITUDE_CMD
 
@@ -647,7 +789,9 @@ Replaces: `fms_attitudeUpdateRequest`
 
 ### FMS_ATTITUDE_STATUS
 
-**Attitude command status** — RT 12 · SA 16 · transmit (terminal to bus) · 5 words · 10 Hz
+**Attitude command status** — RT 12 · SA 16 · transmit (terminal to bus) · 8 words · 10 Hz
+
+The attitude the FMS holds after envelope limiting (fmsControl.update_attitude): the commanded values, absent ones taken from the measured attitude, each held to the flight profile of the mode in force. A *_limited bit is 1 while that limit is active (the Python's envelope_warnings). The SSMs are NO_COMPUTED_DATA until the first attitude command. The measured attitude is in FMS_FLIGHT_DATA.
 
 Replaces: `fms_attitudeUpdateResponse`
 
@@ -658,11 +802,19 @@ Replaces: `fms_attitudeUpdateResponse`
 | 0 | 11-10 | `yaw_ssm` | ssm | validity of `yaw` |  |
 | 0 | 9-8 | `spare_0` | spare |  |  |
 | 0 | 7-0 | `last_cmd_seq` | uint | raw counts |  |
-| 1 | 15-4 | `spare_1` | spare |  |  |
+| 1 | 15 | `bank_limited` | bool |  | Roll held to the profile's max_bank_angle (BANK_ANGLE) |
+| 1 | 14 | `pitch_limited` | bool |  | Pitch held to max_pitch_angle (PITCH_ANGLE) |
+| 1 | 13 | `roll_rate_limited` | bool |  | Roll rate held to 3 x turn_rate_limit (ROLL_RATE) |
+| 1 | 12 | `pitch_rate_limited` | bool |  | Pitch rate held to 2 x turn_rate_limit (PITCH_RATE) |
+| 1 | 11 | `yaw_rate_limited` | bool |  | Yaw rate held to turn_rate_limit (YAW_RATE) |
+| 1 | 10-4 | `spare_1` | spare |  |  |
 | 1 | 3-0 | `status` | enum | enum `cmd_status` | Outcome of the last command |
 | 2 | 15-0 | `roll` | sint | LSB 180/32768 deg, range -180 to 179.9945 |  |
 | 3 | 15-0 | `pitch` | sint | LSB 180/32768 deg, range -90 to 90 |  |
 | 4 | 15-0 | `yaw` | sint | LSB 180/32768 deg, range -180 to 179.9945 | True |
+| 5 | 15-0 | `roll_rate` | sint | LSB 1/64 deg/s, range -500 to 500 |  |
+| 6 | 15-0 | `pitch_rate` | sint | LSB 1/64 deg/s, range -500 to 500 |  |
+| 7 | 15-0 | `yaw_rate` | sint | LSB 1/64 deg/s, range -500 to 500 |  |
 
 ### FMS_NAV_UPDATE_CMD
 
@@ -687,7 +839,9 @@ Replaces: `fms_navigationUpdateRequest`
 
 ### FMS_NAV_UPDATE_STATUS
 
-**Autopilot target status** — RT 12 · SA 17 · transmit (terminal to bus) · 2 words · 5 Hz
+**Autopilot target status** — RT 12 · SA 17 · transmit (terminal to bus) · 6 words · 5 Hz
+
+The targets in force after fmsControl.set_autopilot_targets limited them: altitude 0-60000 ft, airspeed 100-1000 kt, heading wrapped to 0-360, vertical speed -8000 .. 6000 ft/min. Before any command they are the Python's initial targets: 30000 ft, 450 kt, 0 deg, 0 ft/min.
 
 Replaces: `fms_navigationUpdateResponse`
 
@@ -697,6 +851,10 @@ Replaces: `fms_navigationUpdateResponse`
 | 0 | 7-0 | `last_cmd_seq` | uint | raw counts |  |
 | 1 | 15-4 | `spare_1` | spare |  |  |
 | 1 | 3-0 | `status` | enum | enum `cmd_status` | Outcome of the last command |
+| 2 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 60000 |  |
+| 3 | 15-0 | `airspeed` | uint | LSB 1/10 kt, range 0 to 1500 |  |
+| 4 | 15-0 | `heading` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True |
+| 5 | 15-0 | `vertical_speed` | sint | LSB 1 ft/min, range -30000 to 30000 | Climb positive |
 
 ### FMS_MANEUVER_CMD
 
@@ -727,6 +885,99 @@ Replaces: `fms_maneuverResponse`
 | 1 | 15-8 | `spare_1` | spare |  |  |
 | 1 | 7-4 | `maneuver` | enum | enum `maneuver` | The last maneuver commanded |
 | 1 | 3-0 | `status` | enum | enum `cmd_status` | Outcome of the last command |
+
+### FMS_FLIGHT_DATA
+
+**FMS flight data** — RT 12 · SA 19 · transmit (terminal to bus) · 21 words · 10 Hz
+
+What flightManagementSystem.get_flight_data() gave the displays: attitude from the FCS (FMS_ATTITUDE_IN), air data from the sensors (FMS_SENSORS), position and fused altitude from navigation (FMS_NAV_SOLUTION), and the values the Python derived - mach = airspeed / (661.4788 x 0.98); energy_state = min(100, (0.5 x 15000 x v^2 + 15000 x 9.81 x h) / 1e10 x 100) with v in m/s from airspeed and h in m from nav_altitude. ground_speed is the airspeed, since the plant has no wind. track and sideslip were never computed by the Python and are sent NO_COMPUTED_DATA. Replaces the FMS_DATA block of v1.
+
+Replaces: `fmsDataRequest`, `fmsDataResponse`
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `roll_ssm` | ssm | validity of `roll` |  |
+| 0 | 13-12 | `pitch_ssm` | ssm | validity of `pitch` |  |
+| 0 | 11-10 | `heading_ssm` | ssm | validity of `heading` |  |
+| 0 | 9-8 | `airspeed_ssm` | ssm | validity of `airspeed` |  |
+| 0 | 7-6 | `altitude_ssm` | ssm | validity of `altitude` |  |
+| 0 | 5-4 | `vertical_speed_ssm` | ssm | validity of `vertical_speed` |  |
+| 0 | 3-2 | `g_ssm` | ssm | validity of `g_force` |  |
+| 0 | 1-0 | `aoa_ssm` | ssm | validity of `angle_of_attack` |  |
+| 1 | 15-14 | `position_ssm` | ssm | validity of `latitude` | Validity of latitude and longitude |
+| 1 | 13-12 | `nav_altitude_ssm` | ssm | validity of `nav_altitude` |  |
+| 1 | 11-10 | `mach_ssm` | ssm | validity of `mach` |  |
+| 1 | 9-8 | `ground_speed_ssm` | ssm | validity of `ground_speed` |  |
+| 1 | 7-6 | `track_ssm` | ssm | validity of `track` |  |
+| 1 | 5-4 | `sideslip_ssm` | ssm | validity of `sideslip` |  |
+| 1 | 3-2 | `energy_ssm` | ssm | validity of `energy_state` |  |
+| 1 | 1-0 | `spare_1` | spare |  |  |
+| 2 | 15-12 | `flight_mode` | enum | enum `fms_flight_mode` | The legacy status.mode the PFD showed |
+| 2 | 11-0 | `spare_2` | spare |  |  |
+| 3-4 | 31-0 | `latitude` | sint | LSB 180/2147483648 deg, range -90 to 90 | WGS-84, north positive |
+| 5-6 | 31-0 | `longitude` | sint | LSB 180/2147483648 deg, range -180 to 179.9999999 | WGS-84, east positive |
+| 7 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 | Pressure altitude from the sensors |
+| 8 | 15-0 | `nav_altitude` | sint | LSB 1 ft, range -32768 to 32767 | The navigation solution's fused altitude: what the Python's navigation.altitude was |
+| 9 | 15-0 | `airspeed` | uint | LSB 1/10 kt, range 0 to 1500 | Indicated airspeed |
+| 10 | 15-0 | `mach` | uint | LSB 1/1000 mach, range 0 to 5 |  |
+| 11 | 15-0 | `ground_speed` | uint | LSB 1/10 kt, range 0 to 1500 |  |
+| 12 | 15-0 | `vertical_speed` | sint | LSB 1 ft/min, range -30000 to 30000 | Climb positive |
+| 13 | 15-0 | `heading` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True |
+| 14 | 15-0 | `track` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True ground track |
+| 15 | 15-0 | `roll` | sint | LSB 180/32768 deg, range -180 to 179.9945 | Right wing down positive |
+| 16 | 15-0 | `pitch` | sint | LSB 180/32768 deg, range -90 to 90 | Nose up positive |
+| 17 | 15-0 | `g_force` | sint | LSB 1/1000 g, range -20 to 20 |  |
+| 18 | 15-0 | `angle_of_attack` | sint | LSB 180/32768 deg, range -90 to 90 |  |
+| 19 | 15-0 | `sideslip` | sint | LSB 180/32768 deg, range -90 to 90 |  |
+| 20 | 15-0 | `energy_state` | uint | LSB 1/100 %, range 0 to 100 | The Python's tactical energy_state |
+
+### FMS_CONTROL_CMD
+
+**Thrust and landing gear command** — RT 12 · SA 21 · receive (bus to terminal) · 2 words · aperiodic
+
+fmsControl SET_THRUST and SET_LANDING_GEAR, which message_schemas.py never carried. Each part is applied only when its present bit is 1. Gear accepts UP and DOWN only.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15 | `thrust_present` | bool |  |  |
+| 0 | 14 | `gear_present` | bool |  |  |
+| 0 | 13-12 | `gear` | enum | enum `gear_position` | UP or DOWN; anything else is REJECTED_INVALID |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts |  |
+| 1 | 15-0 | `thrust` | uint | LSB 1/10000, range 0 to 1 | Requested thrust, 0-1 (fmsControl.set_thrust thrust_level) |
+
+### FMS_CONTROL_STATUS
+
+**Thrust and landing gear status** — RT 12 · SA 21 · transmit (terminal to bus) · 3 words · 5 Hz
+
+fmsControl.set_thrust holds thrust to 0.1 .. 0.9 (1.0 with the afterburner lit), sets throttle_position = int(thrust x 100), lights the afterburner above 0.9 and puts it out below 0.85. Before any command: thrust 0.5, throttle 50, afterburner off, gear UP.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts |  |
+| 1 | 15 | `afterburner` | bool |  |  |
+| 1 | 14-13 | `gear` | enum | enum `gear_position` | The commanded gear position |
+| 1 | 12-6 | `throttle_position` | uint | raw counts | Percent, 0-100: int(thrust x 100) |
+| 1 | 5-4 | `spare_1` | spare |  |  |
+| 1 | 3-0 | `status` | enum | enum `cmd_status` | Outcome of the last command |
+| 2 | 15-0 | `thrust` | uint | LSB 1/10000, range 0 to 1 | Thrust in force, 0-1 |
+
+### FMS_ENERGY
+
+**Energy maneuverability** — RT 12 · SA 22 · transmit (terminal to bus) · 6 words · 1 Hz
+
+fmsControl.calculate_energy_maneuverability(), from nav_altitude, airspeed, angle of attack and the flight profile's engine_power and max_g_force: specific excess power Ps = v (T - D) / W with T = engine_power x 150000 N, D = 0.5 x 1.225 e^(-h/10000) v^2 (0.02 + \|aoa\|/100) x 30, W = 15000 x 9.81; sustained turn rate = deg(g sqrt((T/W)^2 - 1) / v) when T/W is above 1, else 0; instantaneous turn rate = deg(g sqrt(max_g^2 - 1) / v); climb = Ps x 196.85 ft/min; energy_advantage = 10 Ps. v is at least 1 m/s in the turn rates.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `ssm` | ssm | validity of `specific_excess_power` | Validity of all five values |
+| 0 | 13-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `specific_excess_power` | sint | LSB 1/100 m/s, range -327.68 to 327.67 |  |
+| 2 | 15-0 | `max_sustained_turn_rate` | uint | LSB 1/10 deg/s, range 0 to 6553.5 |  |
+| 3 | 15-0 | `max_instantaneous_turn_rate` | uint | LSB 1/10 deg/s, range 0 to 6553.5 |  |
+| 4 | 15-0 | `max_climb_rate` | sint | LSB 2 ft/min, range -65536 to 65534 |  |
+| 5 | 15-0 | `energy_advantage` | sint | LSB 1/10, range -3276.8 to 3276.7 | 10 x specific_excess_power |
 
 ### DSP_PFD_STATUS
 
@@ -988,6 +1239,29 @@ What the aircraft's sensors would measure, published by the simulated aircraft. 
 | 10 | 15-0 | `flaps` | uint | LSB 1/100 deg, range 0 to 30 | fmsControl flaps range |
 | 11 | 15-0 | `terrain_clearance` | uint | LSB 1 ft, range 0 to 65535 | Height above terrain. From the plant until the radar terminal publishes it |
 
+### PLANT_GPS
+
+**GPS pseudoranges from the plant** — RT 27 · SA 2 · transmit (terminal to bus) · 25 words · 1 Hz
+
+What the simulated GPS receiver measures each epoch: for every satellite of the 12-satellite constellation of globalPositionSystem._build_constellation() that is at least 5 degrees above the horizon, pseudorange = geometric range + c x (receiver clock bias - satellite clock bias) + measurement noise (3 m, 1 sigma). The noise is drawn once per epoch here, in the plant; the solver in the navigation terminal is deterministic. epoch increments with each new set; a pseudorange whose satellite bit is 0 in visible_mask is not valid.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `epoch` | uint | raw counts | Increments (mod 16) with every new measurement set |
+| 0 | 11-0 | `visible_mask` | uint | raw counts | Bit n-1 = satellite n (1-12) has a valid pseudorange |
+| 1-2 | 31-0 | `pseudorange_1` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 3-4 | 31-0 | `pseudorange_2` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 5-6 | 31-0 | `pseudorange_3` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 7-8 | 31-0 | `pseudorange_4` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 9-10 | 31-0 | `pseudorange_5` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 11-12 | 31-0 | `pseudorange_6` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 13-14 | 31-0 | `pseudorange_7` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 15-16 | 31-0 | `pseudorange_8` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 17-18 | 31-0 | `pseudorange_9` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 19-20 | 31-0 | `pseudorange_10` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 21-22 | 31-0 | `pseudorange_11` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+| 23-24 | 31-0 | `pseudorange_12` | sint | LSB 1/16 m, range 0 to 100000000 |  |
+
 ### FCS_SENSORS
 
 **Sensed flight state as received by the flight control computer** — RT 5 · SA 13 · receive (bus to terminal) · 12 words · 50 Hz
@@ -1085,8 +1359,8 @@ All 89 `MESSAGE_SCHEMAS` types from `FMOFP/MIL_STD_1553B/message_schemas.py`.
 | `fms_navigationUpdateRequest` | FMS_NAV_UPDATE_CMD |
 | `fms_navigationUpdateResponse` | FMS_NAV_UPDATE_STATUS |
 | `fmsCommand` | FMS_MODE_CMD |
-| `fmsDataRequest` | block FMS_DATA |
-| `fmsDataResponse` | block FMS_DATA |
+| `fmsDataRequest` | FMS_FLIGHT_DATA |
+| `fmsDataResponse` | FMS_FLIGHT_DATA |
 | `fmsStatusRequest` | FMS_STATUS |
 | `fmsStatusResponse` | FMS_STATUS |
 | `radarCommand` | RDR_WX_MODE_CMD; RDR_TFR_MODE_CMD; RDR_SAR_MODE_CMD; RDR_TGT_MODE_CMD; RDR_AEWC_MODE_CMD |

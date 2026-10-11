@@ -17,14 +17,6 @@ bool listed(const std::uint8_t* terminals, std::size_t count, std::uint8_t rt) n
     return false;
 }
 
-// The relay whose source is this transmit message, if any.
-const icd::RelayInfo* relay_from(std::uint8_t rt, std::uint8_t sa) noexcept {
-    const auto it = std::find_if(icd::kRelays.begin(), icd::kRelays.end(), [rt, sa](const icd::RelayInfo& relay) {
-        return relay.from_rt == rt && relay.from_subaddress == sa;
-    });
-    return it == icd::kRelays.end() ? nullptr : &*it;
-}
-
 // A receive message that a relay delivers needs no slot of its own.
 bool is_relay_target(std::uint8_t rt, std::uint8_t sa) noexcept {
     return std::any_of(icd::kRelays.begin(), icd::kRelays.end(), [rt, sa](const icd::RelayInfo& relay) {
@@ -41,11 +33,19 @@ Status add_one(Schedule& schedule, const icd::MessageInfo& info, std::uint8_t rt
     m.words = info.words;
     m.rate_hz = info.rate_hz;
     if (m.transmit) {
-        // Relay only to a terminal that is present; otherwise just poll.
-        const icd::RelayInfo* relay = relay_from(rt, info.subaddress);
-        if (relay != nullptr && listed(terminals, count, relay->to_rt)) {
-            m.relay_rt = relay->to_rt;
-            m.relay_subaddress = relay->to_subaddress;
+        // Relay to every consumer that is present; a consumer that is not
+        // gets nothing, and the message is still polled.
+        for (const icd::RelayInfo& relay : icd::kRelays) {
+            if (relay.from_rt != rt || relay.from_subaddress != info.subaddress ||
+                !listed(terminals, count, relay.to_rt)) {
+                continue;
+            }
+            if (m.relay_count >= kMaxRelaysPerMessage) {
+                return Status::kBadLength;
+            }
+            m.relays[m.relay_count].rt = relay.to_rt;
+            m.relays[m.relay_count].subaddress = relay.to_subaddress;
+            ++m.relay_count;
         }
     }
     return schedule.add(m);

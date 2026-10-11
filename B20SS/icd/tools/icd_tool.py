@@ -11,7 +11,9 @@ build step of the C++ (B20SS/ofp/icd/CMakeLists.txt).
 `check` enforces the rules the old message_schemas.py could not: every bit of
 every word is defined, every enum value fits its field and defines a fail-safe
 zero, scaled ranges are representable, no two messages share an
-RT/subaddress/direction, and every legacy message type is accounted for.
+RT/subaddress/direction, and every legacy message type is accounted for. A
+field may span two consecutive words (`word="3-4"`, `bits="31-0"`, type sint
+with an lsb) for quantities such as latitude that need more than 16 bits.
 
 `gen-cpp` writes, under DIR:
     include/fmofp/icd/version.hpp   the ICD version the code was built from
@@ -39,6 +41,7 @@ FIELD_TYPES = {"uint", "sint", "enum", "bool", "ssm", "spare"}
 MIN_SA, MAX_SA = 1, 29          # 0 and 31 are mode codes, 30 is data wraparound
 MAX_RT = 30                     # 31 is broadcast
 MAX_WORDS = 32
+MAX_RELAYS_PER_SOURCE = 4       # bc/schedule.hpp kMaxRelaysPerMessage
 
 
 class Icd:
@@ -65,15 +68,33 @@ class Icd:
 
 # --------------------------------------------------------------------- parsing
 
-def parse_bits(text):
+def parse_bits(text, top=15):
     """'15-12' -> (15, 12); '7' -> (7, 7). Raises ValueError on bad input."""
     if "-" in text:
         hi, lo = (int(part) for part in text.split("-"))
     else:
         hi = lo = int(text)
-    if not (0 <= lo <= hi <= 15):
-        raise ValueError(f"bad bit range '{text}' (need 15 >= high >= low >= 0)")
+    if not (0 <= lo <= hi <= top):
+        raise ValueError(f"bad bit range '{text}' (need {top} >= high >= low >= 0)")
     return hi, lo
+
+
+def parse_words(text):
+    """'3' -> (3, 1); '3-4' -> (3, 2): first word and how many the field spans.
+
+    A field may span two consecutive words (a double word, most significant
+    word first); its bits are then numbered 31-0. Raises ValueError on bad input.
+    """
+    if "-" in text:
+        first, last = (int(part) for part in text.split("-"))
+        if last != first + 1:
+            raise ValueError(f"bad word range '{text}' (a field spans one word or two consecutive ones)")
+        return first, 2
+    return int(text), 1
+
+
+def field_words(field):
+    return parse_words(field["word"])
 
 
 def tokens(text):
@@ -121,6 +142,29 @@ def load(path):
     icd.legacy = [dict(lg.attrib) for lg in root.iter("legacy")]
     icd.relays = [dict(r.attrib) for r in root.iter("relay")]
     return icd
+
+
+def definition_order(icd):
+    """Messages in ICD order, except that a layout_of message follows its source.
+
+    The generated struct or class of a layout_of message names the source's,
+    so the source has to be defined first whatever the order in the XML.
+    """
+    emitted, order, waiting = set(), [], {}
+    for msg in icd.messages:
+        source = msg.get("layout_of")
+        if source and source not in emitted:
+            waiting.setdefault(source, []).append(msg)
+            continue
+        order.append(msg)
+        emitted.add(msg["id"])
+        for dependant in waiting.pop(msg["id"], []):
+            order.append(dependant)
+            emitted.add(dependant["id"])
+    for source, dependants in waiting.items():
+        for msg in dependants:
+            icd.error(f"message {msg['id']}", f"layout_of names unknown message '{source}'")
+    return order
 
 
 def same_layout(a, b):
@@ -220,20 +264,29 @@ def check_message(icd, msg):
         if ftype not in FIELD_TYPES:
             icd.error(where, f"unknown type '{ftype}'")
             continue
-        word = int(field["word"])
         try:
-            hi, lo = parse_bits(field["bits"])
+            word, span = parse_words(field["word"])
+            hi, lo = parse_bits(field["bits"], top=31 if span == 2 else 15)
         except ValueError as exc:
             icd.error(where, str(exc))
             continue
         width = hi - lo + 1
-        if not 0 <= word < words:
-            icd.error(where, f"word {word} outside 0-{words - 1}")
+        if not 0 <= word < words - (span - 1):
+            icd.error(where, f"word {word} outside 0-{words - span}")
             continue
-        bits = set(range(lo, hi + 1))
-        if used[word] & bits:
-            icd.error(where, f"overlaps another field in word {word}")
-        used[word] |= bits
+        if span == 2:
+            # Double words carry one scaled two's-complement value, whole.
+            if (hi, lo) != (31, 0) or ftype != "sint" or field.get("lsb") is None:
+                icd.error(where, "a double-word field must be bits 31-0, type sint, with an lsb")
+            for w in (word, word + 1):
+                if used[w]:
+                    icd.error(where, f"overlaps another field in word {w}")
+                used[w] = set(range(16))
+        else:
+            bits = set(range(lo, hi + 1))
+            if used[word] & bits:
+                icd.error(where, f"overlaps another field in word {word}")
+            used[word] |= bits
 
         if ftype == "bool" and width != 1:
             icd.error(where, "bool must be 1 bit")
@@ -359,6 +412,12 @@ def check_relays(icd):
         if dst["id"] in targets:
             icd.error(where, f"{dst['id']} is already the target of another relay")
         targets.add(dst["id"])
+    sources = {}
+    for relay in icd.relays:
+        sources[relay.get("from")] = sources.get(relay.get("from"), 0) + 1
+    for src, n in sources.items():
+        if n > MAX_RELAYS_PER_SOURCE:
+            icd.error(f"relay {src}", f"{n} consumers; the bus controller relays to at most {MAX_RELAYS_PER_SOURCE}")
 
 
 def check(icd):
@@ -668,8 +727,13 @@ def gen_enums_hpp(icd):
 
 
 def field_geometry(field):
-    hi, lo = parse_bits(field["bits"])
+    _, span = field_words(field)
+    hi, lo = parse_bits(field["bits"], top=31 if span == 2 else 15)
     return hi, lo, hi - lo + 1
+
+
+def is_double_word(field):
+    return field_words(field)[1] == 2
 
 
 def emit_encode(field):
@@ -678,6 +742,19 @@ def emit_encode(field):
     if ftype == "spare":
         return []
     hi, lo, width = field_geometry(field)
+    if is_double_word(field):
+        first, _ = field_words(field)
+        raw_min, raw_max, lsb = raw_limits(field, width)
+        return [
+            "    {",
+            "        std::int32_t raw = 0;",
+            f"        result = worst(result, bus::encode_scaled({name}, {lsb.numerator}, {lsb.denominator}, "
+            f"{raw_min}, {raw_max}, raw));",
+            "        const std::uint32_t u = bus::to_twos32(raw);",
+            f"        w[{first}] = static_cast<bus::Word>(u >> 16U);",
+            f"        w[{first + 1}] = static_cast<bus::Word>(u & 0xFFFFU);",
+            "    }",
+        ]
     word = f"w[{field['word']}]"
     if ftype == "bool":
         return [f"    {word} = bus::set_bit({word}, {hi}U, {name});"]
@@ -730,6 +807,15 @@ def emit_decode(field):
     if ftype == "spare":
         return []
     hi, lo, width = field_geometry(field)
+    if is_double_word(field):
+        first, _ = field_words(field)
+        _, _, lsb = raw_limits(field, width)
+        return [
+            "    {",
+            f"        const std::uint32_t u = (static_cast<std::uint32_t>(in[{first}]) << 16U) | in[{first + 1}];",
+            f"        m.{name} = bus::decode_scaled(bus::from_twos32(u), {lsb.numerator}, {lsb.denominator});",
+            "    }",
+        ]
     word = f"in[{field['word']}]"
     get = f"bus::get_field({word}, {hi}U, {lo}U)"
     if ftype == "bool":
@@ -796,7 +882,7 @@ def gen_messages_hpp(icd):
         "// decode(): fills `out` from the words. Returns kOk, or kInvalidEnum",
         "// (leaving `out` untouched) if an enum field holds an undefined value.",
     ]
-    for msg in icd.messages:
+    for msg in definition_order(icd):
         name = pascal(msg["id"])
         out.append("")
         out.append(f"// {msg['id']} - {msg.get('title', '')}")
@@ -1113,6 +1199,14 @@ def py_emit_encode(field):
     if ftype == "spare":
         return []
     hi, lo, width = field_geometry(field)
+    if is_double_word(field):
+        first, _ = field_words(field)
+        raw_min, raw_max, lsb = raw_limits(field, width)
+        return [
+            f"        s, raw = _w.encode_scaled(self.{name}, {lsb.numerator}, {lsb.denominator}, {raw_min}, {raw_max})",
+            "        result = worst(result, s)",
+            f"        w[{first}], w[{first + 1}] = divmod(_w.to_twos32(raw), 0x10000)",
+        ]
     word = f"w[{field['word']}]"
     if ftype == "bool":
         return [f"        {word} = _w.set_bit({word}, {hi}, bool(self.{name}))"]
@@ -1149,6 +1243,13 @@ def py_emit_decode(field):
     if ftype == "spare":
         return []
     hi, lo, width = field_geometry(field)
+    if is_double_word(field):
+        first, _ = field_words(field)
+        _, _, lsb = raw_limits(field, width)
+        return [
+            f"        m.{name} = _w.decode_scaled(_w.from_twos32((words[{first}] << 16) | words[{first + 1}]), "
+            f"{lsb.numerator}, {lsb.denominator})",
+        ]
     get = f"_w.get_field(words[{field['word']}], {hi}, {lo})"
     if ftype == "bool":
         return [f"        m.{name} = _w.get_bit(words[{field['word']}], {hi})"]
@@ -1209,7 +1310,7 @@ def gen_py_messages(icd):
         "# decode(words) -> (Status, message or None): BAD_LENGTH for the wrong",
         "# number of words, INVALID_ENUM for an undefined enum value.",
     ]
-    for msg in icd.messages:
+    for msg in definition_order(icd):
         name = pascal(msg["id"])
         out.append("")
         out.append("")

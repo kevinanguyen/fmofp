@@ -110,26 +110,41 @@ TEST(Schedule, LoadEstimateCountsEveryWordAndGap) {
 TEST(Schedule, RelaysRideWithTheirSourceAndCountTwice) {
     Schedule s;
     ScheduledMessage src = msg(27, 1, 50, 12);
-    src.relay_rt = 5;
-    src.relay_subaddress = 13;
+    src.relays[0] = {5, 13};
+    src.relay_count = 1;
     ASSERT_EQ(Status::kOk, s.add(src));
     ASSERT_EQ(Status::kOk, s.build());
     const auto& slot = s.frame(0).slots[0];
     EXPECT_TRUE(slot.has_relay());
-    EXPECT_EQ(5, slot.relay_rt);
-    EXPECT_EQ(13, slot.relay_subaddress);
+    ASSERT_EQ(1U, slot.relay_count);
+    EXPECT_EQ(5, slot.relays[0].rt);
+    EXPECT_EQ(13, slot.relays[0].subaddress);
     EXPECT_EQ(52U + 2U * ((2U + 12U) * 20U + 12U), s.frame_load_us(0));
+
+    // Three consumers: the words go out four times.
+    Schedule three;
+    ScheduledMessage fanout = src;
+    fanout.relays[1] = {12, 13};
+    fanout.relays[2] = {7, 13};
+    fanout.relay_count = 3;
+    ASSERT_EQ(Status::kOk, three.add(fanout));
+    ASSERT_EQ(Status::kOk, three.build());
+    EXPECT_EQ(3U, three.frame(0).slots[0].relay_count);
+    EXPECT_EQ(52U + 4U * ((2U + 12U) * 20U + 12U), three.frame_load_us(0));
 
     // A relay needs a transmit source and a real, different consumer.
     ScheduledMessage bad = msg(27, 1, 50, 12, false);
-    bad.relay_rt = 5;
-    bad.relay_subaddress = 13;
+    bad.relays[0] = {5, 13};
+    bad.relay_count = 1;
     EXPECT_EQ(Status::kInvalidArgument, s.add(bad));
     bad = src;
-    bad.relay_rt = 27;
+    bad.relays[0].rt = 27;
     EXPECT_EQ(Status::kInvalidArgument, s.add(bad));
     bad = src;
-    bad.relay_subaddress = 31;
+    bad.relays[0].subaddress = 31;
+    EXPECT_EQ(Status::kInvalidArgument, s.add(bad));
+    bad = src;
+    bad.relay_count = static_cast<std::uint8_t>(fmofp::bc::kMaxRelaysPerMessage + 1U);
     EXPECT_EQ(Status::kInvalidArgument, s.add(bad));
 }
 
@@ -146,8 +161,9 @@ TEST(IcdSchedule, RelayTargetsArePresentOnlyWhenTheirConsumerIs) {
         for (std::size_t i = 0; i < f.count; ++i) {
             EXPECT_FALSE(f.slots[i].rt == 5 && f.slots[i].subaddress == 13) << "FCS_SENSORS must not be polled";
             if (f.slots[i].rt == 27 && f.slots[i].subaddress == 1) {
-                EXPECT_EQ(5, f.slots[i].relay_rt);
-                EXPECT_EQ(13, f.slots[i].relay_subaddress);
+                ASSERT_EQ(1U, f.slots[i].relay_count);
+                EXPECT_EQ(5, f.slots[i].relays[0].rt);
+                EXPECT_EQ(13, f.slots[i].relays[0].subaddress);
                 ++relayed;
             }
         }
@@ -160,6 +176,34 @@ TEST(IcdSchedule, RelayTargetsArePresentOnlyWhenTheirConsumerIs) {
     ASSERT_EQ(Status::kOk, fmofp::bc::add_icd_messages(p, plant_only.data(), plant_only.size()));
     ASSERT_EQ(Status::kOk, p.build());
     EXPECT_FALSE(p.frame(0).slots[0].has_relay() || p.frame(0).slots[1].has_relay());
+
+    // Plant, FCS, FMS and navigation: PLANT_SENSORS goes to all three consumers
+    // (ICD relays order), and no consumer's copy is polled on its own.
+    const std::array<std::uint8_t, 4> all{27, 5, 12, 7};
+    Schedule a;
+    ASSERT_EQ(Status::kOk, fmofp::bc::add_icd_messages(a, all.data(), all.size()));
+    ASSERT_EQ(Status::kOk, a.build());
+    bool seen = false;
+    for (std::uint8_t minor = 0; minor < kMinorFramesPerMajor; ++minor) {
+        const auto& f = a.frame(minor);
+        for (std::size_t i = 0; i < f.count; ++i) {
+            const fmofp::bc::Slot& slot = f.slots[i];
+            EXPECT_FALSE(!slot.transmit && slot.subaddress == 13 && (slot.rt == 5 || slot.rt == 12 || slot.rt == 7))
+                << "a relayed sensor copy must not be polled";
+            if (slot.rt == 27 && slot.subaddress == 1) {
+                ASSERT_EQ(3U, slot.relay_count);
+                EXPECT_EQ(5, slot.relays[0].rt);
+                EXPECT_EQ(12, slot.relays[1].rt);
+                EXPECT_EQ(7, slot.relays[2].rt);
+                EXPECT_EQ(13, slot.relays[0].subaddress);
+                EXPECT_EQ(13, slot.relays[1].subaddress);
+                EXPECT_EQ(13, slot.relays[2].subaddress);
+                seen = true;
+            }
+        }
+    }
+    EXPECT_TRUE(seen);
+    EXPECT_LE(a.worst_frame_load_us(), kMinorFrameBudgetUs);
 }
 
 TEST(SyncWord, PacksMajorAndMinor) {

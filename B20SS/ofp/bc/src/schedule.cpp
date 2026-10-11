@@ -31,10 +31,15 @@ Status Schedule::add(const ScheduledMessage& message) noexcept {
         message.rt >= bus::kBroadcastRt || message.subaddress < 1 || message.subaddress > 30) {
         return Status::kInvalidArgument;
     }
-    if (message.relay_rt != 0U &&
-        (!message.transmit || message.relay_rt >= bus::kBroadcastRt || message.relay_rt == message.rt ||
-         message.relay_subaddress < 1 || message.relay_subaddress > 30)) {
+    if (message.relay_count > kMaxRelaysPerMessage || (message.relay_count != 0U && !message.transmit)) {
         return Status::kInvalidArgument;
+    }
+    for (std::uint8_t i = 0; i < message.relay_count; ++i) {
+        const RelayTarget& r = message.relays[i];
+        if (r.rt == 0U || r.rt >= bus::kBroadcastRt || r.rt == message.rt || r.subaddress < 1 ||
+            r.subaddress > 30) {
+            return Status::kInvalidArgument;
+        }
     }
     if (count_ >= kMaxScheduledMessages) {
         return Status::kBadLength;
@@ -69,8 +74,8 @@ Status Schedule::build() noexcept {
             s.subaddress = m.subaddress;
             s.transmit = m.transmit;
             s.words = m.words;
-            s.relay_rt = m.relay_rt;
-            s.relay_subaddress = m.relay_subaddress;
+            s.relays = m.relays;
+            s.relay_count = m.relay_count;
             ++f.count;
         }
     }
@@ -86,10 +91,8 @@ std::uint32_t Schedule::frame_load_us(std::uint8_t minor) const noexcept {
     const FrameSlots& f = frame(minor);
     std::uint32_t us = 2U * kUsPerWord + kUsPerMessageGap;  // the sync broadcast
     for (std::size_t i = 0; i < f.count; ++i) {
-        us += message_us(f.slots[i].words);
-        if (f.slots[i].has_relay()) {
-            us += message_us(f.slots[i].words);  // the same words go out again to the consumer
-        }
+        // The same words go out again to each consumer.
+        us += message_us(f.slots[i].words) * (1U + static_cast<std::uint32_t>(f.slots[i].relay_count));
     }
     return us;
 }

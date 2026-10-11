@@ -58,6 +58,16 @@ constexpr std::int32_t from_twos(Word raw, unsigned width) noexcept {
                                : static_cast<std::int32_t>(bits);
 }
 
+// The same for a 32-bit value carried in a double word (ICD README section
+// 3): most significant word first.
+constexpr std::uint32_t to_twos32(std::int32_t value) noexcept { return static_cast<std::uint32_t>(value); }
+
+constexpr std::int32_t from_twos32(std::uint32_t raw) noexcept {
+    constexpr std::uint32_t kSign = 0x80000000U;
+    return (raw & kSign) != 0U ? static_cast<std::int32_t>(raw & 0x7FFFFFFFU) - 0x7FFFFFFF - 1
+                               : static_cast<std::int32_t>(raw);
+}
+
 // Scaled quantities: engineering value = raw * lsb_num / lsb_den.
 //
 // encode_scaled rounds `value` to the nearest raw count and limits it to

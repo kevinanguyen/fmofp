@@ -1,6 +1,6 @@
 # FMOFP MIL-STD-1553B Interface Control Document (ICD)
 
-**Version 1.1 — DRAFT** · 2026-10-10 · Owner: Kevin Nguyen · Drafted by Claude for Kevin Nguyen
+**Version 1.2 — DRAFT** · 2026-10-11 · Owner: Kevin Nguyen · Drafted by Claude for Kevin Nguyen
 
 This is the contract for every message on the simulated 1553B bus. The C++ flight partitions and the Python displays both build from it, and nothing else may define a bus message.
 
@@ -9,7 +9,7 @@ This is the contract for every message on the simulated 1553B bus. The C++ fligh
 | `fmofp_icd.xml` | The ICD itself: the single source of truth. Edit this. |
 | `ICD_TABLES.md` | Every terminal, message, field, enum and mode code, generated from the XML. Don't edit by hand. |
 | `README.md` | This file: the rules that apply to every message (word format, timing, transport, validity). |
-| `tools/icd_tool.py` | Checks the XML, regenerates `ICD_TABLES.md`, and generates the C++ message code (`gen-cpp`, run by the `B20SS/ofp` build). Standard-library Python. |
+| `tools/icd_tool.py` | Checks the XML, regenerates `ICD_TABLES.md`, and generates the C++ message code (`gen-cpp`, run by the `B20SS/ofp` build) and the Python message code (`gen-py`, checked in under `B20SS/fmofp_bus/icd/`). Standard-library Python. |
 
 After any edit to the XML:
 
@@ -37,12 +37,18 @@ v2 adds it, based on an inventory of what each display reads and what the subsys
 
 **v1.1** adds what the first ported partition, flight control, needs: a *plant* terminal (RT 27) that publishes the sensed flight state (`PLANT_SENSORS`), its delivery to the FCS (`FCS_SENSORS`), and the FCS's outputs (`FCS_GCAS_ALERTS`, `FCS_PERF_STATUS`). It also adds the **relays** section: the RT-to-RT transfers the bus controller performs, which is how a producer's data reaches its consumers and how the MFD's radar commands reach the radar. From v1.1 the ICD is maintained in this fork by Kevin.
 
+**v1.2** adds the navigation and flight management partitions. The plant gains a GPS receiver front end (`PLANT_GPS`: the pseudoranges to the Python's 12-satellite constellation, once a second) and a position that moves. The navigation terminal (RT 7) receives the sensors and the pseudoranges by relay (`NAV_SENSORS`, `NAV_GPS`), solves the fix and fuses it with dead reckoning, and publishes `NAV_SOLUTION`. The FMS (RT 12) receives the FCS attitude, the sensors and the navigation solution by relay (`FMS_ATTITUDE_IN`, `FMS_SENSORS`, `FMS_NAV_SOLUTION`) and publishes what `get_flight_data()` gave the displays as `FMS_FLIGHT_DATA`, which replaces the `FMS_DATA` block. New commands: `FMS_FLIGHT_MODE_CMD` (the five flight modes) and `FMS_CONTROL_CMD` (thrust and gear). `FMS_STATUS`, `FMS_ATTITUDE_STATUS` and `FMS_NAV_UPDATE_STATUS` grew to report what the Python returned (tactical systems, the limited attitude and rates, the applied targets), and `FMS_ENERGY` carries the energy-maneuverability numbers. Two mechanisms came with it: **double-word fields** (32 bits, for latitude, longitude and pseudoranges) and relays with **several consumers** per producer.
+
 ## 2. Decisions this draft is built on
 
 | Decision | From | Effect in the ICD |
 |---|---|---|
 | One process per subsystem | Alee | 23 subsystem and display terminals at RT 1–23, plus the plant at RT 27 from v1.1 (RT 0 reserved, 24–26 and 28–30 spare, 31 broadcast) |
 | The simulated aircraft is test equipment, not flight software | v1.1 | The plant is its own terminal (RT 27). It publishes what sensors would measure; the flight partitions never contain simulation or random noise. Each quantity moves to its real producer as that subsystem is ported |
+| The GPS *measurement* is simulation; the GPS *solution* is flight software | v1.2 | The plant computes the pseudoranges (geometry, clock biases, noise drawn once per epoch). The navigation terminal runs the Python's weighted-least-squares solver and the ECEF-to-WGS-84 conversion unchanged, starting each first solve from the Earth's centre (the Python started from the simulation's true position, which flight software cannot know). Visibility is decided where the truth is, in the plant |
+| The INS is not carried | v1.2 | `Systems/nav/ins` integrated random IMU noise into an attitude nothing used: its pitch and roll reached the FMS and were overwritten 20 times a second by the FMS's own values. Attitude comes from the FCS; position comes from the GPS/dead-reckoning fusion |
+| Dead reckoning uses the airspeed as ground speed | v1.2 | `flightManagementSystem.update_flight_data` read `velocity.get('ground_speed', airspeed)`, but the key always exists with the value 0, so the live Python's dead-reckoning rates were always zero. The port uses the formula as written, with the airspeed, since the plant has no wind. The Python also crept the heading by 0.01 degrees per cycle as "small drift"; the port uses the measured heading |
+| The FMS reports the attitude it was commanded, separately from the attitude it measures | v1.2 | `fmsControl.update_attitude` wrote the limited command into the FMS flight data, where the next 50 ms cycle overwrote it. `FMS_ATTITUDE_STATUS` carries the limited command (and which limits held it); `FMS_FLIGHT_DATA` carries the measured attitude from the FCS. The Python mapped FMS flight modes onto its internal flight-control object's modes, which only changed that object's loop rate; that mapping is not carried |
 | BIT merges into avionics; FM fitness and SW configuration fold into another terminal | Alee | All three run in the avionics process at RT 1. FM fitness and SW configuration went there because both are health and maintenance functions; Alee can move them |
 | Bus controller is its own process and the master clock | Alee | Every minor frame starts with a broadcast sync (mode code 17); terminals run their frame on receipt |
 | One process per display | Alee | Each display needs its own RT, because one address is one terminal. RT 11 goes to the PFD; MFD, EICAS, radar display, TSD, SMS and HUD get RT 13–18 |
@@ -73,6 +79,18 @@ v2 adds it, based on an inventory of what each display reads and what the subsys
 | FMS `maneuver_type`, `parameter_count` | `maneuver` enum, plus `dive_angle` for DIVE | `fmsControl.execute_maneuver()` |
 | Every `status_code` | `cmd_status`: NONE, ACCEPTED, COMPLETED, REJECTED_INVALID, REJECTED_STATE, FAILED, NOT_IMPLEMENTED | NOT_IMPLEMENTED covers BARREL_ROLL, which `fmsControl.py` doesn't implement |
 | `command_parameter` (terminal, FMS and display commands) | Removed | Nothing in the code reads it |
+
+**Added in v1.2:**
+
+| Field | Now | Taken from |
+|---|---|---|
+| FMS flight mode | `fms_flight_mode`: NORMAL 0, COMBAT 1, STEALTH 2, TRAINING 3, EMERGENCY 4 | `fmsControl.available_modes`, numbered as `flightManagementSystem.send_fms_data` did |
+| Tactical systems | `countermeasures_state`, `targeting_state`, `weapons_state` enums and a stealth bit in `FMS_STATUS` | `fmsControl._update_tactical_systems` |
+| Thrust, landing gear | `FMS_CONTROL_CMD` / `FMS_CONTROL_STATUS`: thrust 0–1, throttle %, afterburner, gear UP/DOWN | `fmsControl.set_thrust`, `set_landing_gear` |
+| Latitude, longitude | Double-word `sint`, LSB 180/2³¹ degrees (about 1 cm) | GPS noise is metres; 16 bits would be 600 m |
+| Pseudorange | Double-word `sint`, LSB 1/16 m, 12 per `PLANT_GPS` | Ranges are about 20,000–26,000 km |
+| Navigation solution | `NAV_SOLUTION`: position, fused altitude, GPS validity, satellites used, fix count and age, receiver clock bias | `fuseData.NavDataFusion` and `GPSReceiver` state |
+| Energy | `FMS_ENERGY`: specific excess power, sustained and instantaneous turn rates, climb rate, energy advantage | `fmsControl.calculate_energy_maneuverability` |
 
 ## 3. Word format
 
@@ -112,6 +130,8 @@ Words are 16 bits. **Bit 15 is the most significant bit and bit 0 the least.** A
 | `bool` | One bit, 1 = true |
 | `ssm` | Two-bit validity of another field (section 4) |
 | `spare` | Sent as 0, ignored on receipt |
+
+A field normally lives in one word. A **double-word** field spans two consecutive words (`word="3-4"`, bits `31-0`), most significant word first, and carries one two's-complement scaled value (`sint` with an LSB); latitude, longitude and the GPS pseudoranges use it. The generated code reads and writes both words; nothing else about the message changes.
 
 **What is no longer on the bus:**
 - strings, command names and request IDs
@@ -162,7 +182,7 @@ A terminal can't start a transfer on a 1553 bus. A display that needs to command
   - Its data word is the major frame count (bits 15–6, mod 1024) and the minor frame number (bits 5–0, 0–49).
   - Terminals run one frame of work when it arrives. All processes therefore stay in lockstep with the BC, and the BC can run in real time, as fast as possible, or one frame at a time for tests.
 - **Bus load:** a minor frame may use at most **50%** of a real 1 Mbit/s bus. That's 20 µs per word plus about 12 µs of gaps per message. The UDP link is much faster, but this keeps the schedule one a real bus could carry.
-- **RT-to-RT transfers** carry a producer's message to its consumers, so the data message and the message the consumer receives have the same layout. They are listed in the ICD's **relays** section (`<relay from=… to=…>`): in the minor frame where the bus controller polls `from`, it writes the same words into `to` straight away, and the consumer's receive message gets no slot of its own. `icd_tool.py check` enforces that the two share a layout, that `from` transmits periodically and `to` receives, and that a message has at most one relay feeding it.
+- **RT-to-RT transfers** carry a producer's message to its consumers, so the data message and the message the consumer receives have the same layout. They are listed in the ICD's **relays** section (`<relay from=… to=…>`): in the minor frame where the bus controller polls `from`, it writes the same words into `to` straight away, and the consumer's receive message gets no slot of its own. A producer may feed several consumers, one relay each (at most four; `PLANT_SENSORS` goes to the FCS, the FMS and navigation). `icd_tool.py check` enforces that the two share a layout, that `from` transmits periodically and `to` receives, that a message has at most one relay feeding it, and the limit of four consumers.
 - **The schedule itself** is built by the bus controller at start-up from the message rates and the relays (`B20SS/ofp/bc`): messages of one rate are spread across the phases of their period, and the estimated bus load of every minor frame is checked against the 50% budget. Only the terminals actually present are scheduled; a relay to an absent consumer is skipped.
 
 ## 7. Transport (the simulated wire)
@@ -229,7 +249,7 @@ Word 3 of every terminal's `TERM_STATUS` holds the ICD version it was built agai
 - A **different major version** means the terminal is left out of the schedule and reported as incompatible.
 - A **different minor version** produces a warning.
 
-Changing a layout bumps the major version; adding something bumps the minor.
+Changing a layout bumps the major version; adding something bumps the minor. While the ICD is a DRAFT and nothing is deployed against it, a layout may still grow between minor versions (as the FMS status messages did in 1.2); the major version starts counting at the first released version.
 
 ## 10. Problems found in today's bus code
 
@@ -278,13 +298,15 @@ All answered 2026-10-10:
 
 ## 12. Backlog
 
-Done since v1: the C++ and Python code generators (`gen-cpp`, `gen-py`), the relays section, the bus-load check (in the bus controller), the first partition's inputs and outputs (v1.1).
+Done since v1: the C++ and Python code generators (`gen-cpp`, `gen-py`), the relays section, the bus-load check (in the bus controller), the first partition's inputs and outputs (v1.1), the navigation and flight management partitions' inputs and outputs, the PFD's flight data (`FMS_FLIGHT_DATA`), thrust and gear commands (v1.2).
 
-- Payload layouts for the seven block streams.
-- Periodic data messages for each subsystem and every display input: PFD flight data, EICAS, TSD fused tracks, SMS stores, HUD. These come from the display and subsystem inventories, and are added partition by partition as the port reaches them.
+- Payload layouts for the six radar block streams.
+- Periodic data messages for each remaining subsystem and display input: EICAS, TSD fused tracks, SMS stores, HUD. These come from the display and subsystem inventories, and are added partition by partition as the port reaches them.
 - Engine data (N1, EGT, fuel flow) from RT 3, which `FCS_PERF_STATUS` needs for fuel efficiency; terrain clearance from the radar, which then replaces the plant's.
 - Detailed BIT results per terminal.
-- The FMS commands in `fmsControl.process_command()` that `message_schemas.py` never had: `SET_THRUST`, `SET_LANDING_GEAR` and `SET_CONTROL_SURFACES`. The last overlaps with `FCS_SURFACE_CMD`, so one of the two should own surface commands.
+- `SET_CONTROL_SURFACES` in `fmsControl.process_command()` overlaps with `FCS_SURFACE_CMD`; the FCS owns surface commands and the FMS does not forward them.
+- Waypoints (`flightManagementSystem.add_waypoint` / `activate_waypoint`): nothing drew them, so they wait for the display that will.
+- A wind model in the plant, after which ground speed and track stop being the airspeed and heading.
 
 ## Revision history
 
@@ -294,3 +316,4 @@ Done since v1: the C++ and Python code generators (`gen-cpp`, `gen-py`), the rel
 | 1.0-draft.2 | 2026-10-10 | Alee's answers 1–3: display addresses accepted; BIT, FM fitness and SW configuration moved into RT 1; bus controller confirmed as its own process; RT 24–26 freed |
 | 1.0-draft.3 | 2026-10-10 | Alee's answers 4–10: UDP accepted; Python frozen at `0ab9236`; codec problems left as they are; WEATHER dropped; every undefined value defined from the code; heading true. Unused `command_parameter` words removed |
 | 1.1-draft | 2026-10-10 | Flight control partition: plant terminal RT 27, `PLANT_SENSORS` → `FCS_SENSORS`, `FCS_GCAS_ALERTS`, `FCS_PERF_STATUS`; the relays section (including the MFD radar commands). Enums `gear_position`, `gcas_status`. Owner: Kevin |
+| 1.2-draft | 2026-10-11 | Navigation and flight management partitions: `PLANT_GPS`; `NAV_SENSORS`, `NAV_GPS`, `NAV_SOLUTION`; `FMS_ATTITUDE_IN`, `FMS_SENSORS`, `FMS_NAV_SOLUTION`, `FMS_FLIGHT_DATA` (replacing the `FMS_DATA` block), `FMS_FLIGHT_MODE_CMD`, `FMS_CONTROL_CMD`/`STATUS`, `FMS_ENERGY`; `FMS_STATUS`, `FMS_ATTITUDE_STATUS`, `FMS_NAV_UPDATE_STATUS` extended. Double-word fields; relays to several consumers. Enums `fms_flight_mode`, `countermeasures_state`, `targeting_state`, `weapons_state` |

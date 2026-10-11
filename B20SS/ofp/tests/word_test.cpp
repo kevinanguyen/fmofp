@@ -154,6 +154,22 @@ TEST(DecodeScaled, IsExactForIcdScales) {
     EXPECT_DOUBLE_EQ(-0.5, decode_scaled(-32, 1, 64));
 }
 
+TEST(TwosComplement32, RoundTripsTheWholeRange) {
+    using fmofp::bus::from_twos32;
+    using fmofp::bus::to_twos32;
+    EXPECT_EQ(0U, to_twos32(0));
+    EXPECT_EQ(0xFFFFFFFFU, to_twos32(-1));
+    EXPECT_EQ(0x80000000U, to_twos32(std::numeric_limits<std::int32_t>::min()));
+    EXPECT_EQ(-1, from_twos32(0xFFFFFFFFU));
+    EXPECT_EQ(std::numeric_limits<std::int32_t>::min(), from_twos32(0x80000000U));
+    EXPECT_EQ(std::numeric_limits<std::int32_t>::max(), from_twos32(0x7FFFFFFFU));
+    for (std::int64_t v = std::numeric_limits<std::int32_t>::min(); v <= std::numeric_limits<std::int32_t>::max();
+         v += 0x01234567) {
+        const auto value = static_cast<std::int32_t>(v);
+        EXPECT_EQ(value, from_twos32(to_twos32(value)));
+    }
+}
+
 TEST(Scaled, RoundTripsAcrossTheWholeRange) {
     for (std::int32_t raw = -32768; raw <= 32767; raw += 997) {
         std::int32_t back = 0;

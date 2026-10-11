@@ -89,6 +89,15 @@ class ScaledTest(unittest.TestCase):
         self.assertEqual((Status.OK, -128), w.check_sint(-128, 8))
         self.assertEqual((Status.CLAMPED, 127), w.check_sint(128, 8))
 
+    def test_twos32(self):
+        self.assertEqual(0xFFFFFFFF, w.to_twos32(-1))
+        self.assertEqual(0x80000000, w.to_twos32(-2**31))
+        self.assertEqual(-1, w.from_twos32(0xFFFFFFFF))
+        self.assertEqual(-2**31, w.from_twos32(0x80000000))
+        self.assertEqual(2**31 - 1, w.from_twos32(0x7FFFFFFF))
+        for value in range(-2**31, 2**31, 0x01234567):
+            self.assertEqual(value, w.from_twos32(w.to_twos32(value)))
+
 
 if __name__ == "__main__":
     unittest.main()
