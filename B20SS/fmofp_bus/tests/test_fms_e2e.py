@@ -129,13 +129,18 @@ class FlightManagementEndToEndTest(unittest.TestCase):
             cls.monitor.close()
 
     def run_bus(self):
-        result = subprocess.run(
+        # The monitor is read while the bus runs: a free run of four terminals
+        # produces more records than a socket buffer holds.
+        bc = subprocess.Popen(
             [os.environ["FMOFP_BC"], "--rt", "27", "--rt", "5", "--rt", "7", "--rt", "12", "--port-base",
              str(PORT_BASE), "--frames", str(FRAMES), "--free-run", "--strict", "--script", self.script],
-            capture_output=True, text=True, timeout=120, env=binary_env())
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        self.assertIn(f"script: {len(SCRIPT)} commands", result.stdout)
-        return self.monitor.drain()
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=binary_env())
+        records = self.monitor.read_until(lambda: bc.poll() is not None)
+        output = bc.stdout.read()
+        bc.stdout.close()
+        self.assertEqual(0, bc.wait(timeout=60), output)
+        self.assertIn(f"script: {len(SCRIPT)} commands", output)
+        return records
 
     @staticmethod
     def by_frame(records):

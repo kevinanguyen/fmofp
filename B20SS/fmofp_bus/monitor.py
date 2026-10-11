@@ -64,6 +64,13 @@ class Monitor:
             sock.close()
             return Status.IO_ERROR
         sock.setblocking(False)
+        # As much room as the system allows: a free-running bus produces
+        # records faster than a reader that only drains afterwards can take
+        # them (Linux caps this at net.core.rmem_max; see read_until).
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
+        except OSError:
+            pass
         self._sock = sock
         return Status.OK
 
@@ -87,6 +94,20 @@ class Monitor:
         if status != Status.OK:
             return None
         return parse_record(frame)
+
+    def read_until(self, done, idle_s=0.05):
+        """Every record until done() is true and the port has then been quiet for idle_s.
+
+        Reading while the bus runs is what keeps a long free-running run from
+        overflowing the socket's receive buffer.
+        """
+        records = []
+        while not done():
+            record = self.read(0.01)
+            if record is not None:
+                records.append(record)
+        records.extend(self.drain(idle_s))
+        return records
 
     def drain(self, idle_s=0.05):
         """Every record until the port has been quiet for idle_s."""

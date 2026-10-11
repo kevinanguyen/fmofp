@@ -89,12 +89,15 @@ class FlightControlEndToEndTest(unittest.TestCase):
         cls.monitor.close()
 
     def run_bus(self, frames):
-        result = subprocess.run(
+        bc = subprocess.Popen(
             [os.environ["FMOFP_BC"], "--rt", "27", "--rt", "5", "--port-base", str(PORT_BASE), "--frames",
              str(frames), "--free-run", "--strict"],
-            capture_output=True, text=True, timeout=60, env=binary_env())
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-        return self.monitor.drain()
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=binary_env())
+        records = self.monitor.read_until(lambda: bc.poll() is not None)  # read as it runs: no buffer overflow
+        output = bc.stdout.read()
+        bc.stdout.close()
+        self.assertEqual(0, bc.wait(timeout=60), output)
+        return records
 
     def last_transmit(self, records, cls, rt=None):
         """The newest words a terminal transmitted for message class `cls`.
