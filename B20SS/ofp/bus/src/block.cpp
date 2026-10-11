@@ -11,10 +11,11 @@ std::uint16_t crc16_ccitt_false(const Word* words, std::uint16_t count) noexcept
         const std::array<std::uint8_t, 2> bytes{static_cast<std::uint8_t>(words[i] >> 8U),
                                                 static_cast<std::uint8_t>(words[i] & 0xFFU)};
         for (const std::uint8_t byte : bytes) {
-            crc = static_cast<std::uint16_t>(crc ^ static_cast<std::uint16_t>(byte << 8U));
+            crc = static_cast<std::uint16_t>(crc ^ (static_cast<unsigned>(byte) << 8U));
             for (unsigned bit = 0; bit < 8U; ++bit) {
-                crc = (crc & 0x8000U) != 0U ? static_cast<std::uint16_t>((crc << 1U) ^ 0x1021U)
-                                            : static_cast<std::uint16_t>(crc << 1U);
+                const unsigned shifted = static_cast<unsigned>(crc) << 1U;
+                crc = (crc & 0x8000U) != 0U ? static_cast<std::uint16_t>(shifted ^ 0x1021U)
+                                            : static_cast<std::uint16_t>(shifted);
             }
         }
     }
@@ -22,7 +23,7 @@ std::uint16_t crc16_ccitt_false(const Word* words, std::uint16_t count) noexcept
 }
 
 void encode_descriptor(const BlockDescriptor& d, Word* out) noexcept {
-    out[0] = static_cast<Word>(static_cast<Word>(d.version) << 8U);
+    out[0] = static_cast<Word>(static_cast<unsigned>(d.version) << 8U);
     out[1] = d.length;
     out[2] = d.segments;
     out[3] = d.crc;
@@ -79,7 +80,7 @@ void BlockTransmitter::descriptor(Word* out) const noexcept {
 }
 
 void BlockTransmitter::segment(std::uint16_t index, Word* out) const noexcept {
-    out[0] = static_cast<Word>((static_cast<Word>(version_) << 8U) | (index & 0xFFU));
+    out[0] = static_cast<Word>((static_cast<unsigned>(version_) << 8U) | (index & 0xFFU));
     const std::uint32_t base = static_cast<std::uint32_t>(index) * kBlockSegmentPayloadWords;
     for (std::uint16_t i = 0; i < kBlockSegmentPayloadWords; ++i) {
         const std::uint32_t at = base + i;
