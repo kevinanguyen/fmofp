@@ -204,6 +204,7 @@ jobs:
         if: matrix.preset == 'linux-gcc'
         env:
           FMOFP_BC: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/bc/fmofp_bc
+          FMOFP_FCS: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_fcs
         run: |
           python3 B20SS/icd/tools/icd_tool.py gen-py
           git diff --exit-code -- B20SS/fmofp_bus/icd

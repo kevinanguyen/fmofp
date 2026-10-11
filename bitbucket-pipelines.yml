@@ -86,7 +86,7 @@ pipelines:
               - python3 B20SS/icd/tools/icd_tool.py gen-py
               - git diff --exit-code -- B20SS/fmofp_bus/icd
               - cd B20SS
-              - FMOFP_BC=$(pwd)/ofp/build/linux-gcc/bc/fmofp_bc python3 -m unittest discover -s fmofp_bus/tests -t . -v
+              - FMOFP_BC=$(pwd)/ofp/build/linux-gcc/bc/fmofp_bc FMOFP_FCS=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_fcs python3 -m unittest discover -s fmofp_bus/tests -t . -v
               - cd ofp
               - cmake --preset linux-asan
               - cmake --build --preset linux-asan
