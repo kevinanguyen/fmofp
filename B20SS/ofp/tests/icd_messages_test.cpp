@@ -16,7 +16,7 @@ using namespace fmofp::icd;  // NOLINT: test
 
 TEST(IcdVersion, MatchesTheDocument) {
     EXPECT_EQ(1, kIcdMajor);
-    EXPECT_EQ(0, kIcdMinor);
+    EXPECT_EQ(1, kIcdMinor);
 }
 
 TEST(FcsAttitude, ConstantsMatchTheIcd) {
@@ -78,7 +78,7 @@ TEST(TermStatus, LivesOnEveryTerminalAtSa29) {
     ASSERT_EQ(Status::kOk, m.encode(w));
     EXPECT_EQ(Word{0xF042}, w[0]);
     EXPECT_EQ(Word{0x0001}, w[1]);
-    EXPECT_EQ(Word{0x0100}, w[3]);
+    EXPECT_EQ(static_cast<Word>((kIcdMajor << 8U) | kIcdMinor), w[3]);
 }
 
 TEST(RdrWxStatus, UndefinedModeIsRejected) {
@@ -180,7 +180,7 @@ TEST(MessageTable, NoTwoMessagesShareAnAddress) {
             EXPECT_FALSE(clash) << a.id << " and " << b.id;
         }
     }
-    EXPECT_EQ(44U, kMessages.size());
+    EXPECT_EQ(48U, kMessages.size());
 }
 
 }  // namespace

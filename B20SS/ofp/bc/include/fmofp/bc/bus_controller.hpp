@@ -52,6 +52,7 @@ struct TerminalStats {
 struct BcStats {
     std::uint32_t frames{0};
     std::uint32_t overruns{0};  // a frame's work ran past the next deadline
+    std::uint32_t relays{0};    // RT-to-RT transfers performed
     std::uint32_t aperiodic_sent{0};
     std::uint32_t aperiodic_dropped{0};
     std::uint32_t monitor_failures{0};

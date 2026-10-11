@@ -135,6 +135,16 @@ Status BusController::run_minor_frame() noexcept {
                                   slot.transmit ? nullptr : stored.words.data(),
                                   slot.transmit ? std::uint8_t{0} : slot.words, true, reply);
         result = worst(result, s);
+        // A relayed message goes straight on to its consumer with the words
+        // just received; if the producer did not answer, the consumer gets
+        // nothing this frame and its copy ages out (stale after 3 periods).
+        if (s == Status::kOk && slot.transmit && slot.has_relay()) {
+            bus::Frame relay_reply;
+            const Status r = transact(slot.relay_rt, false, slot.relay_subaddress, slot.words, &reply.words[1],
+                                      slot.words, true, relay_reply);
+            result = worst(result, r);
+            ++stats_.relays;
+        }
     }
 
     for (std::uint8_t i = 0; i < queued_; ++i) {

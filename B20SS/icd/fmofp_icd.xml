@@ -7,11 +7,12 @@
   Word indices are 0-based data words. Bits are numbered 15 (MSB) .. 0 (LSB);
   bits="11-8" means (word >> 8) & 0xF.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="0" status="DRAFT" date="2026-10-10">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="1" status="DRAFT" date="2026-10-10">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
 
+  <revision version="1.1-draft" date="2026-10-10" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">First partition (flight control): the plant terminal RT 27 and PLANT_SENSORS, relayed to the FCS as FCS_SENSORS; FCS_GCAS_ALERTS and FCS_PERF_STATUS outputs; the relays section, which also makes the BC deliver the MFD's radar commands. Kevin owns the ICD from this revision.</revision>
   <bus word_bits="16" byte_order="big-endian" bit_numbering="15=MSB" bit_rate_mbps="1"
        minor_frame_ms="20" minor_frames_per_major="50" rates_hz="50 10 5 1"
        broadcast_rt="31" status_sa="29" wraparound_sa="30" max_bus_load_percent="50"
@@ -118,6 +119,18 @@
       <value name="MAXIMUM_CLIMB" value="5"/>
       <value name="DIVE" value="6"/>
     </enum>
+    <enum id="gear_position" bits="2" doc="Landing gear position, from the plant's gear state (flightControlComputer landing_gear)">
+      <value name="UNKNOWN" value="0" doc="No valid gear indication"/>
+      <value name="UP" value="1"/>
+      <value name="DOWN" value="2"/>
+      <value name="IN_TRANSIT" value="3"/>
+    </enum>
+    <enum id="gcas_status" bits="2" doc="Overall ground collision avoidance state (groundCollisionAvoidanceSys.get_data: ARMED, CAUTION, WARNING)">
+      <value name="OFF" value="0" doc="Not running, or no valid inputs"/>
+      <value name="ARMED" value="1" doc="Running, no alert"/>
+      <value name="CAUTION" value="2" doc="Severity-2 alert active (ALT LOW)"/>
+      <value name="WARNING" value="3" doc="Severity-1 alert active (PULLUP, SINK RATE or TERRAIN)"/>
+    </enum>
   </enums>
 
   <terminals>
@@ -145,6 +158,7 @@
     <terminal rt="21" id="flightsurfaces" name="Flight surfaces" status="new" source="Systems/flightSurfaces"/>
     <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
     <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
+    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance to the radar, engine data to the engine terminal)"/>
   </terminals>
 
   <messages>
@@ -496,7 +510,80 @@
     <message id="MFD_RDR_AEWC_CMD" rt="13" sa="24" dir="T" rate="10" title="MFD command to the aewc radar" status="PROPOSED" layout_of="RDR_AEWC_MODE_CMD">
       <doc>Copied by the BC into RT 9 SA 5. Confirm against the display inventory (v2).</doc>
     </message>
+
+    <!-- ===== v1.1: the plant and the flight control partition's inputs and outputs ===== -->
+    <message id="PLANT_SENSORS" rt="27" sa="1" dir="T" words="12" rate="50" title="Sensed flight state from the plant">
+      <doc>What the aircraft's sensors would measure, published by the simulated aircraft. Ranges follow flightControlComputer.py (altitude 0-60000 ft, speed 100-1000 kt, pitch +-45, roll +-60, AoA 0-25, g 0.5-9) with headroom. Each quantity carries its own SSM so a sensor can fail alone.</doc>
+      <field name="altitude_ssm" word="0" bits="15-14" type="ssm" for="altitude"/>
+      <field name="airspeed_ssm" word="0" bits="13-12" type="ssm" for="airspeed"/>
+      <field name="pitch_ssm" word="0" bits="11-10" type="ssm" for="pitch"/>
+      <field name="roll_ssm" word="0" bits="9-8" type="ssm" for="roll"/>
+      <field name="heading_ssm" word="0" bits="7-6" type="ssm" for="heading"/>
+      <field name="vertical_speed_ssm" word="0" bits="5-4" type="ssm" for="vertical_speed"/>
+      <field name="aoa_ssm" word="0" bits="3-2" type="ssm" for="angle_of_attack"/>
+      <field name="g_ssm" word="0" bits="1-0" type="ssm" for="g_force"/>
+      <field name="clearance_ssm" word="1" bits="15-14" type="ssm" for="terrain_clearance"/>
+      <field name="flaps_ssm" word="1" bits="13-12" type="ssm" for="flaps"/>
+      <field name="gear" word="1" bits="11-10" type="enum" enum="gear_position"/>
+      <field name="spare_1" word="1" bits="9-0" type="spare"/>
+      <field name="altitude" word="2" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Pressure altitude"/>
+      <field name="airspeed" word="3" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="1500" doc="Indicated airspeed"/>
+      <field name="vertical_speed" word="4" bits="15-0" type="sint" lsb="1" units="ft/min" min="-30000" max="30000" doc="Climb positive"/>
+      <field name="pitch" word="5" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90" doc="Nose up positive"/>
+      <field name="roll" word="6" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="Right wing down positive"/>
+      <field name="heading" word="7" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True"/>
+      <field name="angle_of_attack" word="8" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
+      <field name="g_force" word="9" bits="15-0" type="sint" lsb="1/1000" units="g" min="-20" max="20" doc="Normal load factor, 1.0 in level flight"/>
+      <field name="flaps" word="10" bits="15-0" type="uint" lsb="1/100" units="deg" min="0" max="30" doc="fmsControl flaps range"/>
+      <field name="terrain_clearance" word="11" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Height above terrain. From the plant until the radar terminal publishes it"/>
+    </message>
+    <message id="FCS_SENSORS" rt="5" sa="13" dir="R" words="12" rate="50" title="Sensed flight state as received by the flight control computer" layout_of="PLANT_SENSORS">
+      <doc>Relayed by the bus controller from PLANT_SENSORS in the same minor frame (relays section). The FCS computes FCS_ATTITUDE, GCAS and the performance envelope from it.</doc>
+    </message>
+    <message id="FCS_GCAS_ALERTS" rt="5" sa="14" dir="T" words="4" rate="5" title="Ground collision avoidance alerts">
+      <doc>groundCollisionAvoidanceSys.py, evaluated every frame: PULLUP when vertical speed is at or below -4000 ft/min and altitude is below 2000 ft; otherwise SINK_RATE when vertical speed is at or below -2000 ft/min; TERRAIN when terrain clearance is below 500 ft; ALT_LOW when altitude is below 200 ft and TERRAIN is not set. PULLUP, SINK_RATE and TERRAIN are severity 1 (WARNING); ALT_LOW is severity 2 (CAUTION). The values that drove the decision ride along so a display can show them without another message.</doc>
+      <field name="status" word="0" bits="15-14" type="enum" enum="gcas_status"/>
+      <field name="pullup" word="0" bits="13" type="bool"/>
+      <field name="sink_rate" word="0" bits="12" type="bool"/>
+      <field name="terrain" word="0" bits="11" type="bool"/>
+      <field name="alt_low" word="0" bits="10" type="bool"/>
+      <field name="vertical_speed_ssm" word="0" bits="9-8" type="ssm" for="vertical_speed"/>
+      <field name="altitude_ssm" word="0" bits="7-6" type="ssm" for="altitude"/>
+      <field name="clearance_ssm" word="0" bits="5-4" type="ssm" for="terrain_clearance"/>
+      <field name="spare_0" word="0" bits="3-0" type="spare"/>
+      <field name="vertical_speed" word="1" bits="15-0" type="sint" lsb="1" units="ft/min" min="-30000" max="30000"/>
+      <field name="altitude" word="2" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
+      <field name="terrain_clearance" word="3" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
+    </message>
+    <message id="FCS_PERF_STATUS" rt="5" sa="15" dir="T" words="4" rate="1" title="Flight envelope monitoring">
+      <doc>performaneMonitoring.py: an exceedance bit is set while the magnitude of the parameter is above its limit - g 9.0, angle of attack 25 deg, roll 60 deg, pitch 45 deg, vertical speed 6000 ft/min. Fuel efficiency is airspeed / (fuel flow / 60) in nm per kg and is NO_COMPUTED_DATA until the engine terminal publishes fuel flow.</doc>
+      <field name="exceed_g" word="0" bits="15" type="bool"/>
+      <field name="exceed_aoa" word="0" bits="14" type="bool"/>
+      <field name="exceed_roll" word="0" bits="13" type="bool"/>
+      <field name="exceed_pitch" word="0" bits="12" type="bool"/>
+      <field name="exceed_vertical_speed" word="0" bits="11" type="bool"/>
+      <field name="g_ssm" word="0" bits="10-9" type="ssm" for="g_force"/>
+      <field name="aoa_ssm" word="0" bits="8-7" type="ssm" for="angle_of_attack"/>
+      <field name="fuel_ssm" word="0" bits="6-5" type="ssm" for="fuel_efficiency"/>
+      <field name="spare_0" word="0" bits="4-0" type="spare"/>
+      <field name="g_force" word="1" bits="15-0" type="sint" lsb="1/1000" units="g" min="-20" max="20"/>
+      <field name="angle_of_attack" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
+      <field name="fuel_efficiency" word="3" bits="15-0" type="uint" lsb="1/1000" units="nm/kg" min="0" max="65.535"/>
+    </message>
   </messages>
+
+  <!-- RT-to-RT transfers the bus controller performs: in the minor frame where it polls `from`,
+       it writes the same words into `to` straight away. The two must share a layout (one is
+       layout_of the other); `from` transmits periodically, `to` receives. This is how a producer's
+       data reaches its consumers, and how a display's command reaches the terminal it is for. -->
+  <relays>
+    <relay from="PLANT_SENSORS" to="FCS_SENSORS"/>
+    <relay from="MFD_RDR_WX_CMD" to="RDR_WX_MODE_CMD"/>
+    <relay from="MFD_RDR_TFR_CMD" to="RDR_TFR_MODE_CMD"/>
+    <relay from="MFD_RDR_SAR_CMD" to="RDR_SAR_MODE_CMD"/>
+    <relay from="MFD_RDR_TGT_CMD" to="RDR_TGT_MODE_CMD"/>
+    <relay from="MFD_RDR_AEWC_CMD" to="RDR_AEWC_MODE_CMD"/>
+  </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
        v1 fixes the addresses and rates; the payload layouts come in v2. -->

@@ -54,9 +54,13 @@ class Icd:
         self.blocks = []
         self.mode_codes = []
         self.legacy = []
+        self.relays = []
 
     def error(self, where, text):
         self.errors.append(f"{where}: {text}")
+
+    def message(self, message_id):
+        return next((m for m in self.messages if m["id"] == message_id), None)
 
 
 # --------------------------------------------------------------------- parsing
@@ -115,7 +119,13 @@ def load(path):
     icd.blocks = [dict(b.attrib) for b in root.iter("block")]
     icd.mode_codes = [dict(m.attrib) for m in root.iter("mode_code")]
     icd.legacy = [dict(lg.attrib) for lg in root.iter("legacy")]
+    icd.relays = [dict(r.attrib) for r in root.iter("relay")]
     return icd
+
+
+def same_layout(a, b):
+    return a["id"] == b.get("layout_of") or b["id"] == a.get("layout_of") or (
+        a.get("layout_of") is not None and a.get("layout_of") == b.get("layout_of"))
 
 
 def message_rts(icd, msg):
@@ -328,12 +338,36 @@ def check_legacy(icd):
     icd.legacy_count = len(legacy)
 
 
+def check_relays(icd):
+    targets = set()
+    for relay in icd.relays:
+        where = f"relay {relay.get('from')} -> {relay.get('to')}"
+        src, dst = icd.message(relay.get("from")), icd.message(relay.get("to"))
+        if src is None or dst is None:
+            icd.error(where, "names an unknown message")
+            continue
+        if src["dir"] != "T" or dst["dir"] != "R":
+            icd.error(where, "`from` must be a transmit message and `to` a receive message")
+        if src["rt"] == "all" or dst["rt"] == "all" or src["rt"] == dst["rt"]:
+            icd.error(where, "must connect two different, specific terminals")
+        if not same_layout(src, dst):
+            icd.error(where, "the two messages must share a layout (layout_of)")
+        if src["rate"] == "aperiodic":
+            icd.error(where, "`from` must be periodic: the BC polls it on the schedule")
+        if dst["rate"] not in ("aperiodic", src["rate"]):
+            icd.error(where, f"`to` is {dst['rate']} Hz but is delivered at `from`'s {src['rate']} Hz")
+        if dst["id"] in targets:
+            icd.error(where, f"{dst['id']} is already the target of another relay")
+        targets.add(dst["id"])
+
+
 def check(icd):
     check_enums(icd)
     check_terminals(icd)
     for msg in icd.messages:
         check_message(icd, msg)
     check_addresses(icd)
+    check_relays(icd)
     check_legacy(icd)
     return not icd.errors
 
@@ -410,6 +444,20 @@ def render(icd):
     for b in icd.blocks:
         w(f"| `{b['id']}` | {b['rt']} | {b['desc_sa']} | {b['seg_sa']} | {b['rate']} | "
           f"{md_escape(b.get('title'))} | {b.get('payload')} |")
+    w("")
+
+    w("## Relays (RT-to-RT transfers)")
+    w("")
+    w("In the minor frame where the bus controller polls `from`, it writes the same words into "
+      "`to` straight away. This is how a producer's data reaches its consumers and how a display's "
+      "command reaches the terminal it is for.")
+    w("")
+    w("| From | To | Words | Rate (Hz) |")
+    w("|---|---|---|---|")
+    for relay in icd.relays:
+        src = icd.message(relay["from"])
+        w(f"| [`{relay['from']}`](#{relay['from'].lower()}) | [`{relay['to']}`](#{relay['to'].lower()}) | "
+          f"{src.get('words') if src else '?'} | {src.get('rate') if src else '?'} |")
     w("")
 
     w("## Mode codes")
@@ -823,6 +871,28 @@ def gen_messages_hpp(icd):
         name = pascal(msg["id"])
         out.append(f"    {{\"{msg['id']}\", {name}::kRt, {name}::kSubaddress, {name}::kDirection, "
                    f"{name}::kWords, {name}::kRateHz}},")
+    out += [
+        "}};",
+        "",
+        "// RT-to-RT transfers the bus controller performs: poll `from`, then write the",
+        "// same words into `to` in the same minor frame.",
+        "struct RelayInfo {",
+        "    const char* from;",
+        "    const char* to;",
+        "    std::uint8_t from_rt;",
+        "    std::uint8_t from_subaddress;",
+        "    std::uint8_t to_rt;",
+        "    std::uint8_t to_subaddress;",
+        "    std::uint8_t words;",
+        "    std::uint8_t rate_hz;",
+        "};",
+        "",
+        f"inline constexpr std::array<RelayInfo, {len(icd.relays)}> kRelays = {{{{",
+    ]
+    for relay in icd.relays:
+        src, dst = pascal(relay["from"]), pascal(relay["to"])
+        out.append(f"    {{\"{relay['from']}\", \"{relay['to']}\", {src}::kRt, {src}::kSubaddress, "
+                   f"{dst}::kRt, {dst}::kSubaddress, {src}::kWords, {src}::kRateHz}},")
     out += ["}};", "", "}  // namespace fmofp::icd", "", "#endif"]
     return "\n".join(out) + "\n"
 
@@ -1205,7 +1275,18 @@ def gen_py_messages(icd):
         ")",
         "",
         "MESSAGE_CLASSES = {info.id: info.cls for info in MESSAGES}",
+        "",
+        'RelayInfo = namedtuple("RelayInfo", "from_id to_id from_rt from_subaddress to_rt to_subaddress words rate_hz")',
+        "",
+        "# RT-to-RT transfers the bus controller performs: poll `from`, then write the",
+        "# same words into `to` in the same minor frame.",
+        "RELAYS = (",
     ]
+    for relay in icd.relays:
+        src, dst = pascal(relay["from"]), pascal(relay["to"])
+        out.append(f"    RelayInfo(\"{relay['from']}\", \"{relay['to']}\", {src}.RT, {src}.SUBADDRESS, "
+                   f"{dst}.RT, {dst}.SUBADDRESS, {src}.WORDS, {src}.RATE_HZ),")
+    out += [")"]
     return "\n".join(out) + "\n"
 
 

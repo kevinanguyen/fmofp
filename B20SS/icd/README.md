@@ -1,6 +1,6 @@
 # FMOFP MIL-STD-1553B Interface Control Document (ICD)
 
-**Version 1.0 — DRAFT for review (revision 3)** · 2026-10-10 · Owner: Alee (TubAleeLo) · Drafted by Claude for Kevin Nguyen
+**Version 1.1 — DRAFT** · 2026-10-10 · Owner: Kevin Nguyen · Drafted by Claude for Kevin Nguyen
 
 This is the contract for every message on the simulated 1553B bus. The C++ flight partitions and the Python displays both build from it, and nothing else may define a bus message.
 
@@ -35,11 +35,14 @@ v1 does **not** yet define the data that never crossed the bus. Today that data 
 
 v2 adds it, based on an inventory of what each display reads and what the subsystems exchange. The only parts still marked as coming later are those block payloads. Messages that still need confirming against the displays are marked **PROPOSED**.
 
+**v1.1** adds what the first ported partition, flight control, needs: a *plant* terminal (RT 27) that publishes the sensed flight state (`PLANT_SENSORS`), its delivery to the FCS (`FCS_SENSORS`), and the FCS's outputs (`FCS_GCAS_ALERTS`, `FCS_PERF_STATUS`). It also adds the **relays** section: the RT-to-RT transfers the bus controller performs, which is how a producer's data reaches its consumers and how the MFD's radar commands reach the radar. From v1.1 the ICD is maintained in this fork by Kevin.
+
 ## 2. Decisions this draft is built on
 
 | Decision | From | Effect in the ICD |
 |---|---|---|
-| One process per subsystem | Alee | 23 terminals at RT 1–23 (RT 0 reserved, 24–30 spare, 31 broadcast) |
+| One process per subsystem | Alee | 23 subsystem and display terminals at RT 1–23, plus the plant at RT 27 from v1.1 (RT 0 reserved, 24–26 and 28–30 spare, 31 broadcast) |
+| The simulated aircraft is test equipment, not flight software | v1.1 | The plant is its own terminal (RT 27). It publishes what sensors would measure; the flight partitions never contain simulation or random noise. Each quantity moves to its real producer as that subsystem is ported |
 | BIT merges into avionics; FM fitness and SW configuration fold into another terminal | Alee | All three run in the avionics process at RT 1. FM fitness and SW configuration went there because both are health and maintenance functions; Alee can move them |
 | Bus controller is its own process and the master clock | Alee | Every minor frame starts with a broadcast sync (mode code 17); terminals run their frame on receipt |
 | One process per display | Alee | Each display needs its own RT, because one address is one terminal. RT 11 goes to the PFD; MFD, EICAS, radar display, TSD, SMS and HUD get RT 13–18 |
@@ -159,8 +162,8 @@ A terminal can't start a transfer on a 1553 bus. A display that needs to command
   - Its data word is the major frame count (bits 15–6, mod 1024) and the minor frame number (bits 5–0, 0–49).
   - Terminals run one frame of work when it arrives. All processes therefore stay in lockstep with the BC, and the BC can run in real time, as fast as possible, or one frame at a time for tests.
 - **Bus load:** a minor frame may use at most **50%** of a real 1 Mbit/s bus. That's 20 µs per word plus about 12 µs of gaps per message. The UDP link is much faster, but this keeps the schedule one a real bus could carry.
-- **RT-to-RT transfers** carry a producer's message to its consumers, so the data message and the message the consumer receives have the same layout.
-- **Not in v1:** the full schedule table (which message goes in which minor frame, and who consumes it). It comes in v2, once consumers are known; `icd_tool.py` will then generate it and check the bus load.
+- **RT-to-RT transfers** carry a producer's message to its consumers, so the data message and the message the consumer receives have the same layout. They are listed in the ICD's **relays** section (`<relay from=… to=…>`): in the minor frame where the bus controller polls `from`, it writes the same words into `to` straight away, and the consumer's receive message gets no slot of its own. `icd_tool.py check` enforces that the two share a layout, that `from` transmits periodically and `to` receives, and that a message has at most one relay feeding it.
+- **The schedule itself** is built by the bus controller at start-up from the message rates and the relays (`B20SS/ofp/bc`): messages of one rate are spread across the phases of their period, and the estimated bus load of every minor frame is checked against the 50% budget. Only the terminals actually present are scheduled; a relay to an absent consumer is skipped.
 
 ## 7. Transport (the simulated wire)
 
@@ -273,12 +276,13 @@ All answered 2026-10-10:
 | 9 | Undefined values and units? | Full creative liberty | Defined from the code that uses them (section 2) |
 | 10 | Heading: true or magnetic? | True | Every heading and yaw field |
 
-## 12. v2 backlog
+## 12. Backlog
+
+Done since v1: the C++ and Python code generators (`gen-cpp`, `gen-py`), the relays section, the bus-load check (in the bus controller), the first partition's inputs and outputs (v1.1).
 
 - Payload layouts for the seven block streams.
-- Periodic data messages for each subsystem and every display input: PFD flight data, EICAS, TSD fused tracks, SMS stores, HUD. These come from the display and subsystem inventories.
-- Consumers for every message, which gives the BC schedule table and a bus-load check in `icd_tool.py`.
-- Code generators: C++ structs, encoders and decoders, plus the Python decoders, all from the XML.
+- Periodic data messages for each subsystem and every display input: PFD flight data, EICAS, TSD fused tracks, SMS stores, HUD. These come from the display and subsystem inventories, and are added partition by partition as the port reaches them.
+- Engine data (N1, EGT, fuel flow) from RT 3, which `FCS_PERF_STATUS` needs for fuel efficiency; terrain clearance from the radar, which then replaces the plant's.
 - Detailed BIT results per terminal.
 - The FMS commands in `fmsControl.process_command()` that `message_schemas.py` never had: `SET_THRUST`, `SET_LANDING_GEAR` and `SET_CONTROL_SURFACES`. The last overlaps with `FCS_SURFACE_CMD`, so one of the two should own surface commands.
 
@@ -289,3 +293,4 @@ All answered 2026-10-10:
 | 1.0-draft | 2026-10-04 | First draft from `rtAddressConfig.xml` and `message_schemas.py` |
 | 1.0-draft.2 | 2026-10-10 | Alee's answers 1–3: display addresses accepted; BIT, FM fitness and SW configuration moved into RT 1; bus controller confirmed as its own process; RT 24–26 freed |
 | 1.0-draft.3 | 2026-10-10 | Alee's answers 4–10: UDP accepted; Python frozen at `0ab9236`; codec problems left as they are; WEATHER dropped; every undefined value defined from the code; heading true. Unused `command_parameter` words removed |
+| 1.1-draft | 2026-10-10 | Flight control partition: plant terminal RT 27, `PLANT_SENSORS` → `FCS_SENSORS`, `FCS_GCAS_ALERTS`, `FCS_PERF_STATUS`; the relays section (including the MFD radar commands). Enums `gear_position`, `gcas_status`. Owner: Kevin |

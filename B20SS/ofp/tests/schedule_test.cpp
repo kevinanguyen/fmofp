@@ -107,6 +107,61 @@ TEST(Schedule, LoadEstimateCountsEveryWordAndGap) {
     EXPECT_EQ(s.frame_load_us(7), s.worst_frame_load_us());
 }
 
+TEST(Schedule, RelaysRideWithTheirSourceAndCountTwice) {
+    Schedule s;
+    ScheduledMessage src = msg(27, 1, 50, 12);
+    src.relay_rt = 5;
+    src.relay_subaddress = 13;
+    ASSERT_EQ(Status::kOk, s.add(src));
+    ASSERT_EQ(Status::kOk, s.build());
+    const auto& slot = s.frame(0).slots[0];
+    EXPECT_TRUE(slot.has_relay());
+    EXPECT_EQ(5, slot.relay_rt);
+    EXPECT_EQ(13, slot.relay_subaddress);
+    EXPECT_EQ(52U + 2U * ((2U + 12U) * 20U + 12U), s.frame_load_us(0));
+
+    // A relay needs a transmit source and a real, different consumer.
+    ScheduledMessage bad = msg(27, 1, 50, 12, false);
+    bad.relay_rt = 5;
+    bad.relay_subaddress = 13;
+    EXPECT_EQ(Status::kInvalidArgument, s.add(bad));
+    bad = src;
+    bad.relay_rt = 27;
+    EXPECT_EQ(Status::kInvalidArgument, s.add(bad));
+    bad = src;
+    bad.relay_subaddress = 31;
+    EXPECT_EQ(Status::kInvalidArgument, s.add(bad));
+}
+
+TEST(IcdSchedule, RelayTargetsArePresentOnlyWhenTheirConsumerIs) {
+    // Plant and FCS both present: PLANT_SENSORS is polled and relayed to FCS SA 13,
+    // and FCS_SENSORS gets no receive slot of its own.
+    const std::array<std::uint8_t, 2> both{27, 5};
+    Schedule s;
+    ASSERT_EQ(Status::kOk, fmofp::bc::add_icd_messages(s, both.data(), both.size()));
+    ASSERT_EQ(Status::kOk, s.build());
+    std::size_t relayed = 0;
+    for (std::uint8_t minor = 0; minor < kMinorFramesPerMajor; ++minor) {
+        const auto& f = s.frame(minor);
+        for (std::size_t i = 0; i < f.count; ++i) {
+            EXPECT_FALSE(f.slots[i].rt == 5 && f.slots[i].subaddress == 13) << "FCS_SENSORS must not be polled";
+            if (f.slots[i].rt == 27 && f.slots[i].subaddress == 1) {
+                EXPECT_EQ(5, f.slots[i].relay_rt);
+                EXPECT_EQ(13, f.slots[i].relay_subaddress);
+                ++relayed;
+            }
+        }
+    }
+    EXPECT_EQ(50U, relayed);
+
+    // Plant alone: polled, not relayed.
+    const std::array<std::uint8_t, 1> plant_only{27};
+    Schedule p;
+    ASSERT_EQ(Status::kOk, fmofp::bc::add_icd_messages(p, plant_only.data(), plant_only.size()));
+    ASSERT_EQ(Status::kOk, p.build());
+    EXPECT_FALSE(p.frame(0).slots[0].has_relay() || p.frame(0).slots[1].has_relay());
+}
+
 TEST(SyncWord, PacksMajorAndMinor) {
     EXPECT_EQ(Word{0x0000}, encode_sync_word(0, 0));
     EXPECT_EQ(Word{0x0071}, encode_sync_word(1, 49));

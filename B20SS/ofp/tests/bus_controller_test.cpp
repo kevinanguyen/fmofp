@@ -41,13 +41,18 @@ constexpr std::uint16_t kPortBase = 52000;
 // refreshes its TERM_STATUS with the sync word it just received.
 class StubTerminal {
 public:
-    Status start(std::uint8_t rt) {
+    // `preload` runs on the fresh terminal before its thread starts, for
+    // loading transmit subaddresses other than TERM_STATUS.
+    Status start(std::uint8_t rt, void (*preload)(fmofp::bus::RemoteTerminal&) = nullptr) {
         fmofp::rt::RtProcessConfig cfg;
         cfg.rt = rt;
         cfg.port_base = kPortBase;
         const Status s = process_.init(cfg);
         if (s != Status::kOk) {
             return s;
+        }
+        if (preload != nullptr) {
+            preload(process_.terminal());
         }
         thread_ = std::thread([this] { run(); });
         return Status::kOk;
@@ -285,6 +290,53 @@ TEST(BusController, TheMonitorSeesEveryTransaction) {
     EXPECT_EQ(frames + 1, records);
     EXPECT_EQ(frames, syncs);
     EXPECT_EQ(1U, polls);
+}
+
+void load_plant_sensors(fmofp::bus::RemoteTerminal& terminal) {
+    fmofp::icd::PlantSensors s{};
+    s.altitude_ssm = fmofp::icd::Ssm::NORMAL;
+    s.vertical_speed_ssm = fmofp::icd::Ssm::NORMAL;
+    s.altitude = 1500.0;
+    s.vertical_speed = -4500.0;
+    s.gear = fmofp::icd::GearPosition::UP;
+    fmofp::icd::PlantSensors::Words words{};
+    ASSERT_EQ(Status::kOk, s.encode(words));
+    ASSERT_EQ(Status::kOk, terminal.set_transmit(fmofp::icd::PlantSensors::kSubaddress, words.data(),
+                                                 fmofp::icd::PlantSensors::kWords));
+}
+
+TEST(BusController, APlantMessageIsRelayedToTheFlightControlComputer) {
+    StubTerminal plant;
+    StubTerminal fcs;
+    ASSERT_EQ(Status::kOk, plant.start(27, load_plant_sensors));
+    ASSERT_EQ(Status::kOk, fcs.start(5));
+    const BcConfig cfg = config({27, 5}, BcMode::kFreeRun);
+    auto bc = make_bc();
+    ASSERT_EQ(Status::kOk, bc->init(cfg, schedule_for(cfg)));
+
+    EXPECT_EQ(Status::kOk, bc->run_frames(3));
+    wait_for_syncs(fcs, 3);
+    plant.stop();
+    fcs.stop();
+    EXPECT_EQ(3U, bc->stats().relays);
+    EXPECT_EQ(0U, bc->terminal(27).no_response);
+    EXPECT_EQ(0U, bc->terminal(5).no_response);
+
+    // The FCS terminal holds the plant's words at FCS_SENSORS, decodable as such.
+    using fmofp::icd::FcsSensors;
+    FcsSensors::Words got{};
+    std::uint8_t count = 0;
+    bool fresh = false;
+    ASSERT_EQ(Status::kOk, fcs.process().terminal().get_received(FcsSensors::kSubaddress, got.data(),
+                                                                   FcsSensors::kWords, count, fresh));
+    ASSERT_EQ(FcsSensors::kWords, count);
+    FcsSensors decoded{};
+    ASSERT_EQ(Status::kOk, FcsSensors::decode(got, decoded));
+    EXPECT_EQ(fmofp::icd::Ssm::NORMAL, decoded.payload.altitude_ssm);
+    EXPECT_DOUBLE_EQ(1500.0, decoded.payload.altitude);
+    EXPECT_DOUBLE_EQ(-4500.0, decoded.payload.vertical_speed);
+    EXPECT_EQ(fmofp::icd::GearPosition::UP, decoded.payload.gear);
+    EXPECT_EQ(3U, fcs.process().terminal().counters().receives);
 }
 
 TEST(BusController, RefusesABadConfiguration) {

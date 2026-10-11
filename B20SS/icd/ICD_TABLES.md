@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.0 (DRAFT, 2026-10-10). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.1 (DRAFT, 2026-10-10). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -30,8 +30,9 @@
 | 21 | `flightsurfaces` | Flight surfaces | new | Systems/flightSurfaces |  |
 | 22 | `defensive` | Defensive systems - RWR, chaff, flare, ECM | new | Systems/defensiveSys |  |
 | 23 | `flightdatamonitoring` | Flight data monitoring | new | Systems/flightDataMonitoring |  |
+| 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance to the radar, engine data to the engine terminal) |
 
-RT 31 is broadcast. Unused: 24, 25, 26, 27, 28, 29, 30.
+RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 
 ## Message summary
 
@@ -42,6 +43,9 @@ RT 31 is broadcast. Unused: 24, 25, 26, 27, 28, 29, 30.
 | [`FCS_SURFACE_CMD`](#fcs_surface_cmd) | 5 | 11 | R | 2 | aperiodic | Control surface command | DRAFT |
 | [`FCS_SURFACE_STATUS`](#fcs_surface_status) | 5 | 11 | T | 7 | 10 | Control surface positions | DRAFT |
 | [`FCS_ATTITUDE`](#fcs_attitude) | 5 | 12 | T | 4 | 50 | Aircraft attitude | DRAFT |
+| [`FCS_SENSORS`](#fcs_sensors) | 5 | 13 | R | 12 | 50 | Sensed flight state as received by the flight control computer | DRAFT |
+| [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | 5 | 14 | T | 4 | 5 | Ground collision avoidance alerts | DRAFT |
+| [`FCS_PERF_STATUS`](#fcs_perf_status) | 5 | 15 | T | 4 | 1 | Flight envelope monitoring | DRAFT |
 | [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd) | 9 | 1 | R | 3 | aperiodic | Weather radar mode command | DRAFT |
 | [`RDR_WX_STATUS`](#rdr_wx_status) | 9 | 1 | T | 2 | 5 | Weather radar status | DRAFT |
 | [`RDR_TFR_MODE_CMD`](#rdr_tfr_mode_cmd) | 9 | 2 | R | 2 | aperiodic | Terrain-following radar mode command | DRAFT |
@@ -79,6 +83,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 27, 28, 29, 30.
 | [`DSP_SMS_STATUS`](#dsp_sms_status) | 17 | 16 | T | 2 | 1 | Stores management display status | DRAFT |
 | [`DSP_HUD_MODE_CMD`](#dsp_hud_mode_cmd) | 18 | 17 | R | 1 | aperiodic | Head-up display mode command | DRAFT |
 | [`DSP_HUD_STATUS`](#dsp_hud_status) | 18 | 17 | T | 2 | 1 | Head-up display status | DRAFT |
+| [`PLANT_SENSORS`](#plant_sensors) | 27 | 1 | T | 12 | 50 | Sensed flight state from the plant | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
 | [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
 
@@ -95,6 +100,19 @@ Layout of the descriptor and segment messages is in README.md. Payload layouts c
 | `RDR_TFR_ELEVATION` | 9 | 14 | 15 | 10 | TFR elevation profile | TBD-v2 |
 | `RDR_SAR_IMAGE` | 9 | 16 | 17 | 1 | SAR image | TBD-v2 |
 | `FMS_DATA` | 12 | 19 | 20 | 10 | FMS flight data | TBD-v2 |
+
+## Relays (RT-to-RT transfers)
+
+In the minor frame where the bus controller polls `from`, it writes the same words into `to` straight away. This is how a producer's data reaches its consumers and how a display's command reaches the terminal it is for.
+
+| From | To | Words | Rate (Hz) |
+|---|---|---|---|
+| [`PLANT_SENSORS`](#plant_sensors) | [`FCS_SENSORS`](#fcs_sensors) | 12 | 50 |
+| [`MFD_RDR_WX_CMD`](#mfd_rdr_wx_cmd) | [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd) | 3 | 10 |
+| [`MFD_RDR_TFR_CMD`](#mfd_rdr_tfr_cmd) | [`RDR_TFR_MODE_CMD`](#rdr_tfr_mode_cmd) | 2 | 10 |
+| [`MFD_RDR_SAR_CMD`](#mfd_rdr_sar_cmd) | [`RDR_SAR_MODE_CMD`](#rdr_sar_mode_cmd) | 2 | 10 |
+| [`MFD_RDR_TGT_CMD`](#mfd_rdr_tgt_cmd) | [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd) | 2 | 10 |
+| [`MFD_RDR_AEWC_CMD`](#mfd_rdr_aewc_cmd) | [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd) | 4 | 10 |
 
 ## Mode codes
 
@@ -270,6 +288,28 @@ Maneuvers fmsControl.execute_maneuver() knows
 | 4 | DEFENSIVE_SPLIT_S |  |  |
 | 5 | MAXIMUM_CLIMB |  |  |
 | 6 | DIVE |  |  |
+
+### `gear_position` (2 bits)
+
+Landing gear position, from the plant's gear state (flightControlComputer landing_gear)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  | No valid gear indication |
+| 1 | UP |  |  |
+| 2 | DOWN |  |  |
+| 3 | IN_TRANSIT |  |  |
+
+### `gcas_status` (2 bits)
+
+Overall ground collision avoidance state (groundCollisionAvoidanceSys.get_data: ARMED, CAUTION, WARNING)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | OFF |  | Not running, or no valid inputs |
+| 1 | ARMED |  | Running, no alert |
+| 2 | CAUTION |  | Severity-2 alert active (ALT LOW) |
+| 3 | WARNING |  | Severity-1 alert active (PULLUP, SINK RATE or TERRAIN) |
 
 ## Messages
 
@@ -916,6 +956,87 @@ Same layout as [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd).
 Copied by the BC into RT 9 SA 5. Confirm against the display inventory (v2).
 
 Same layout as [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd).
+
+### PLANT_SENSORS
+
+**Sensed flight state from the plant** — RT 27 · SA 1 · transmit (terminal to bus) · 12 words · 50 Hz
+
+What the aircraft's sensors would measure, published by the simulated aircraft. Ranges follow flightControlComputer.py (altitude 0-60000 ft, speed 100-1000 kt, pitch +-45, roll +-60, AoA 0-25, g 0.5-9) with headroom. Each quantity carries its own SSM so a sensor can fail alone.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `altitude_ssm` | ssm | validity of `altitude` |  |
+| 0 | 13-12 | `airspeed_ssm` | ssm | validity of `airspeed` |  |
+| 0 | 11-10 | `pitch_ssm` | ssm | validity of `pitch` |  |
+| 0 | 9-8 | `roll_ssm` | ssm | validity of `roll` |  |
+| 0 | 7-6 | `heading_ssm` | ssm | validity of `heading` |  |
+| 0 | 5-4 | `vertical_speed_ssm` | ssm | validity of `vertical_speed` |  |
+| 0 | 3-2 | `aoa_ssm` | ssm | validity of `angle_of_attack` |  |
+| 0 | 1-0 | `g_ssm` | ssm | validity of `g_force` |  |
+| 1 | 15-14 | `clearance_ssm` | ssm | validity of `terrain_clearance` |  |
+| 1 | 13-12 | `flaps_ssm` | ssm | validity of `flaps` |  |
+| 1 | 11-10 | `gear` | enum | enum `gear_position` |  |
+| 1 | 9-0 | `spare_1` | spare |  |  |
+| 2 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 | Pressure altitude |
+| 3 | 15-0 | `airspeed` | uint | LSB 1/10 kt, range 0 to 1500 | Indicated airspeed |
+| 4 | 15-0 | `vertical_speed` | sint | LSB 1 ft/min, range -30000 to 30000 | Climb positive |
+| 5 | 15-0 | `pitch` | sint | LSB 180/32768 deg, range -90 to 90 | Nose up positive |
+| 6 | 15-0 | `roll` | sint | LSB 180/32768 deg, range -180 to 179.9945 | Right wing down positive |
+| 7 | 15-0 | `heading` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True |
+| 8 | 15-0 | `angle_of_attack` | sint | LSB 180/32768 deg, range -90 to 90 |  |
+| 9 | 15-0 | `g_force` | sint | LSB 1/1000 g, range -20 to 20 | Normal load factor, 1.0 in level flight |
+| 10 | 15-0 | `flaps` | uint | LSB 1/100 deg, range 0 to 30 | fmsControl flaps range |
+| 11 | 15-0 | `terrain_clearance` | uint | LSB 1 ft, range 0 to 65535 | Height above terrain. From the plant until the radar terminal publishes it |
+
+### FCS_SENSORS
+
+**Sensed flight state as received by the flight control computer** — RT 5 · SA 13 · receive (bus to terminal) · 12 words · 50 Hz
+
+Relayed by the bus controller from PLANT_SENSORS in the same minor frame (relays section). The FCS computes FCS_ATTITUDE, GCAS and the performance envelope from it.
+
+Same layout as [`PLANT_SENSORS`](#plant_sensors).
+
+### FCS_GCAS_ALERTS
+
+**Ground collision avoidance alerts** — RT 5 · SA 14 · transmit (terminal to bus) · 4 words · 5 Hz
+
+groundCollisionAvoidanceSys.py, evaluated every frame: PULLUP when vertical speed is at or below -4000 ft/min and altitude is below 2000 ft; otherwise SINK_RATE when vertical speed is at or below -2000 ft/min; TERRAIN when terrain clearance is below 500 ft; ALT_LOW when altitude is below 200 ft and TERRAIN is not set. PULLUP, SINK_RATE and TERRAIN are severity 1 (WARNING); ALT_LOW is severity 2 (CAUTION). The values that drove the decision ride along so a display can show them without another message.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `status` | enum | enum `gcas_status` |  |
+| 0 | 13 | `pullup` | bool |  |  |
+| 0 | 12 | `sink_rate` | bool |  |  |
+| 0 | 11 | `terrain` | bool |  |  |
+| 0 | 10 | `alt_low` | bool |  |  |
+| 0 | 9-8 | `vertical_speed_ssm` | ssm | validity of `vertical_speed` |  |
+| 0 | 7-6 | `altitude_ssm` | ssm | validity of `altitude` |  |
+| 0 | 5-4 | `clearance_ssm` | ssm | validity of `terrain_clearance` |  |
+| 0 | 3-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `vertical_speed` | sint | LSB 1 ft/min, range -30000 to 30000 |  |
+| 2 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 |  |
+| 3 | 15-0 | `terrain_clearance` | uint | LSB 1 ft, range 0 to 65535 |  |
+
+### FCS_PERF_STATUS
+
+**Flight envelope monitoring** — RT 5 · SA 15 · transmit (terminal to bus) · 4 words · 1 Hz
+
+performaneMonitoring.py: an exceedance bit is set while the magnitude of the parameter is above its limit - g 9.0, angle of attack 25 deg, roll 60 deg, pitch 45 deg, vertical speed 6000 ft/min. Fuel efficiency is airspeed / (fuel flow / 60) in nm per kg and is NO_COMPUTED_DATA until the engine terminal publishes fuel flow.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15 | `exceed_g` | bool |  |  |
+| 0 | 14 | `exceed_aoa` | bool |  |  |
+| 0 | 13 | `exceed_roll` | bool |  |  |
+| 0 | 12 | `exceed_pitch` | bool |  |  |
+| 0 | 11 | `exceed_vertical_speed` | bool |  |  |
+| 0 | 10-9 | `g_ssm` | ssm | validity of `g_force` |  |
+| 0 | 8-7 | `aoa_ssm` | ssm | validity of `angle_of_attack` |  |
+| 0 | 6-5 | `fuel_ssm` | ssm | validity of `fuel_efficiency` |  |
+| 0 | 4-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `g_force` | sint | LSB 1/1000 g, range -20 to 20 |  |
+| 2 | 15-0 | `angle_of_attack` | sint | LSB 180/32768 deg, range -90 to 90 |  |
+| 3 | 15-0 | `fuel_efficiency` | uint | LSB 1/1000 nm/kg, range 0 to 65.535 |  |
 
 ## Where every legacy message type went
 

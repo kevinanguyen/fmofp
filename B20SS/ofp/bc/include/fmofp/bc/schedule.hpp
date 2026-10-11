@@ -33,6 +33,11 @@ struct ScheduledMessage {
     bool transmit{false};  // T: the terminal sends; R: the BC sends it data
     std::uint8_t words{0};
     std::uint8_t rate_hz{0};  // 50, 10, 5 or 1
+    // For a transmit message that is relayed (ICD relays section): the
+    // terminal and subaddress that receive the same words straight after the
+    // poll. relay_rt 0 means no relay (RT 0 is reserved and never a consumer).
+    std::uint8_t relay_rt{0};
+    std::uint8_t relay_subaddress{0};
 };
 
 struct Slot {
@@ -40,6 +45,10 @@ struct Slot {
     std::uint8_t subaddress{0};
     bool transmit{false};
     std::uint8_t words{0};
+    std::uint8_t relay_rt{0};
+    std::uint8_t relay_subaddress{0};
+
+    [[nodiscard]] constexpr bool has_relay() const noexcept { return relay_rt != 0U; }
 };
 
 struct FrameSlots {
