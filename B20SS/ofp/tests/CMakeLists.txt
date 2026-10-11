@@ -6,6 +6,7 @@ add_executable(ofp_tests
     command_word_test.cpp
     status_word_test.cpp
     transport_test.cpp
+    block_test.cpp
     osal_test.cpp
     remote_terminal_test.cpp
     schedule_test.cpp
@@ -14,9 +15,12 @@ add_executable(ofp_tests
     gps_solver_test.cpp
     navigation_test.cpp
     flight_management_test.cpp
+    weather_model_test.cpp
+    weather_products_test.cpp
+    weather_radar_test.cpp
     icd_messages_test.cpp)
 add_dependencies(ofp_tests ofp_icd_generate)
 target_link_libraries(ofp_tests PRIVATE
-    ofp::bus ofp::osal ofp::icd ofp::bc ofp::rt_process ofp::fcs ofp::nav ofp::fms ofp::warnings
+    ofp::bus ofp::osal ofp::icd ofp::bc ofp::rt_process ofp::fcs ofp::nav ofp::fms ofp::radar ofp::warnings
     Threads::Threads GTest::gtest GTest::gtest_main)
 add_test(NAME ofp_tests COMMAND ofp_tests)

@@ -79,6 +79,7 @@ void RemoteTerminal::reset() noexcept {
     rx_count_ = {};
     rx_valid_ = {};
     rx_fresh_ = {};
+    tx_count_ = {};
     previous_command_ = 0;
     last_command_ = 0;
     sync_word_ = 0;
@@ -261,6 +262,7 @@ void RemoteTerminal::handle_transmit(const CommandWord& cw, const Frame& in, Fra
     }
     reply.word_count = static_cast<std::uint8_t>(1U + cw.count_or_mode);
     ++counters_.transmits;
+    ++tx_count_[cw.subaddress];
     reply_needed = true;
 }
 

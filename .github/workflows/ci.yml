@@ -169,7 +169,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            g++ cmake ninja-build libgtest-dev cppcheck gcovr python3 python3-numpy
+            g++ cmake ninja-build libgtest-dev cppcheck gcovr python3 python3-numpy python3-scipy
 
       # The XML is the single source of every bus message. `check` enforces the
       # ICD's own rules; the render + diff fails the build if someone changed
@@ -208,6 +208,8 @@ jobs:
           FMOFP_NAV: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_nav
           FMOFP_NAV_TOOL: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_nav_tool
           FMOFP_FMS: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_fms
+          FMOFP_RADAR: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_radar
+          FMOFP_RADAR_TOOL: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_radar_tool
         run: |
           python3 B20SS/icd/tools/icd_tool.py gen-py
           git diff --exit-code -- B20SS/fmofp_bus/icd

@@ -72,7 +72,7 @@ pipelines:
               - export DEBIAN_FRONTEND=noninteractive
               - apt-get update -qq
               - apt-get install -y --no-install-recommends
-                  g++ cmake ninja-build libgtest-dev cppcheck gcovr python3 python3-numpy git
+                  g++ cmake ninja-build libgtest-dev cppcheck gcovr python3 python3-numpy python3-scipy git
               - git config --global --add safe.directory '*'
               - python3 B20SS/icd/tools/icd_tool.py check
               - python3 B20SS/icd/tools/icd_tool.py render
@@ -91,6 +91,8 @@ pipelines:
               - export FMOFP_NAV=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_nav
               - export FMOFP_NAV_TOOL=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_nav_tool
               - export FMOFP_FMS=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_fms
+              - export FMOFP_RADAR=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_radar
+              - export FMOFP_RADAR_TOOL=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_radar_tool
               - python3 -m unittest discover -s fmofp_bus/tests -t . -v
               - cd ofp
               - cmake --preset linux-asan

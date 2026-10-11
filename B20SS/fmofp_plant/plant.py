@@ -3,6 +3,7 @@
     py -m fmofp_plant [--port-base 51000] [--syncs 0] [--seed N] [--terrain-ft 0]
                       [--lat 0.0] [--lon 0.0]
                       [--gps-noise-m 3.0] [--gps-clock-bias-us 1.0] [--gps-outage]
+                      [--no-weather]
                       [--hold altitude=1500,vertical_speed=-4500,...] [--quiet]
 
 PlantModel is Systems/flightControlSys/flightControlComputer.FlightControlComputer's
@@ -11,7 +12,9 @@ from the simulated world: a position that moves with the (held) speed and headin
 and a GPS receiver front end that measures pseudoranges to the 12-satellite
 constellation of Systems/nav/gps/globalPositionSystem.py once a second. The
 position solver itself lives in the navigation terminal; the plant only produces
-what the receiver would measure, noise included.
+what the receiver would measure, noise included. It also owns the weather
+(fmofp_plant.weather): the storm cells and stratiform area the radar's sensor
+model renders, published as PLANT_WEATHER once a second.
 
 --hold freezes named quantities at fixed values, which is how the tests put the
 aircraft into a known situation.
@@ -23,9 +26,10 @@ import random
 import sys
 
 from fmofp_bus.icd.enums import GearPosition, Ssm
-from fmofp_bus.icd.messages import PlantGps, PlantSensors
+from fmofp_bus.icd.messages import PlantGps, PlantSensors, PlantWeather
 from fmofp_bus.rt_process import RtProcess
 from fmofp_bus.status import Status
+from fmofp_plant.weather import WeatherWorld
 
 PLANT_RT = PlantSensors.RT
 SYNC_HZ = 50
@@ -33,6 +37,8 @@ WALK_HZ = 10  # the FCC's update rate
 SYNCS_PER_WALK = SYNC_HZ // WALK_HZ
 GPS_HZ = 1  # GPSSystem.UPDATE_INTERVAL_S
 SYNCS_PER_GPS = SYNC_HZ // GPS_HZ
+WEATHER_HZ = 1
+SYNCS_PER_WEATHER = SYNC_HZ // WEATHER_HZ
 
 HOLDABLE = ("altitude", "speed", "heading", "pitch", "roll", "vertical_speed", "angle_of_attack", "g_force",
             "flaps", "terrain_clearance", "latitude", "longitude")
@@ -111,8 +117,11 @@ class PlantModel:
     """FlightControlComputer._adjust(), including its clamps and starting state, plus position and GPS."""
 
     def __init__(self, seed=None, terrain_ft=0.0, latitude=HOME_LATITUDE, longitude=HOME_LONGITUDE,
-                 gps_noise_m=3.0, gps_clock_bias_us=1.0, gps_outage=False):
+                 gps_noise_m=3.0, gps_clock_bias_us=1.0, gps_outage=False, weather=True):
         self.rng = random.Random(seed)
+        # The weather draws from its own generator so adding it changed nothing else about a seeded run.
+        self.weather = WeatherWorld(random.Random(None if seed is None else seed ^ 0x5745)) if weather else None
+        self.weather_seq = 0
         self.terrain_ft = float(terrain_ft)
         self.altitude = 10000.0       # feet
         self.speed = 500.0            # knots
@@ -166,6 +175,8 @@ class PlantModel:
         self.longitude += gs_dps_lon * math.sin(heading_rad) * dt
         self.latitude = max(-90.0, min(90.0, self.latitude))
         self.longitude = (self.longitude + 180.0) % 360.0 - 180.0
+        if self.weather is not None:
+            self.weather.update(dt)
 
     @property
     def terrain_clearance(self):
@@ -192,6 +203,15 @@ class PlantModel:
         s.flaps = self.value("flaps")
         s.terrain_clearance = self.value("terrain_clearance")
         return s
+
+    def weather_message(self):
+        """PLANT_WEATHER for the current weather; an empty sky when the weather is off."""
+        if self.weather is not None:
+            return self.weather.message()
+        m = PlantWeather()
+        self.weather_seq = (self.weather_seq + 1) % 256
+        m.weather_seq = self.weather_seq
+        return m
 
     def true_position_ecef(self):
         return wgs84_to_ecef(self.value("latitude"), self.value("longitude"), self.value("altitude"))
@@ -225,7 +245,7 @@ class PlantModel:
 
 
 class PlantTerminal:
-    """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame and PLANT_GPS once a second."""
+    """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame, PLANT_GPS and PLANT_WEATHER once a second."""
 
     def __init__(self, model, port_base=51000):
         self.model = model
@@ -239,6 +259,7 @@ class PlantTerminal:
         if status == Status.OK:
             self.publish()
             self.publish_gps()
+            self.publish_weather()
         return status
 
     def _load(self, message):
@@ -254,6 +275,9 @@ class PlantTerminal:
     def publish_gps(self):
         self._load(self.model.gps())
 
+    def publish_weather(self):
+        self._load(self.model.weather_message())
+
     def poll(self, timeout_s=0.1):
         """One iteration of the loop: handle a datagram, step on sync. Returns True on a sync."""
         self.process.poll(timeout_s)
@@ -262,6 +286,7 @@ class PlantTerminal:
             if self.process.terminal.take_reset_request():
                 self.publish()
                 self.publish_gps()
+                self.publish_weather()
             return False
         self.syncs += 1
         if self.syncs % SYNCS_PER_WALK == 0:
@@ -269,6 +294,8 @@ class PlantTerminal:
             self.model.move(1.0 / WALK_HZ)
         if self.syncs % SYNCS_PER_GPS == 0:
             self.publish_gps()
+        if self.syncs % SYNCS_PER_WEATHER == 0:
+            self.publish_weather()
         self.publish()
         return True
 
@@ -297,13 +324,14 @@ def main(argv=None):
     parser.add_argument("--gps-noise-m", type=float, default=3.0, help="pseudorange noise, 1 sigma")
     parser.add_argument("--gps-clock-bias-us", type=float, default=1.0, help="true receiver clock bias")
     parser.add_argument("--gps-outage", action="store_true", help="no satellite is ever visible")
+    parser.add_argument("--no-weather", action="store_true", help="a clear sky: PLANT_WEATHER carries no cells or area")
     parser.add_argument("--hold", type=parse_hold, default={}, help="name=value,... held constant")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
     model = PlantModel(seed=args.seed, terrain_ft=args.terrain_ft, latitude=args.lat, longitude=args.lon,
                        gps_noise_m=args.gps_noise_m, gps_clock_bias_us=args.gps_clock_bias_us,
-                       gps_outage=args.gps_outage)
+                       gps_outage=args.gps_outage, weather=not args.no_weather)
     model.hold = args.hold
     plant = PlantTerminal(model, args.port_base)
     status = plant.init()

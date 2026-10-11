@@ -123,6 +123,10 @@ class RemoteTerminal:
         self._rx_fresh[sa] = False
         return Status.OK, list(self._rx[sa][:self._rx_count[sa]]), fresh
 
+    def transmit_count(self, sa):
+        """How many times the bus controller has read subaddress `sa` since init or reset."""
+        return self._tx_count[sa]
+
     def request_service(self, sa):
         self._service_requested = True
         self._service_sa = sa & MAX_SUBADDRESS
@@ -189,6 +193,7 @@ class RemoteTerminal:
         self._rx_count = [0] * n
         self._rx_valid = [False] * n
         self._rx_fresh = [False] * n
+        self._tx_count = [0] * n
         self._previous_command = 0
         self._last_command = 0
         self._sync_word = 0
@@ -242,6 +247,7 @@ class RemoteTerminal:
         reply = self._reply(frame)
         reply.words += self._tx[cw.subaddress][:cw.count_or_mode]
         self.counters.transmits += 1
+        self._tx_count[cw.subaddress] += 1
         return reply
 
     def _handle_mode_code(self, cw, frame):

@@ -4,7 +4,8 @@ set(OFP_ICD_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(OFP_ICD_GENERATED_HEADERS
     "${OFP_ICD_GEN_DIR}/include/fmofp/icd/version.hpp"
     "${OFP_ICD_GEN_DIR}/include/fmofp/icd/enums.hpp"
-    "${OFP_ICD_GEN_DIR}/include/fmofp/icd/messages.hpp")
+    "${OFP_ICD_GEN_DIR}/include/fmofp/icd/messages.hpp"
+    "${OFP_ICD_GEN_DIR}/include/fmofp/icd/blocks.hpp")
 set(OFP_ICD_GENERATED_TEST "${OFP_ICD_GEN_DIR}/icd_roundtrip_test.cpp")
 
 add_custom_command(

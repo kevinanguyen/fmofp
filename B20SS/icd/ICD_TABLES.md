@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.2 (DRAFT, 2026-10-11). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.3 (DRAFT, 2026-10-11). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -15,7 +15,7 @@
 | 6 | `missionplanning` | Mission planning | existing | Systems/missionPlanning/missionService.py |  |
 | 7 | `nav` | Navigation - GPS position solver and GPS/dead-reckoning fusion | existing | Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py | Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2) |
 | 8 | `powermanagement` | Power management | existing | Systems/powerManagement |  |
-| 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before |
+| 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19); the other four are still Python |
 | 10 | `sensormanagement` | Sensor management | existing | Systems/sensorManagement |  |
 | 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address |
 | 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py | Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object |
@@ -59,6 +59,8 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`RDR_TGT_STATUS`](#rdr_tgt_status) | 9 | 4 | T | 2 | 5 | Targeting radar status | DRAFT |
 | [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd) | 9 | 5 | R | 4 | aperiodic | AEWC radar mode command | DRAFT |
 | [`RDR_AEWC_STATUS`](#rdr_aewc_status) | 9 | 5 | T | 2 | 5 | AEWC radar status | DRAFT |
+| [`RDR_WX_SCAN`](#rdr_wx_scan) | 9 | 18 | T | 10 | 5 | Weather radar scan summary | DRAFT |
+| [`RDR_WX_WEATHER`](#rdr_wx_weather) | 9 | 19 | R | 32 | 1 | Weather truth, for the radar's sensor model | DRAFT |
 | [`DSP_PFD_MODE_CMD`](#dsp_pfd_mode_cmd) | 11 | 11 | R | 1 | aperiodic | Primary flight display mode command | DRAFT |
 | [`DSP_PFD_STATUS`](#dsp_pfd_status) | 11 | 11 | T | 2 | 1 | Primary flight display status | DRAFT |
 | [`FMS_ATTITUDE_IN`](#fms_attitude_in) | 12 | 12 | R | 4 | 50 | Measured attitude, from the FCS | DRAFT |
@@ -96,17 +98,17 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`DSP_HUD_STATUS`](#dsp_hud_status) | 18 | 17 | T | 2 | 1 | Head-up display status | DRAFT |
 | [`PLANT_SENSORS`](#plant_sensors) | 27 | 1 | T | 12 | 50 | Sensed flight state from the plant | DRAFT |
 | [`PLANT_GPS`](#plant_gps) | 27 | 2 | T | 25 | 1 | GPS pseudoranges from the plant | DRAFT |
+| [`PLANT_WEATHER`](#plant_weather) | 27 | 3 | T | 32 | 1 | Weather truth from the plant | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
 | [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
 
 ## Block transfers
 
-Layout of the descriptor and segment messages is in README.md. Payload layouts come in v2.
+The descriptor and segment framing is in README.md section 8. A block's payload is its header, one count word per section, then every section's records in order; the layouts are under [Block payloads](#block-payloads).
 
 | ID | RT | Descriptor SA | Segment SA | Rate (Hz) | Title | Payload |
 |---|---|---|---|---|---|---|
-| `RDR_WX_VIL` | 9 | 6 | 7 | 10 | Weather radar VIL | TBD-v2 |
-| `RDR_WX_PRECIP` | 9 | 8 | 9 | 10 | Weather radar precipitation | TBD-v2 |
+| `RDR_WX_PRODUCTS` | 9 | 6 | 7 | 50 | Weather radar products | [header 2 words + 6 sections, at most 548 words](#rdr_wx_products) |
 | `RDR_TGT_TRACKS` | 9 | 10 | 11 | 10 | Targeting radar tracks | TBD-v2 |
 | `RDR_AEWC_SECTOR` | 9 | 12 | 13 | 10 | AEWC sector scan | TBD-v2 |
 | `RDR_TFR_ELEVATION` | 9 | 14 | 15 | 10 | TFR elevation profile | TBD-v2 |
@@ -122,6 +124,7 @@ In the minor frame where the bus controller polls `from`, it writes the same wor
 | [`PLANT_SENSORS`](#plant_sensors) | [`FMS_SENSORS`](#fms_sensors) | 12 | 50 |
 | [`PLANT_SENSORS`](#plant_sensors) | [`NAV_SENSORS`](#nav_sensors) | 12 | 50 |
 | [`PLANT_GPS`](#plant_gps) | [`NAV_GPS`](#nav_gps) | 25 | 1 |
+| [`PLANT_WEATHER`](#plant_weather) | [`RDR_WX_WEATHER`](#rdr_wx_weather) | 32 | 1 |
 | [`FCS_ATTITUDE`](#fcs_attitude) | [`FMS_ATTITUDE_IN`](#fms_attitude_in) | 4 | 50 |
 | [`NAV_SOLUTION`](#nav_solution) | [`FMS_NAV_SOLUTION`](#fms_nav_solution) | 8 | 10 |
 | [`MFD_RDR_WX_CMD`](#mfd_rdr_wx_cmd) | [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd) | 3 | 10 |
@@ -371,6 +374,42 @@ fmsControl tactical_systems weapons, set by the flight mode
 | 1 | ARMED |  |  |
 | 2 | READY |  |  |
 
+### `precip_type` (3 bits)
+
+Precipitation type in a weather radar product. The point product (precipitation_data_generator_sync) classifies by rate: HAIL above 50 mm/h, MIXED above 25, RAIN above 10, else RAIN or SNOW; the area product (precipitation_analysis) by reflectivity: HAIL above 55 dBZ, HEAVY_RAIN above 45, else RAIN
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | Not classified |
+| 1 | RAIN |  |  |
+| 2 | SNOW |  |  |
+| 3 | MIXED |  |  |
+| 4 | HAIL |  |  |
+| 5 | HEAVY_RAIN |  |  |
+
+### `shear_severity` (2 bits)
+
+Wind shear event severity (weather_processor.WindShearProcessor): LOW from 15 kt/nm, MODERATE above 20, SEVERE above 30
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | LOW |  |  |
+| 2 | MODERATE |  |  |
+| 3 | SEVERE |  |  |
+
+### `turbulence_category` (3 bits)
+
+Turbulence category by eddy dissipation rate proxy (weather_processor.TurbulenceProcessor, the FAA AC 120-88A bands): LIGHT from 0.1, MODERATE from 0.2, SEVERE from 0.4, EXTREME from 0.6
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | LIGHT |  |  |
+| 2 | MODERATE |  |  |
+| 3 | SEVERE |  |  |
+| 4 | EXTREME |  |  |
+
 ## Messages
 
 ### TERM_STATUS
@@ -440,6 +479,42 @@ Replaces: `weather_radarCommand`, `weather_radarModeChangeRequest`, `weather_rad
 | 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
 | 1 | 15-0 | `range_km` | uint | LSB 1 km, range 10 to 200 | Scan range; limits from rmConfig.xml weather_radar scan_range (WeatherRadar.set_range takes km) |
 | 2 | 15-0 | `tilt` | sint | LSB 180/32768 deg, range 0 to 90 | Antenna tilt, up positive; limits from rmConfig.xml weather_radar tilt_range |
+
+### RDR_WX_SCAN
+
+**Weather radar scan summary** — RT 9 · SA 18 · transmit (terminal to bus) · 10 words · 5 Hz
+
+What the last completed scan found, for the display's header and for anyone who does not reassemble the RDR_WX_PRODUCTS block. While NORMAL in an operating mode the radar sweeps the full circle over 60 minor frames (1.2 s), six azimuth degrees per frame, rendering the volume from the weather truth it latched when the sweep began; the products of a scan are published as one block when the scan completes, and products_version is the block version carrying them. The counts are what was detected before the block's record limits were applied.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `scan_id` | uint | raw counts | Id of the last completed scan, increments mod 256 |
+| 0 | 7-4 | `mode` | enum | enum `weather_mode` | Mode the scan was made in; NONE when no scan has completed since the mode was left |
+| 0 | 3 | `scanning` | bool |  | 1 = a scan is in progress |
+| 0 | 2-0 | `max_turbulence` | enum | enum `turbulence_category` | Strongest turbulence category found (TURBULENCE mode) |
+| 1 | 15 | `microburst` | bool |  | 1 = a wind shear event with microburst divergence was found (WINDSHEAR mode) |
+| 1 | 14-12 | `spare_1` | spare |  |  |
+| 1 | 11-8 | `elevations` | uint | raw counts | Elevation angles in the scan's volume coverage pattern: 4 for SURVEILLANCE, 7 for MAPPING and PRECIPITATION, 1 for TURBULENCE and WINDSHEAR |
+| 1 | 7-0 | `products_version` | uint | raw counts | RDR_WX_PRODUCTS block version carrying this scan's products |
+| 2 | 15-0 | `range_km` | uint | LSB 1 km, range 10 to 200 | Instrumented range in effect; range bins beyond it are not scanned |
+| 3 | 15-0 | `tilt` | sint | LSB 180/32768 deg, range 0 to 90 | Antenna tilt in effect, reported as commanded; the sensor model has no antenna to tilt |
+| 4 | 15-0 | `max_reflectivity` | sint | LSB 1/128 dBZ, range -20 to 65 | Strongest return in the volume |
+| 5 | 15-8 | `storm_cells` | uint | raw counts | Storm cells the tracker holds (saturates at 255) |
+| 5 | 7-0 | `precip_areas` | uint | raw counts | Precipitation areas the analyzer found (saturates at 255) |
+| 6 | 15-8 | `windshear_events` | uint | raw counts | Wind shear events detected (saturates at 255) |
+| 6 | 7-0 | `turbulence_cells` | uint | raw counts | Turbulence cells detected (saturates at 255) |
+| 7 | 15-8 | `vil_points` | uint | raw counts | VIL points in the block |
+| 7 | 7-0 | `precip_points` | uint | raw counts | Precipitation points in the block |
+| 8 | 15-0 | `vil_max` | uint | LSB 1/4 kg/m2, range 0 to 16383.75 | Largest VIL in the field |
+| 9 | 15-0 | `scan_frame` | uint | raw counts | The radar's own frame count (mod 65536) when the scan completed |
+
+### RDR_WX_WEATHER
+
+**Weather truth, for the radar's sensor model** — RT 9 · SA 19 · receive (bus to terminal) · 32 words · 1 Hz
+
+PLANT_WEATHER relayed to the radar. The radar renders what its antenna would see from it (reflectivity_simulator._render_storm_cells, _render_stratiform_areas and _add_ground_clutter) and processes that volume; nothing else about the weather is known to it.
+
+Same layout as [`PLANT_WEATHER`](#plant_weather).
 
 ### RDR_TFR_STATUS
 
@@ -1262,6 +1337,65 @@ What the simulated GPS receiver measures each epoch: for every satellite of the 
 | 21-22 | 31-0 | `pseudorange_11` | sint | LSB 1/16 m, range 0 to 100000000 |  |
 | 23-24 | 31-0 | `pseudorange_12` | sint | LSB 1/16 m, range 0 to 100000000 |  |
 
+### PLANT_WEATHER
+
+**Weather truth from the plant** — RT 27 · SA 3 · transmit (terminal to bus) · 32 words · 1 Hz
+
+The simulated weather the radar's sensor model renders: the storm cells and the stratiform area of weather_state_manager.py, which the plant moves with the wind and ages through their lifecycles as that module did, published once a second. The radar never sees this as weather; it renders a reflectivity volume from it, as reflectivity_simulator.py did, and processes that. Cells beyond cell_count and an absent area are zero. A cell's vertical profile is one of the two the Python used: entry_profile 0 is the profile of the initial cells (1.0, 0.9, 0.8, 0.7 for the lowest four elevations, then 0.2), 1 the profile of cells that entered at the edge of the picture (1 - 0.15 per elevation, floor 0.2).
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `weather_seq` | uint | raw counts | Increments (mod 256) with every publication |
+| 0 | 7-4 | `cell_count` | uint | raw counts | Storm cells present, 0-8 |
+| 0 | 3-0 | `area_count` | uint | raw counts | Stratiform areas present, 0-1 |
+| 1 | 15-0 | `cell_1_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 1 centre, true azimuth |
+| 2 | 15-0 | `cell_1_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 1 centre, range |
+| 3 | 15-9 | `cell_1_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 1 radius |
+| 3 | 8 | `cell_1_entry_profile` | bool |  | Cell 1 vertical profile: 0 initial, 1 entered at the edge |
+| 3 | 7-0 | `cell_1_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 1 peak reflectivity |
+| 4 | 15-0 | `cell_2_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 2 centre, true azimuth |
+| 5 | 15-0 | `cell_2_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 2 centre, range |
+| 6 | 15-9 | `cell_2_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 2 radius |
+| 6 | 8 | `cell_2_entry_profile` | bool |  | Cell 2 vertical profile: 0 initial, 1 entered at the edge |
+| 6 | 7-0 | `cell_2_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 2 peak reflectivity |
+| 7 | 15-0 | `cell_3_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 3 centre, true azimuth |
+| 8 | 15-0 | `cell_3_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 3 centre, range |
+| 9 | 15-9 | `cell_3_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 3 radius |
+| 9 | 8 | `cell_3_entry_profile` | bool |  | Cell 3 vertical profile: 0 initial, 1 entered at the edge |
+| 9 | 7-0 | `cell_3_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 3 peak reflectivity |
+| 10 | 15-0 | `cell_4_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 4 centre, true azimuth |
+| 11 | 15-0 | `cell_4_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 4 centre, range |
+| 12 | 15-9 | `cell_4_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 4 radius |
+| 12 | 8 | `cell_4_entry_profile` | bool |  | Cell 4 vertical profile: 0 initial, 1 entered at the edge |
+| 12 | 7-0 | `cell_4_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 4 peak reflectivity |
+| 13 | 15-0 | `cell_5_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 5 centre, true azimuth |
+| 14 | 15-0 | `cell_5_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 5 centre, range |
+| 15 | 15-9 | `cell_5_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 5 radius |
+| 15 | 8 | `cell_5_entry_profile` | bool |  | Cell 5 vertical profile: 0 initial, 1 entered at the edge |
+| 15 | 7-0 | `cell_5_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 5 peak reflectivity |
+| 16 | 15-0 | `cell_6_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 6 centre, true azimuth |
+| 17 | 15-0 | `cell_6_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 6 centre, range |
+| 18 | 15-9 | `cell_6_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 6 radius |
+| 18 | 8 | `cell_6_entry_profile` | bool |  | Cell 6 vertical profile: 0 initial, 1 entered at the edge |
+| 18 | 7-0 | `cell_6_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 6 peak reflectivity |
+| 19 | 15-0 | `cell_7_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 7 centre, true azimuth |
+| 20 | 15-0 | `cell_7_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 7 centre, range |
+| 21 | 15-9 | `cell_7_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 7 radius |
+| 21 | 8 | `cell_7_entry_profile` | bool |  | Cell 7 vertical profile: 0 initial, 1 entered at the edge |
+| 21 | 7-0 | `cell_7_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 7 peak reflectivity |
+| 22 | 15-0 | `cell_8_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Cell 8 centre, true azimuth |
+| 23 | 15-0 | `cell_8_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Cell 8 centre, range |
+| 24 | 15-9 | `cell_8_size` | uint | LSB 1/4 km, range 0 to 31.75 | Cell 8 radius |
+| 24 | 8 | `cell_8_entry_profile` | bool |  | Cell 8 vertical profile: 0 initial, 1 entered at the edge |
+| 24 | 7-0 | `cell_8_intensity` | uint | LSB 1/2 dBZ, range 0 to 127.5 | Cell 8 peak reflectivity |
+| 25 | 15-0 | `area_azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Area centre, true azimuth |
+| 26 | 15-0 | `area_range` | uint | LSB 1/64 km, range 0 to 1023.98 | Area centre, range |
+| 27 | 15-0 | `area_width` | uint | LSB 1/128 deg, range 0 to 511.99 | Area width in azimuth |
+| 28 | 15-0 | `area_depth` | uint | LSB 1/64 km, range 0 to 1023.98 | Area depth in range |
+| 29 | 15-0 | `area_intensity` | uint | LSB 1/128 dBZ, range 0 to 511.99 | Area reflectivity at its centre |
+| 30 | 15-0 | `spare_30` | spare |  |  |
+| 31 | 15-0 | `spare_31` | spare |  |  |
+
 ### FCS_SENSORS
 
 **Sensed flight state as received by the flight control computer** — RT 5 · SA 13 · receive (bus to terminal) · 12 words · 50 Hz
@@ -1312,6 +1446,101 @@ performaneMonitoring.py: an exceedance bit is set while the magnitude of the par
 | 2 | 15-0 | `angle_of_attack` | sint | LSB 180/32768 deg, range -90 to 90 |  |
 | 3 | 15-0 | `fuel_efficiency` | uint | LSB 1/1000 nm/kg, range 0 to 65.535 |  |
 
+## Block payloads
+
+### RDR_WX_PRODUCTS
+
+**Weather radar products** — RT 9 · descriptor SA 6 · segment SA 7 · 50 Hz · payload at most 548 words
+
+Everything one scan produced, published as one block when the scan completes so a consumer always draws a consistent picture (README section 8). Which sections are filled depends on the mode: SURVEILLANCE fills vil, precip and cells; MAPPING and PRECIPITATION fill precip and areas; WINDSHEAR fills windshear; TURBULENCE fills turbulence. Positions are polar from the aircraft: true azimuth and range. The record limits apply after the selection described in the README (the Python's own limits for the VIL and precipitation points; new for the rest); the counts before the limits are in RDR_WX_SCAN. The segment subaddress is polled every frame, so an 18-segment block arrives in 0.36 s, well inside the 1.2 s scan.
+
+Replaces: `weather_radarVILResponse`, `DISPLAY_VIL_DATA`, `weather_radarData`, `radarDataRequest`, `radarDataResponse`, `weather_radarPrecipitationResponse`
+
+**Header (2 words)**, followed by one count word per section in the order below.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `scan_id` | uint | raw counts | Scan these products come from (RDR_WX_SCAN.scan_id) |
+| 0 | 7-4 | `mode` | enum | enum `weather_mode` | Mode of that scan; NONE with every section empty when the radar is not scanning |
+| 0 | 3 | `microburst` | bool |  | 1 = a microburst was detected (WINDSHEAR mode) |
+| 0 | 2-0 | `max_turbulence` | enum | enum `turbulence_category` | Strongest turbulence category (TURBULENCE mode) |
+| 1 | 15-0 | `max_reflectivity` | sint | LSB 1/128 dBZ, range -20 to 65 | Strongest return in the volume |
+
+**Section `vil` — Vertically integrated liquid**: up to 20 records of 4 words. vil_data_generator_sync: VIL per column, the significant columns of the 8x-downsampled field, at most 20 chosen for continuity with the previous scan and then by cluster intensity
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True azimuth of the column |
+| 1 | 15-0 | `range` | uint | LSB 1/64 km, range 0 to 1023.98 | Range of the column |
+| 2 | 15-0 | `value` | uint | LSB 1/4 kg/m2, range 0 to 16383.75 | VIL as the Python computed it: 3.44e-3 x Z^(4/7) x layer thickness, summed over the elevations |
+| 3 | 15-8 | `intensity` | uint | LSB 1/200, range 0 to 1.275 | min(1, value / 65) |
+| 3 | 7-4 | `layer_count` | uint | raw counts | min(15, int(intensity x 15) + 1) |
+| 3 | 3 | `show_values` | bool |  | 1 = intensity above 0.3: the display labels the point |
+| 3 | 2-0 | `spare_3` | spare |  |  |
+
+**Section `precip` — Precipitation points**: up to 15 records of 4 words. precipitation_data_generator_sync: the Marshall-Palmer rate of each column's strongest return, the significant columns of the 8x-downsampled field, at most 15 chosen as the VIL points are
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True azimuth of the column |
+| 1 | 15-0 | `range` | uint | LSB 1/64 km, range 0 to 1023.98 | Range of the column |
+| 2 | 15-0 | `rate` | uint | LSB 1/10 mm/h, range 0 to 6553.5 | (Z / 200)^(1 / 1.6) |
+| 3 | 15-8 | `intensity` | uint | LSB 1/200, range 0 to 1.275 | min(1, rate / 50) |
+| 3 | 7-5 | `type` | enum | enum `precip_type` | By rate: HAIL above 50, MIXED above 25, RAIN above 10, else SNOW three times in ten, RAIN otherwise |
+| 3 | 4 | `show_values` | bool |  | 1 = intensity above 0.3 |
+| 3 | 3-0 | `spare_3` | spare |  |  |
+
+**Section `cells` — Storm cells**: up to 12 records of 10 words. stormCellTracking.StormCellTracker: connected regions above 30 dBZ in the composite (maximum over elevation) field, tracked from scan to scan by proximity (5 bins); the 12 largest by size, then reflectivity, are reported
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `cell_id` | uint | raw counts | Tracker id, kept while the cell is followed |
+| 1 | 15-0 | `azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Centroid, true azimuth |
+| 2 | 15-0 | `range` | uint | LSB 1/64 km, range 0 to 1023.98 | Centroid range |
+| 3 | 15-0 | `reflectivity` | uint | LSB 1/128 dBZ, range 0 to 511.99 | Mean over the region |
+| 4 | 15-0 | `size` | uint | LSB 1/2 nm, range 0 to 32767.5 | Region size, half a nautical mile per bin as the Python counted it |
+| 5 | 15-0 | `intensity` | uint | LSB 1/10000, range 0 to 1 | (reflectivity - 30) / 35, limited to 0..1 |
+| 6 | 15-0 | `azimuth_rate` | sint | LSB 1/64 deg/s, range -512 to 511.98 | Centroid motion since the previous scan |
+| 7 | 15-0 | `range_rate` | sint | LSB 1/64 km/s, range -512 to 511.98 | Centroid motion since the previous scan |
+| 8 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 | The Python's cell-top estimate: size (as a range proxy) x tan(elevation) |
+| 9 | 15-0 | `vertical_development` | sint | LSB 1/16 ft/min, range -2048 to 2047.9 | Change of that estimate per scan interval |
+
+**Section `areas` — Precipitation areas**: up to 12 records of 5 words. precipitation_analysis.PrecipitationAnalyzer: connected regions above 30 dBZ, with the Marshall-Palmer rate of their mean reflectivity and a type from it; the 12 strongest by reflectivity are reported
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | Centroid, true azimuth |
+| 1 | 15-0 | `range` | uint | LSB 1/64 km, range 0 to 1023.98 | Centroid range |
+| 2 | 15-0 | `reflectivity` | uint | LSB 1/128 dBZ, range 0 to 511.99 | Mean over the region |
+| 3 | 15-0 | `rate` | uint | LSB 1/10 mm/h, range 0 to 6553.5 | (Z / 200)^(1 / 1.6) of the mean |
+| 4 | 15-8 | `intensity` | uint | LSB 1/200, range 0 to 1.275 | (reflectivity - 30) / 35, limited to 0..1 |
+| 4 | 7-5 | `type` | enum | enum `precip_type` | HAIL above 55 dBZ, HEAVY_RAIN above 45, else RAIN |
+| 4 | 4-0 | `spare_4` | spare |  |  |
+
+**Section `windshear` — Wind shear events**: up to 20 records of 5 words. weather_processor.WindShearProcessor on the lowest elevation: shear proxy = 0.8 x \|azimuthal reflectivity gradient\| in kt/nm, an event where that is 15 or more and reflectivity 20 dBZ or more, one per 5x5-bin cluster, in order of severity; the first 20 are reported
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True azimuth of the bin |
+| 1 | 15-0 | `range` | uint | LSB 1/64 km, range 0 to 1023.98 | Range of the bin |
+| 2 | 15-0 | `shear` | uint | LSB 1/16 kt/nm, range 0 to 4095.9 |  |
+| 3 | 15-14 | `severity` | enum | enum `shear_severity` |  |
+| 3 | 13 | `microburst` | bool |  | 1 = divergence above 0.08 |
+| 3 | 12-0 | `divergence` | sint | LSB 1/512, range -8 to 7.998 | Range gradient / 20; positive is outflow |
+| 4 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 | Beam height at the bin: range x tan(lowest elevation) |
+
+**Section `turbulence` — Turbulence cells**: up to 20 records of 6 words. weather_processor.TurbulenceProcessor on the lowest elevation: spectrum width proxy = local 3x3 standard deviation of reflectivity, EDR proxy = 0.3 x width^(2/3) / range_m^(1/3), a cell where EDR is 0.1 or more, reflectivity 15 dBZ or more and width at least 1, one per 4x4-bin cluster, strongest first; the first 20 are reported
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True azimuth of the bin |
+| 1 | 15-0 | `range` | uint | LSB 1/64 km, range 0 to 1023.98 | Range of the bin |
+| 2 | 15-0 | `intensity` | uint | LSB 1/10000, range 0 to 1 | min(1, EDR / 0.6) |
+| 3 | 15-0 | `spectrum_width` | uint | LSB 1/64 m/s, range 0 to 1023.98 |  |
+| 4 | 15-13 | `category` | enum | enum `turbulence_category` |  |
+| 4 | 12-0 | `spare_4` | spare |  |  |
+| 5 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 | Beam height at the bin: range x tan(lowest elevation) |
+
 ## Where every legacy message type went
 
 All 89 `MESSAGE_SCHEMAS` types from `FMOFP/MIL_STD_1553B/message_schemas.py`.
@@ -1334,7 +1563,7 @@ All 89 `MESSAGE_SCHEMAS` types from `FMOFP/MIL_STD_1553B/message_schemas.py`.
 | `display_mode_change` | DSP_PFD_MODE_CMD; DSP_MFD_MODE_CMD; DSP_EICAS_MODE_CMD; DSP_RADAR_MODE_CMD; DSP_TSD_MODE_CMD; DSP_SMS_MODE_CMD; DSP_HUD_MODE_CMD |
 | `display_mode_request` | DSP_PFD_MODE_CMD; DSP_MFD_MODE_CMD; DSP_EICAS_MODE_CMD; DSP_RADAR_MODE_CMD; DSP_TSD_MODE_CMD; DSP_SMS_MODE_CMD; DSP_HUD_MODE_CMD |
 | `display_mode_response` | DSP_PFD_STATUS; DSP_MFD_STATUS; DSP_EICAS_STATUS; DSP_RADAR_STATUS; DSP_TSD_STATUS; DSP_SMS_STATUS; DSP_HUD_STATUS |
-| `DISPLAY_VIL_DATA` | block RDR_WX_VIL |
+| `DISPLAY_VIL_DATA` | block RDR_WX_PRODUCTS |
 | `displayCommand` | DSP_PFD_MODE_CMD; DSP_MFD_MODE_CMD; DSP_EICAS_MODE_CMD; DSP_RADAR_MODE_CMD; DSP_TSD_MODE_CMD; DSP_SMS_MODE_CMD; DSP_HUD_MODE_CMD |
 | `displayDataUpdate` | retired: Displays receive the producer's own messages through BC-scheduled RT-to-RT transfers |
 | `displayStatusRequest` | DSP_PFD_STATUS; DSP_MFD_STATUS; DSP_EICAS_STATUS; DSP_RADAR_STATUS; DSP_TSD_STATUS; DSP_SMS_STATUS; DSP_HUD_STATUS |
@@ -1364,8 +1593,8 @@ All 89 `MESSAGE_SCHEMAS` types from `FMOFP/MIL_STD_1553B/message_schemas.py`.
 | `fmsStatusRequest` | FMS_STATUS |
 | `fmsStatusResponse` | FMS_STATUS |
 | `radarCommand` | RDR_WX_MODE_CMD; RDR_TFR_MODE_CMD; RDR_SAR_MODE_CMD; RDR_TGT_MODE_CMD; RDR_AEWC_MODE_CMD |
-| `radarDataRequest` | block RDR_WX_VIL |
-| `radarDataResponse` | block RDR_WX_VIL; block RDR_WX_PRECIP |
+| `radarDataRequest` | block RDR_WX_PRODUCTS |
+| `radarDataResponse` | block RDR_WX_PRODUCTS |
 | `radarStatusRequest` | RDR_WX_STATUS; RDR_TFR_STATUS; RDR_SAR_STATUS; RDR_TGT_STATUS; RDR_AEWC_STATUS |
 | `radarStatusResponse` | RDR_WX_STATUS; RDR_TFR_STATUS; RDR_SAR_STATUS; RDR_TGT_STATUS; RDR_AEWC_STATUS |
 | `sar_radarCommand` | RDR_SAR_MODE_CMD |
@@ -1398,13 +1627,13 @@ All 89 `MESSAGE_SCHEMAS` types from `FMOFP/MIL_STD_1553B/message_schemas.py`.
 | `tfr_radarStatusRequest` | RDR_TFR_STATUS |
 | `tfr_radarStatusResponse` | RDR_TFR_STATUS |
 | `weather_radarCommand` | RDR_WX_MODE_CMD |
-| `weather_radarData` | block RDR_WX_VIL; block RDR_WX_PRECIP |
+| `weather_radarData` | block RDR_WX_PRODUCTS |
 | `weather_radarModeChangeRequest` | RDR_WX_MODE_CMD |
 | `weather_radarModeChangeResponse` | RDR_WX_STATUS |
 | `weather_radarPrecipitationRequest` | RDR_WX_MODE_CMD |
-| `weather_radarPrecipitationResponse` | block RDR_WX_PRECIP |
+| `weather_radarPrecipitationResponse` | block RDR_WX_PRODUCTS |
 | `weather_radarStatusRequest` | RDR_WX_STATUS |
 | `weather_radarStatusResponse` | RDR_WX_STATUS |
 | `weather_radarVILRequest` | RDR_WX_MODE_CMD |
-| `weather_radarVILResponse` | block RDR_WX_VIL |
+| `weather_radarVILResponse` | block RDR_WX_PRODUCTS |
 

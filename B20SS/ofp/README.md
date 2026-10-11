@@ -8,11 +8,11 @@ Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
 | Directory | Contents | Target |
 |---|---|---|
-| `bus/` | Bus word primitives (bit fields, two's complement, scaling), command and status words, the datagram framing, and `RemoteTerminal`: what every terminal owes the bus | `ofp::bus` |
+| `bus/` | Bus word primitives (bit fields, two's complement, scaling), command and status words, the datagram framing, `RemoteTerminal`: what every terminal owes the bus, and the block transfer (descriptor and segments) for payloads over 32 words | `ofp::bus` |
 | `osal/` | The only code that talks to the OS: monotonic clock with absolute-deadline sleep, UDP on 127.0.0.1. One implementation each for Windows and POSIX | `ofp::osal` |
-| `icd/` | Builds the generated headers (`fmofp/icd/enums.hpp`, `messages.hpp`, `version.hpp`) from `../icd/fmofp_icd.xml`. Nothing here is checked in | `ofp::icd` |
+| `icd/` | Builds the generated headers (`fmofp/icd/enums.hpp`, `messages.hpp`, `blocks.hpp`, `version.hpp`) from `../icd/fmofp_icd.xml`. Nothing here is checked in | `ofp::icd` |
 | `bc/` | The bus controller: the 20 ms schedule, the frame loop with sync and timing, the transaction engine, and the `fmofp_bc` process, which can also send commands to terminals at given frames from a script | `ofp::bc`, `fmofp_bc` |
-| `partitions/` | `common/`: the socket loop every partition runs around its terminal. `rt_stub/`: a stand-in terminal that answers `TERM_STATUS`. `fcs/`: flight control, the first ported partition (GCAS alerts, envelope monitoring, mode and surface commands). `nav/`: navigation (the GPS position solver, the GPS / dead-reckoning fusion), plus `fmofp_nav_tool`, which puts its arithmetic on stdin/stdout for the Python oracle tests. `fms/`: flight management (flight modes and their envelopes, attitude commands and maneuvers, autopilot targets, thrust and gear, the flight data the displays read, energy maneuverability). Each is a pure library plus a process | `ofp::rt_process`, `fmofp_rt_stub`, `ofp::fcs`, `fmofp_fcs`, `ofp::nav`, `fmofp_nav`, `fmofp_nav_tool`, `ofp::fms`, `fmofp_fms` |
+| `partitions/` | `common/`: the socket loop every partition runs around its terminal. `rt_stub/`: a stand-in terminal that answers `TERM_STATUS`. `fcs/`: flight control, the first ported partition (GCAS alerts, envelope monitoring, mode and surface commands). `nav/`: navigation (the GPS position solver, the GPS / dead-reckoning fusion), plus `fmofp_nav_tool`, which puts its arithmetic on stdin/stdout for the Python oracle tests. `fms/`: flight management (flight modes and their envelopes, attitude commands and maneuvers, autopilot targets, thrust and gear, the flight data the displays read, energy maneuverability). `radar/`: the radar computer with the weather radar ported: the sensor model that renders the plant's weather, the signal processing (VIL, rain rate, storm cells, precipitation areas, wind shear, turbulence), the 1.2 s scan and the products block, plus `fmofp_radar_tool` for the oracle tests. Each is a pure library plus a process | `ofp::rt_process`, `fmofp_rt_stub`, `ofp::fcs`, `fmofp_fcs`, `ofp::nav`, `fmofp_nav`, `fmofp_nav_tool`, `ofp::fms`, `fmofp_fms`, `ofp::radar`, `fmofp_radar`, `fmofp_radar_tool` |
 | `tests/` | GoogleTest unit tests for the hand-written code, including the Phase 1 gate run in-process | `ofp_tests` |
 | `cmake/` | The compiler flags every target gets | `ofp::warnings`, `ofp::flight` |
 
@@ -36,23 +36,30 @@ the monitor at 51033); a different `--port-base` lets two buses share a machine.
 
 ## Running the partitions
 
-Flight control, navigation and flight management on the bus, fed by the Python
-plant model (the simulated aircraft, RT 27). From `B20SS/`:
+Flight control, navigation, flight management and the weather radar on the
+bus, fed by the Python plant model (the simulated aircraft and its weather,
+RT 27). From `B20SS/`:
 
 ```bash
 py -m fmofp_plant --port-base 53000                 # the aircraft; add --hold altitude=150 to test ALT LOW
 ofp/build/<preset>/partitions/fmofp_fcs --port-base 53000
 ofp/build/<preset>/partitions/fmofp_nav --port-base 53000
 ofp/build/<preset>/partitions/fmofp_fms --port-base 53000
-ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --port-base 53000 --report
+ofp/build/<preset>/partitions/fmofp_radar --port-base 53000
+ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --port-base 53000 --report
 ```
 
 The controller polls the plant's `PLANT_SENSORS` 50 times a second and relays it
 to every consumer that is present (`FCS_SENSORS`, `FMS_SENSORS`,
-`NAV_SENSORS`), polls the plant's GPS pseudoranges once a second and relays them
-to navigation (`NAV_GPS`), relays `FCS_ATTITUDE` and `NAV_SOLUTION` to the FMS,
-and collects everything the three partitions publish. Anything listening on the
-monitor port sees every transaction (`fmofp_bus.monitor` reads it from Python).
+`NAV_SENSORS`), polls the plant's GPS pseudoranges and its weather once a second
+and relays them (`NAV_GPS`, `RDR_WX_WEATHER`), relays `FCS_ATTITUDE` and
+`NAV_SOLUTION` to the FMS, and collects everything the partitions publish,
+including the radar's `RDR_WX_PRODUCTS` block a segment per frame. Anything
+listening on the monitor port sees every transaction (`fmofp_bus.monitor` reads
+it from Python; `fmofp_bus.block.blocks_from_records` reassembles the blocks).
+The radar does nothing until it is told a mode: a `RDR_WX_MODE_CMD` (RT 9,
+SA 1) for NORMAL and SURVEILLANCE starts it scanning, and `RDR_WX_SCAN` then
+reports what each 1.2 s sweep found.
 
 To command a partition, give the controller a script: one command per line,
 `frame rt sa word word ...` with the data words in hex, sent in that minor
@@ -71,13 +78,17 @@ ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --port-base 53000 -
 ```
 
 The Python message classes encode the words (`FmsManeuverCmd(...).encode()`),
-which is how the tests write their scripts. `test_fcs_e2e.py`, `test_nav_e2e.py`
-and `test_fms_e2e.py` run exactly these processes: the first checks the FCS's
-alerts against the original Python GCAS on the same numbers, the second that
-navigation lands on the plant and moves with it, the third that the FMS answers
-a scripted sequence of commands as the original `fmsControl` does;
-`test_nav_oracle.py` checks the solver and the filter against the original
-Python through `fmofp_nav_tool`.
+which is how the tests write their scripts. `test_fcs_e2e.py`, `test_nav_e2e.py`,
+`test_fms_e2e.py` and `test_radar_e2e.py` run exactly these processes: the first
+checks the FCS's alerts against the original Python GCAS on the same numbers,
+the second that navigation lands on the plant and moves with it, the third that
+the FMS answers a scripted sequence of commands as the original `fmsControl`
+does, the fourth that the radar scans, answers mode commands and publishes its
+block on cadence. `test_nav_oracle.py` and `test_weather_oracle.py` check the
+arithmetic against the original Python through `fmofp_nav_tool` and
+`fmofp_radar_tool`: the rendered volume, the VIL and rain-rate fields, the
+point selection, the storm cell detection, the precipitation areas, the wind
+shear events and the turbulence cells.
 
 ## Building on Windows
 

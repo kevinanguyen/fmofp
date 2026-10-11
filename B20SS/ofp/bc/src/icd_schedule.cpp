@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <fmofp/bus/block.hpp>
+#include <fmofp/icd/blocks.hpp>
 #include <fmofp/icd/messages.hpp>
 
 namespace fmofp::bc {
@@ -77,6 +79,30 @@ Status add_icd_messages(Schedule& schedule, const std::uint8_t* terminals, std::
             if (s != Status::kOk) {
                 return s;
             }
+        }
+    }
+    // Block streams (ICD README section 8): the descriptor and the segment
+    // subaddress are polled like any periodic transmit message.
+    for (const icd::BlockInfo& block : icd::kBlocks) {
+        if (!listed(terminals, count, block.rt)) {
+            continue;
+        }
+        ScheduledMessage descriptor;
+        descriptor.rt = block.rt;
+        descriptor.subaddress = block.descriptor_subaddress;
+        descriptor.transmit = true;
+        descriptor.words = bus::kBlockDescriptorWords;
+        descriptor.rate_hz = block.rate_hz;
+        const Status d = schedule.add(descriptor);
+        if (d != Status::kOk) {
+            return d;
+        }
+        ScheduledMessage segment = descriptor;
+        segment.subaddress = block.segment_subaddress;
+        segment.words = bus::kBlockSegmentWords;
+        const Status s = schedule.add(segment);
+        if (s != Status::kOk) {
+            return s;
         }
     }
     return Status::kOk;

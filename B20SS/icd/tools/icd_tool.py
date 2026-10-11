@@ -15,11 +15,17 @@ RT/subaddress/direction, and every legacy message type is accounted for. A
 field may span two consecutive words (`word="3-4"`, `bits="31-0"`, type sint
 with an lsb) for quantities such as latitude that need more than 16 bits.
 
+A block stream (data over 32 words, README section 8) may define its payload:
+a <header words="N"> of fields, then <section id= words= max=> elements, each
+a record layout repeated up to `max` times. The payload on the bus is the
+header, one count word per section, then every section's records in order.
+
 `gen-cpp` writes, under DIR:
     include/fmofp/icd/version.hpp   the ICD version the code was built from
     include/fmofp/icd/enums.hpp     one enum class per ICD enum, with validity checks
     include/fmofp/icd/messages.hpp  one struct per message with encode()/decode()
-    icd_roundtrip_test.cpp          a GoogleTest round-trip test for every message
+    include/fmofp/icd/blocks.hpp    one struct per block stream whose payload layout is defined
+    icd_roundtrip_test.cpp          a GoogleTest round-trip test for every message and block
 The generated code uses only fmofp/bus/word.hpp for bit access, so the headers are
 the only place a message layout exists on the C++ side.
 """
@@ -42,6 +48,8 @@ MIN_SA, MAX_SA = 1, 29          # 0 and 31 are mode codes, 30 is data wraparound
 MAX_RT = 30                     # 31 is broadcast
 MAX_WORDS = 32
 MAX_RELAYS_PER_SOURCE = 4       # bc/schedule.hpp kMaxRelaysPerMessage
+BLOCK_SEGMENT_PAYLOAD_WORDS = 31  # a segment is 32 words, the first being version and index (README section 8)
+MAX_BLOCK_PAYLOAD_WORDS = 256 * BLOCK_SEGMENT_PAYLOAD_WORDS
 
 
 class Icd:
@@ -137,7 +145,16 @@ def load(path):
             entry["fields"] = by_id[source]["fields"]
             entry["words"] = by_id[source]["words"]
 
-    icd.blocks = [dict(b.attrib) for b in root.iter("block")]
+    for b in root.iter("block"):
+        entry = dict(b.attrib)
+        entry["doc"] = (b.findtext("doc") or "").strip()
+        header = b.find("header")
+        entry["header"] = None if header is None else {
+            "words": int(header.get("words", "0")), "fields": [dict(f.attrib) for f in header.iter("field")]}
+        entry["sections"] = [dict(sec.attrib, doc=(sec.get("doc") or "").strip(),
+                                  fields=[dict(f.attrib) for f in sec.iter("field")])
+                             for sec in b.iter("section")]
+        icd.blocks.append(entry)
     icd.mode_codes = [dict(m.attrib) for m in root.iter("mode_code")]
     icd.legacy = [dict(lg.attrib) for lg in root.iter("legacy")]
     icd.relays = [dict(r.attrib) for r in root.iter("relay")]
@@ -232,31 +249,17 @@ def check_scaled(icd, where, field, width):
                              f"[{float(lowest):g}, {float(highest):g}]")
 
 
-def check_message(icd, msg):
-    mid = msg["id"]
-    if msg.get("rt") != "all" and int(msg["rt"]) not in icd.terminals:
-        icd.error(f"message {mid}", f"unknown RT {msg['rt']}")
-    elif msg.get("rt") != "all" and icd.terminals[int(msg["rt"])].get("status") == "reserved":
-        icd.error(f"message {mid}", f"RT {msg['rt']} is reserved")
-    sa = int(msg["sa"])
-    if not MIN_SA <= sa <= MAX_SA:
-        icd.error(f"message {mid}", f"SA {sa} outside {MIN_SA}-{MAX_SA}")
-    if msg.get("dir") not in ("T", "R"):
-        icd.error(f"message {mid}", "dir must be T (terminal transmits) or R (terminal receives)")
-    if msg.get("rate") not in RATES:
-        icd.error(f"message {mid}", f"rate '{msg.get('rate')}' not one of {sorted(RATES)}")
-    if msg.get("layout_of"):
-        return
-
-    words = int(msg["words"])
+def check_fields(icd, where_prefix, fields, words):
+    """The field rules shared by messages, block headers and block records."""
     if not 1 <= words <= MAX_WORDS:
-        icd.error(f"message {mid}", f"{words} words; must be 1-{MAX_WORDS}")
+        icd.error(where_prefix, f"{words} words; must be 1-{MAX_WORDS}")
+        return
     used = {w: set() for w in range(words)}
-    names = {f.get("name") for f in msg["fields"]}
+    names = {f.get("name") for f in fields}
     seen = set()
 
-    for field in msg["fields"]:
-        where = f"message {mid}.{field.get('name')}"
+    for field in fields:
+        where = f"{where_prefix}.{field.get('name')}"
         if field.get("name") in seen:
             icd.error(where, "duplicate field name")
         seen.add(field.get("name"))
@@ -307,7 +310,67 @@ def check_message(icd, msg):
     for word, bits in used.items():
         missing = sorted(set(range(16)) - bits, reverse=True)
         if missing:
-            icd.error(f"message {mid}", f"word {word} bits {missing} undefined; declare them as spare")
+            icd.error(where_prefix, f"word {word} bits {missing} undefined; declare them as spare")
+
+
+def check_message(icd, msg):
+    mid = msg["id"]
+    if msg.get("rt") != "all" and int(msg["rt"]) not in icd.terminals:
+        icd.error(f"message {mid}", f"unknown RT {msg['rt']}")
+    elif msg.get("rt") != "all" and icd.terminals[int(msg["rt"])].get("status") == "reserved":
+        icd.error(f"message {mid}", f"RT {msg['rt']} is reserved")
+    sa = int(msg["sa"])
+    if not MIN_SA <= sa <= MAX_SA:
+        icd.error(f"message {mid}", f"SA {sa} outside {MIN_SA}-{MAX_SA}")
+    if msg.get("dir") not in ("T", "R"):
+        icd.error(f"message {mid}", "dir must be T (terminal transmits) or R (terminal receives)")
+    if msg.get("rate") not in RATES:
+        icd.error(f"message {mid}", f"rate '{msg.get('rate')}' not one of {sorted(RATES)}")
+    if msg.get("layout_of"):
+        return
+    check_fields(icd, f"message {mid}", msg["fields"], int(msg["words"]))
+
+
+def has_layout(block):
+    """True when the block defines its payload (a header; sections optional)."""
+    return block.get("header") is not None
+
+
+def block_payload_words(block):
+    """The largest payload the block can carry: header, count words, every section full."""
+    return block["header"]["words"] + len(block["sections"]) + sum(
+        int(sec["max"]) * int(sec["words"]) for sec in block["sections"])
+
+
+def check_block(icd, block):
+    where = f"block {block['id']}"
+    if block.get("rate") not in RATES - {"aperiodic"}:
+        icd.error(where, f"rate '{block.get('rate')}' must be periodic")
+    if not has_layout(block):
+        if block.get("payload") != "TBD-v2":
+            icd.error(where, 'no <header>: a block without a payload layout must say payload="TBD-v2"')
+        return
+    if block.get("payload") is not None:
+        icd.error(where, "has both a payload layout and a payload attribute")
+    check_fields(icd, f"{where} header", block["header"]["fields"], block["header"]["words"])
+    ids = set()
+    for sec in block["sections"]:
+        sid = sec.get("id")
+        swhere = f"{where} section {sid}"
+        if sid in ids:
+            icd.error(swhere, "duplicate section id")
+        ids.add(sid)
+        try:
+            maximum, words = int(sec["max"]), int(sec["words"])
+        except (KeyError, ValueError):
+            icd.error(swhere, "needs integer max and words")
+            continue
+        if maximum < 1:
+            icd.error(swhere, "max must be at least 1")
+        check_fields(icd, swhere, sec["fields"], words)
+    total = block_payload_words(block)
+    if total > MAX_BLOCK_PAYLOAD_WORDS:
+        icd.error(where, f"payload of {total} words exceeds the {MAX_BLOCK_PAYLOAD_WORDS} a block can carry")
 
 
 def check_addresses(icd):
@@ -327,8 +390,6 @@ def check_addresses(icd):
         rt = int(block["rt"])
         if rt not in icd.terminals:
             icd.error(where, f"unknown RT {rt}")
-        if block.get("rate") not in RATES - {"aperiodic"}:
-            icd.error(where, f"rate '{block.get('rate')}' must be periodic")
         for key in ("desc_sa", "seg_sa"):
             sa = int(block[key])
             if not MIN_SA <= sa <= MAX_SA:
@@ -425,6 +486,8 @@ def check(icd):
     check_terminals(icd)
     for msg in icd.messages:
         check_message(icd, msg)
+    for block in icd.blocks:
+        check_block(icd, block)
     check_addresses(icd)
     check_relays(icd)
     check_legacy(icd)
@@ -496,13 +559,20 @@ def render(icd):
 
     w("## Block transfers")
     w("")
-    w("Layout of the descriptor and segment messages is in README.md. Payload layouts come in v2.")
+    w("The descriptor and segment framing is in README.md section 8. A block's payload is its header, "
+      "one count word per section, then every section's records in order; the layouts are under "
+      "[Block payloads](#block-payloads).")
     w("")
     w("| ID | RT | Descriptor SA | Segment SA | Rate (Hz) | Title | Payload |")
     w("|---|---|---|---|---|---|---|")
     for b in icd.blocks:
+        if has_layout(b):
+            payload = (f"[header {b['header']['words']} words + {len(b['sections'])} sections, "
+                       f"at most {block_payload_words(b)} words](#{b['id'].lower()})")
+        else:
+            payload = b.get("payload")
         w(f"| `{b['id']}` | {b['rt']} | {b['desc_sa']} | {b['seg_sa']} | {b['rate']} | "
-          f"{md_escape(b.get('title'))} | {b.get('payload')} |")
+          f"{md_escape(b.get('title'))} | {payload} |")
     w("")
 
     w("## Relays (RT-to-RT transfers)")
@@ -566,6 +636,41 @@ def render(icd):
             w(f"| {f['word']} | {f['bits']} | `{f['name']}` | {f['type']} | {md_escape(scaling(f))} | "
               f"{md_escape(f.get('doc'))} |")
         w("")
+
+    w("## Block payloads")
+    w("")
+    for b in icd.blocks:
+        if not has_layout(b):
+            continue
+        w(f"### {b['id']}")
+        w("")
+        w(f"**{md_escape(b.get('title'))}** — RT {b['rt']} · descriptor SA {b['desc_sa']} · segment SA {b['seg_sa']} · "
+          f"{b['rate']} Hz · payload at most {block_payload_words(b)} words")
+        w("")
+        if b.get("doc"):
+            w(md_escape(b["doc"]))
+            w("")
+        if b.get("replaces"):
+            w("Replaces: " + ", ".join(f"`{t}`" for t in tokens(b["replaces"])))
+            w("")
+        w(f"**Header ({b['header']['words']} words)**, followed by one count word per section in the order below.")
+        w("")
+        w("| Word | Bits | Field | Type | Scaling | Notes |")
+        w("|---|---|---|---|---|---|")
+        for f in b["header"]["fields"]:
+            w(f"| {f['word']} | {f['bits']} | `{f['name']}` | {f['type']} | {md_escape(scaling(f))} | "
+              f"{md_escape(f.get('doc'))} |")
+        w("")
+        for sec in b["sections"]:
+            w(f"**Section `{sec['id']}` — {md_escape(sec.get('title'))}**: up to {int(sec['max'])} records of "
+              f"{int(sec['words'])} words. {md_escape(sec.get('doc'))}")
+            w("")
+            w("| Word | Bits | Field | Type | Scaling | Notes |")
+            w("|---|---|---|---|---|---|")
+            for f in sec["fields"]:
+                w(f"| {f['word']} | {f['bits']} | `{f['name']}` | {f['type']} | {md_escape(scaling(f))} | "
+                  f"{md_escape(f.get('doc'))} |")
+            w("")
 
     w("## Where every legacy message type went")
     w("")
@@ -983,6 +1088,216 @@ def gen_messages_hpp(icd):
     return "\n".join(out) + "\n"
 
 
+def cpp_fields(fields):
+    """Member declarations for a set of fields (spares excluded)."""
+    lines = []
+    for field in fields:
+        if field["type"] == "spare":
+            continue
+        _, _, width = field_geometry(field)
+        comment = member_comment(field)
+        lines.append(f"    {member_type(field, width)} {field['name']}{{}};" + (f"  // {comment}" if comment else ""))
+    return lines
+
+
+def record_name(block, section):
+    return pascal(block["id"]) + pascal(section["id"])
+
+
+def gen_blocks_hpp(icd):
+    blocks = [b for b in icd.blocks if has_layout(b)]
+    out = cpp_header(icd, "Block transfer payloads of the FMOFP bus ICD: one struct per block stream, encoding and "
+                          "decoding the whole payload (README section 8).")
+    out += [
+        "#ifndef FMOFP_ICD_BLOCKS_HPP",
+        "#define FMOFP_ICD_BLOCKS_HPP",
+        "",
+        "#include <array>",
+        "#include <cstddef>",
+        "#include <cstdint>",
+        "",
+        "#include <fmofp/bus/status.hpp>",
+        "#include <fmofp/bus/word.hpp>",
+        "#include <fmofp/icd/enums.hpp>",
+        "",
+        "namespace fmofp::icd {",
+        "",
+        "// A block's payload is its header words, then one word per section holding",
+        "// that section's record count, then every section's records in order. The",
+        "// descriptor and segment framing around the payload is bus/block.hpp.",
+        "// encode(): writes the payload into `out` (capacity words) and sets `length`.",
+        "// kInvalidArgument for a null buffer or a count above a section's maximum,",
+        "// kBadLength if the buffer is too small, otherwise the worst field status",
+        "// (kClamped when a value had to be limited). decode(): reads `length` words;",
+        "// kBadLength unless the counts and the length agree, kInvalidEnum for an",
+        "// undefined enum value; `out` is untouched on failure.",
+    ]
+    for block in blocks:
+        name = pascal(block["id"])
+        header = block["header"]
+        sections = block["sections"]
+        out.append("")
+        out.append(f"// {block['id']} - {block.get('title', '')}: RT {int(block['rt'])}, descriptor SA "
+                   f"{int(block['desc_sa'])}, segment SA {int(block['seg_sa'])}, {int(block['rate'])} Hz")
+        for sec in sections:
+            rname = record_name(block, sec)
+            out.append("")
+            out.append(f"// {block['id']} section `{sec['id']}` - {sec.get('title', '')}: up to {int(sec['max'])} "
+                       f"records of {int(sec['words'])} words")
+            if sec.get("doc"):
+                out.append(f"// {sec['doc']}")
+            out.append(f"struct {rname} {{")
+            out.append(f"    static constexpr std::uint8_t kWords = {int(sec['words'])}U;")
+            out.append("")
+            out += cpp_fields(sec["fields"])
+            out.append("")
+            out.append("    [[nodiscard]] Status encode(bus::Word* out) const noexcept;")
+            out.append(f"    [[nodiscard]] static Status decode(const bus::Word* in, {rname}& out) noexcept;")
+            out.append("};")
+            out.append("")
+            out.append(f"inline Status {rname}::encode(bus::Word* out) const noexcept {{")
+            out.append("    std::array<bus::Word, kWords> w{};")
+            out.append("    Status result = Status::kOk;")
+            for field in sec["fields"]:
+                out += emit_encode(field)
+            out.append("    for (std::size_t i = 0; i < kWords; ++i) {")
+            out.append("        out[i] = w[i];")
+            out.append("    }")
+            out.append("    return result;")
+            out.append("}")
+            out.append("")
+            out.append(f"inline Status {rname}::decode(const bus::Word* in, {rname}& out) noexcept {{")
+            out.append(f"    {rname} m{{}};")
+            for field in sec["fields"]:
+                out += emit_decode(field)
+            out.append("    out = m;")
+            out.append("    return Status::kOk;")
+            out.append("}")
+        out.append("")
+        if block.get("doc"):
+            out.append(f"// {block['doc']}")
+        out.append(f"struct {name} {{")
+        out.append(f"    static constexpr std::uint8_t kRt = {int(block['rt'])}U;")
+        out.append(f"    static constexpr std::uint8_t kDescriptorSubaddress = {int(block['desc_sa'])}U;")
+        out.append(f"    static constexpr std::uint8_t kSegmentSubaddress = {int(block['seg_sa'])}U;")
+        out.append(f"    static constexpr std::uint8_t kRateHz = {int(block['rate'])}U;")
+        out.append(f"    static constexpr std::uint16_t kHeaderWords = {header['words']}U;")
+        out.append(f"    static constexpr std::uint16_t kSections = {len(sections)}U;")
+        out.append(f"    static constexpr std::uint16_t kMaxPayloadWords = {block_payload_words(block)}U;")
+        for sec in sections:
+            out.append(f"    static constexpr std::uint16_t kMax{pascal(sec['id'])} = {int(sec['max'])}U;")
+        out.append("")
+        out += cpp_fields(header["fields"])
+        for sec in sections:
+            out.append(f"    std::array<{record_name(block, sec)}, kMax{pascal(sec['id'])}> {sec['id']}{{}};")
+            out.append(f"    std::uint16_t {sec['id']}_count{{}};")
+        out.append("")
+        out.append("    [[nodiscard]] Status encode(bus::Word* out, std::uint16_t capacity, std::uint16_t& length) const noexcept;")
+        out.append(f"    [[nodiscard]] static Status decode(const bus::Word* in, std::uint16_t length, {name}& out) noexcept;")
+        out.append("};")
+        out.append("")
+        out.append(f"inline Status {name}::encode(bus::Word* out, std::uint16_t capacity, std::uint16_t& length) const noexcept {{")
+        out.append("    length = 0U;")
+        out.append("    if (out == nullptr) {")
+        out.append("        return Status::kInvalidArgument;")
+        out.append("    }")
+        if sections:
+            cond = " || ".join(f"{sec['id']}_count > kMax{pascal(sec['id'])}" for sec in sections)
+            out.append(f"    if ({cond}) {{")
+            out.append("        return Status::kInvalidArgument;")
+            out.append("    }")
+        terms = ["static_cast<std::uint32_t>(kHeaderWords)", "static_cast<std::uint32_t>(kSections)"] + [
+            f"static_cast<std::uint32_t>({sec['id']}_count) * {record_name(block, sec)}::kWords" for sec in sections]
+        out.append(f"    const std::uint32_t needed = {' + '.join(terms)};")
+        out.append("    if (needed > static_cast<std::uint32_t>(capacity)) {")
+        out.append("        return Status::kBadLength;")
+        out.append("    }")
+        out.append("    Status result = Status::kOk;")
+        out.append("    {")
+        out.append("        std::array<bus::Word, kHeaderWords> w{};")
+        for field in header["fields"]:
+            out += ["    " + line for line in emit_encode(field)]
+        out.append("        for (std::size_t i = 0; i < kHeaderWords; ++i) {")
+        out.append("            out[i] = w[i];")
+        out.append("        }")
+        out.append("    }")
+        out.append("    std::uint16_t pos = kHeaderWords;")
+        for sec in sections:
+            out.append(f"    out[pos] = {sec['id']}_count;")
+            out.append("    pos = static_cast<std::uint16_t>(pos + 1U);")
+        for sec in sections:
+            out.append(f"    for (std::size_t i = 0; i < static_cast<std::size_t>({sec['id']}_count); ++i) {{")
+            out.append(f"        result = worst(result, {sec['id']}[i].encode(out + pos));")
+            out.append(f"        pos = static_cast<std::uint16_t>(pos + {record_name(block, sec)}::kWords);")
+            out.append("    }")
+        out.append("    length = pos;")
+        out.append("    return result;")
+        out.append("}")
+        out.append("")
+        out.append(f"inline Status {name}::decode(const bus::Word* in, std::uint16_t length, {name}& out) noexcept {{")
+        out.append("    if (in == nullptr) {")
+        out.append("        return Status::kInvalidArgument;")
+        out.append("    }")
+        out.append("    if (length < kHeaderWords + kSections) {")
+        out.append("        return Status::kBadLength;")
+        out.append("    }")
+        out.append(f"    {name} m{{}};")
+        for field in header["fields"]:
+            out += emit_decode(field)
+        out.append("    std::uint16_t pos = kHeaderWords;")
+        for sec in sections:
+            out.append(f"    const std::uint16_t {sec['id']}_n = in[pos];")
+            out.append("    pos = static_cast<std::uint16_t>(pos + 1U);")
+        if sections:
+            cond = " || ".join(f"{sec['id']}_n > kMax{pascal(sec['id'])}" for sec in sections)
+            out.append(f"    if ({cond}) {{")
+            out.append("        return Status::kBadLength;")
+            out.append("    }")
+        terms = ["static_cast<std::uint32_t>(pos)"] + [
+            f"static_cast<std::uint32_t>({sec['id']}_n) * {record_name(block, sec)}::kWords" for sec in sections]
+        out.append(f"    if ({' + '.join(terms)} != static_cast<std::uint32_t>(length)) {{")
+        out.append("        return Status::kBadLength;")
+        out.append("    }")
+        for sec in sections:
+            rname = record_name(block, sec)
+            out.append(f"    m.{sec['id']}_count = {sec['id']}_n;")
+            out.append(f"    for (std::size_t i = 0; i < static_cast<std::size_t>({sec['id']}_n); ++i) {{")
+            if any(f["type"] in ("enum", "ssm") for f in sec["fields"]):
+                out.append(f"        const Status s = {rname}::decode(in + pos, m.{sec['id']}[i]);")
+                out.append("        if (s != Status::kOk) {")
+                out.append("            return s;")
+                out.append("        }")
+            else:
+                # Without an enum the record cannot be refused; the status is always kOk.
+                out.append(f"        (void){rname}::decode(in + pos, m.{sec['id']}[i]);")
+            out.append(f"        pos = static_cast<std::uint16_t>(pos + {rname}::kWords);")
+            out.append("    }")
+        out.append("    out = m;")
+        out.append("    return Status::kOk;")
+        out.append("}")
+
+    out += [
+        "",
+        "// Every block stream whose payload the ICD defines, for schedule building and tests.",
+        "struct BlockInfo {",
+        "    const char* id;",
+        "    std::uint8_t rt;",
+        "    std::uint8_t descriptor_subaddress;",
+        "    std::uint8_t segment_subaddress;",
+        "    std::uint8_t rate_hz;",
+        "    std::uint16_t max_payload_words;",
+        "};",
+        "",
+        f"inline constexpr std::array<BlockInfo, {len(blocks)}> kBlocks = {{{{",
+    ]
+    for block in blocks:
+        name = pascal(block["id"])
+        out.append(f"    {{\"{block['id']}\", {name}::kRt, {name}::kDescriptorSubaddress, {name}::kSegmentSubaddress, "
+                   f"{name}::kRateHz, {name}::kMaxPayloadWords}},")
+    out += ["}};", "", "}  // namespace fmofp::icd", "", "#endif"]
+    return "\n".join(out) + "\n"
+
+
 def probe_value(icd, field):
     """A representative non-zero value for a field, and how the test compares it."""
     ftype = field["type"]
@@ -1019,6 +1334,7 @@ def gen_roundtrip_test(icd):
     out += [
         "#include <gtest/gtest.h>",
         "",
+        "#include <fmofp/icd/blocks.hpp>",
         "#include <fmofp/icd/messages.hpp>",
         "",
         "namespace {",
@@ -1106,8 +1422,85 @@ def gen_roundtrip_test(icd):
                 "}",
             ]
             break
+    out += gen_block_tests(icd)
     out += ["", "}  // namespace"]
     return "\n".join(out) + "\n"
+
+
+def gen_block_tests(icd):
+    """Round trip of a full block, an empty one, and the refusals of a bad length and count."""
+    out = []
+    for block in icd.blocks:
+        if not has_layout(block):
+            continue
+        name = pascal(block["id"])
+        sections = block["sections"]
+        out += ["", f"TEST(IcdBlockRoundTrip, {name}) {{", f"    {name} m{{}};"]
+        comparisons = []
+        for field in block["header"]["fields"]:
+            if field["type"] == "spare":
+                continue
+            value, tol = probe_value(icd, field)
+            out.append(f"    m.{field['name']} = {value};")
+            if tol is None:
+                comparisons.append(f"    EXPECT_EQ(m.{field['name']}, d.{field['name']});")
+            else:
+                comparisons.append(f"    EXPECT_NEAR(m.{field['name']}, d.{field['name']}, {tol!r});")
+        for sec in sections:
+            sid, kmax = sec["id"], f"{name}::kMax{pascal(sec['id'])}"
+            out.append(f"    m.{sid}_count = {kmax};")
+            out.append(f"    for (std::size_t i = 0; i < {kmax}; ++i) {{")
+            comparisons.append(f"    EXPECT_EQ(m.{sid}_count, d.{sid}_count);")
+            comparisons.append(f"    for (std::size_t i = 0; i < {kmax}; ++i) {{")
+            for field in sec["fields"]:
+                if field["type"] == "spare":
+                    continue
+                value, tol = probe_value(icd, field)
+                out.append(f"        m.{sid}[i].{field['name']} = {value};")
+                if tol is None:
+                    comparisons.append(f"        EXPECT_EQ(m.{sid}[i].{field['name']}, d.{sid}[i].{field['name']});")
+                else:
+                    comparisons.append(f"        EXPECT_NEAR(m.{sid}[i].{field['name']}, d.{sid}[i].{field['name']}, {tol!r});")
+            out.append("    }")
+            comparisons.append("    }")
+        out += [
+            f"    std::array<Word, {name}::kMaxPayloadWords> w{{}};",
+            "    std::uint16_t length = 0;",
+            "    ASSERT_EQ(Status::kOk, m.encode(w.data(), static_cast<std::uint16_t>(w.size()), length));",
+            f"    EXPECT_EQ({name}::kMaxPayloadWords, length);",
+            f"    {name} d{{}};",
+            f"    ASSERT_EQ(Status::kOk, {name}::decode(w.data(), length, d));",
+        ]
+        out += comparisons
+        out += [
+            f"    std::array<Word, {name}::kMaxPayloadWords> again{{}};",
+            "    std::uint16_t again_length = 0;",
+            "    ASSERT_EQ(Status::kOk, d.encode(again.data(), static_cast<std::uint16_t>(again.size()), again_length));",
+            "    EXPECT_EQ(length, again_length);",
+            "    EXPECT_EQ(w, again);",
+            "}",
+            "",
+            f"TEST(IcdBlockEmpty, {name}) {{",
+            f"    const {name} m{{}};",
+            f"    std::array<Word, {name}::kMaxPayloadWords> w{{}};",
+            "    std::uint16_t length = 0;",
+            "    ASSERT_EQ(Status::kOk, m.encode(w.data(), static_cast<std::uint16_t>(w.size()), length));",
+            f"    EXPECT_EQ({name}::kHeaderWords + {name}::kSections, length);",
+            f"    {name} d{{}};",
+            f"    EXPECT_EQ(Status::kOk, {name}::decode(w.data(), length, d));",
+            "    // A payload one word short, a buffer too small, and a count above a",
+            "    // section's maximum are all refused.",
+            f"    EXPECT_EQ(Status::kBadLength, {name}::decode(w.data(), static_cast<std::uint16_t>(length - 1U), d));",
+            "    std::uint16_t short_length = 0;",
+            f"    EXPECT_EQ(Status::kBadLength, m.encode(w.data(), static_cast<std::uint16_t>({name}::kHeaderWords), short_length));",
+        ]
+        if sections:
+            out += [
+                f"    w[{name}::kHeaderWords] = static_cast<Word>({name}::kMax{pascal(sections[0]['id'])} + 1U);",
+                f"    EXPECT_EQ(Status::kBadLength, {name}::decode(w.data(), length, d));",
+            ]
+        out.append("}")
+    return out
 
 
 def gen_cpp(icd, out_dir):
@@ -1118,6 +1511,7 @@ def gen_cpp(icd, out_dir):
         (include / "version.hpp", gen_version_hpp(icd)),
         (include / "enums.hpp", gen_enums_hpp(icd)),
         (include / "messages.hpp", gen_messages_hpp(icd)),
+        (include / "blocks.hpp", gen_blocks_hpp(icd)),
         (out_dir / "icd_roundtrip_test.cpp", gen_roundtrip_test(icd)),
     ):
         path.write_text(text, encoding="utf-8", newline="\n")
@@ -1391,14 +1785,158 @@ def gen_py_messages(icd):
     return "\n".join(out) + "\n"
 
 
+def py_fields(icd, fields, indent="    "):
+    lines = []
+    for f in fields:
+        if f["type"] == "spare":
+            continue
+        comment = member_comment(f)
+        lines.append(f"{indent}{f['name']}: {py_annotation(icd, f)} = {py_default(icd, f)}" + (f"  # {comment}" if comment else ""))
+    return lines
+
+
+def gen_py_blocks(icd):
+    blocks = [b for b in icd.blocks if has_layout(b)]
+    out = py_header(icd, "Block transfer payloads of the FMOFP bus ICD: one dataclass per block stream, encoding and "
+                         "decoding the whole payload (README section 8).")
+    out += [
+        "from collections import namedtuple",
+        "from dataclasses import dataclass, field",
+        "from typing import ClassVar, List, Optional, Tuple",
+        "",
+        "from fmofp_bus import word as _w",
+        "from fmofp_bus.icd.enums import *  # noqa: F401,F403 - the enums are part of this interface",
+        "from fmofp_bus.icd.enums import is_valid",
+        "from fmofp_bus.status import Status, worst",
+        "",
+        "# A block's payload is its header words, then one word per section holding",
+        "# that section's record count, then every section's records in order; the",
+        "# descriptor and segment framing around it is fmofp_bus.block.",
+        "# encode() -> (Status, payload words): INVALID_ARGUMENT when a section holds",
+        "# more records than its maximum, otherwise the worst field status.",
+        "# decode(words) -> (Status, block or None): BAD_LENGTH unless the counts and",
+        "# the length agree, INVALID_ENUM for an undefined enum value.",
+    ]
+    for block in blocks:
+        name = pascal(block["id"])
+        header = block["header"]
+        sections = block["sections"]
+        for sec in sections:
+            rname = record_name(block, sec)
+            out += ["", "", "@dataclass", f"class {rname}:"]
+            out.append(f'    """{block["id"]} section `{sec["id"]}` - {sec.get("title", "")}: up to {int(sec["max"])} '
+                       f'records of {int(sec["words"])} words. {sec.get("doc", "")}"""')
+            out.append(f"    WORDS: ClassVar[int] = {int(sec['words'])}")
+            out.append("")
+            out += py_fields(icd, sec["fields"])
+            out.append("")
+            out.append("    def encode(self) -> Tuple[Status, List[int]]:")
+            out.append(f"        w = [0] * {int(sec['words'])}")
+            out.append("        result = Status.OK")
+            for f in sec["fields"]:
+                out += py_emit_encode(f)
+            out.append("        return result, w")
+            out.append("")
+            out.append("    @classmethod")
+            out.append(f"    def decode(cls, words) -> Tuple[Status, Optional[\"{rname}\"]]:")
+            out.append("        if len(words) != cls.WORDS:")
+            out.append("            return Status.BAD_LENGTH, None")
+            out.append("        m = cls()")
+            for f in sec["fields"]:
+                out += py_emit_decode(f)
+            out.append("        return Status.OK, m")
+        out += ["", "", "@dataclass", f"class {name}:"]
+        out.append(f'    """{block["id"]} - {block.get("title", "")}. RT {int(block["rt"])} · descriptor SA '
+                   f'{int(block["desc_sa"])} · segment SA {int(block["seg_sa"])} · {int(block["rate"])} Hz.')
+        if block.get("doc"):
+            out.append("")
+            out.append(f"    {block['doc']}")
+        out.append('    """')
+        out.append(f"    RT: ClassVar[int] = {int(block['rt'])}")
+        out.append(f"    DESCRIPTOR_SUBADDRESS: ClassVar[int] = {int(block['desc_sa'])}")
+        out.append(f"    SEGMENT_SUBADDRESS: ClassVar[int] = {int(block['seg_sa'])}")
+        out.append(f"    RATE_HZ: ClassVar[int] = {int(block['rate'])}")
+        out.append(f"    HEADER_WORDS: ClassVar[int] = {header['words']}")
+        out.append(f"    SECTIONS: ClassVar[Tuple[str, ...]] = ({''.join(repr(sec['id']) + ', ' for sec in sections)})")
+        out.append(f"    MAX_PAYLOAD_WORDS: ClassVar[int] = {block_payload_words(block)}")
+        for sec in sections:
+            out.append(f"    MAX_{sec['id'].upper()}: ClassVar[int] = {int(sec['max'])}")
+        out.append("")
+        out += py_fields(icd, header["fields"])
+        for sec in sections:
+            out.append(f"    {sec['id']}: List[{record_name(block, sec)}] = field(default_factory=list)")
+        out.append("")
+        out.append("    def encode(self) -> Tuple[Status, List[int]]:")
+        if sections:
+            cond = " or ".join(f"len(self.{sec['id']}) > self.MAX_{sec['id'].upper()}" for sec in sections)
+            out.append(f"        if {cond}:")
+            out.append("            return Status.INVALID_ARGUMENT, []")
+        out.append(f"        w = [0] * {header['words']}")
+        out.append("        result = Status.OK")
+        for f in header["fields"]:
+            out += py_emit_encode(f)
+        lengths = ", ".join("len(self.%s)" % sec["id"] for sec in sections)
+        out.append(f"        out = w + [{lengths}]")
+        for sec in sections:
+            out.append(f"        for record in self.{sec['id']}:")
+            out.append("            s, words = record.encode()")
+            out.append("            result = worst(result, s)")
+            out.append("            out += words")
+        out.append("        return result, out")
+        out.append("")
+        out.append("    @classmethod")
+        out.append(f"    def decode(cls, words) -> Tuple[Status, Optional[\"{name}\"]]:")
+        out.append("        if len(words) < cls.HEADER_WORDS + len(cls.SECTIONS):")
+        out.append("            return Status.BAD_LENGTH, None")
+        out.append("        m = cls()")
+        for f in header["fields"]:
+            out += py_emit_decode(f)
+        out.append("        pos = cls.HEADER_WORDS")
+        out.append("        counts = words[pos:pos + len(cls.SECTIONS)]")
+        out.append("        pos += len(cls.SECTIONS)")
+        if sections:
+            cond = " or ".join(f"counts[{i}] > cls.MAX_{sec['id'].upper()}" for i, sec in enumerate(sections))
+            out.append(f"        if {cond}:")
+            out.append("            return Status.BAD_LENGTH, None")
+        terms = ["pos"] + [f"counts[{i}] * {record_name(block, sec)}.WORDS" for i, sec in enumerate(sections)]
+        out.append(f"        if len(words) != {' + '.join(terms)}:")
+        out.append("            return Status.BAD_LENGTH, None")
+        for i, sec in enumerate(sections):
+            rname = record_name(block, sec)
+            out.append(f"        for _ in range(counts[{i}]):")
+            out.append(f"            s, record = {rname}.decode(words[pos:pos + {rname}.WORDS])")
+            out.append("            if s != Status.OK:")
+            out.append("                return s, None")
+            out.append(f"            m.{sec['id']}.append(record)")
+            out.append(f"            pos += {rname}.WORDS")
+        out.append("        return Status.OK, m")
+
+    out += [
+        "",
+        "",
+        'BlockInfo = namedtuple("BlockInfo", "id rt descriptor_subaddress segment_subaddress rate_hz max_payload_words cls")',
+        "",
+        "# Every block stream whose payload the ICD defines, in ICD order.",
+        "BLOCKS = (",
+    ]
+    for block in blocks:
+        name = pascal(block["id"])
+        out.append(f"    BlockInfo(\"{block['id']}\", {name}.RT, {name}.DESCRIPTOR_SUBADDRESS, {name}.SEGMENT_SUBADDRESS, "
+                   f"{name}.RATE_HZ, {name}.MAX_PAYLOAD_WORDS, {name}),")
+    out += [")", "", "BLOCK_CLASSES = {info.id: info.cls for info in BLOCKS}"]
+    return "\n".join(out) + "\n"
+
+
 def gen_py(icd, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
-    init = py_header(icd, "Generated message layouts of the FMOFP bus ICD (see enums.py and messages.py).")
+    init = py_header(icd, "Generated message and block payload layouts of the FMOFP bus ICD "
+                          "(see enums.py, messages.py and blocks.py).")
     written = []
     for path, text in (
         (out_dir / "__init__.py", "\n".join(init) + "\n"),
         (out_dir / "enums.py", gen_py_enums(icd)),
         (out_dir / "messages.py", gen_py_messages(icd)),
+        (out_dir / "blocks.py", gen_py_blocks(icd)),
     ):
         path.write_text(text, encoding="utf-8", newline="\n")
         written.append(path)
@@ -1427,7 +1965,8 @@ def main(argv=None):
 
     expanded = sum(len(message_rts(icd, m)) for m in icd.messages)
     print(f"{args.icd.name}: OK - {len(icd.terminals)} terminals, {len(icd.messages)} message definitions "
-          f"({expanded} after expanding per-terminal ones), {len(icd.blocks)} block streams, "
+          f"({expanded} after expanding per-terminal ones), {len(icd.blocks)} block streams "
+          f"({sum(1 for b in icd.blocks if has_layout(b))} with payload layouts), "
           f"{len(icd.mode_codes)} mode codes, {icd.legacy_count} legacy types all mapped")
 
     if args.command == "render":

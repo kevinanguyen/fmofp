@@ -8,13 +8,14 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="2" status="DRAFT" date="2026-10-11">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="3" status="DRAFT" date="2026-10-11">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
 
   <revision version="1.1-draft" date="2026-10-10" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">First partition (flight control): the plant terminal RT 27 and PLANT_SENSORS, relayed to the FCS as FCS_SENSORS; FCS_GCAS_ALERTS and FCS_PERF_STATUS outputs; the relays section, which also makes the BC deliver the MFD's radar commands. Kevin owns the ICD from this revision.</revision>
   <revision version="1.2-draft" date="2026-10-11" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Navigation and flight management partitions: PLANT_GPS pseudoranges, the nav terminal's NAV_SENSORS/NAV_GPS inputs and NAV_SOLUTION; the FMS's relayed inputs (FMS_ATTITUDE_IN, FMS_SENSORS, FMS_NAV_SOLUTION), FMS_FLIGHT_DATA (replacing the FMS_DATA block), FMS_FLIGHT_MODE_CMD, FMS_CONTROL_CMD/STATUS, FMS_ENERGY; FMS_STATUS, FMS_ATTITUDE_STATUS and FMS_NAV_UPDATE_STATUS grown to report what the Python returned. Double-word (32-bit) fields; a producer may be relayed to several consumers. Enums fms_flight_mode, countermeasures_state, targeting_state, weapons_state.</revision>
+  <revision version="1.3-draft" date="2026-10-11" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Weather radar partition: PLANT_WEATHER (the simulated storm cells and stratiform area, moved by the plant) relayed to the radar as RDR_WX_WEATHER; RDR_WX_SCAN; the RDR_WX_PRODUCTS block (VIL and precipitation points, storm cells, precipitation areas, wind shear events, turbulence cells of one scan), replacing the RDR_WX_VIL and RDR_WX_PRECIP streams. Block payload layouts: a header and record sections, generated for both sides. Enums precip_type, shear_severity, turbulence_category.</revision>
   <bus word_bits="16" byte_order="big-endian" bit_numbering="15=MSB" bit_rate_mbps="1"
        minor_frame_ms="20" minor_frames_per_major="50" rates_hz="50 10 5 1"
        broadcast_rt="31" status_sa="29" wraparound_sa="30" max_bus_load_percent="50"
@@ -157,6 +158,27 @@
       <value name="ARMED" value="1"/>
       <value name="READY" value="2"/>
     </enum>
+    <enum id="precip_type" bits="3" doc="Precipitation type in a weather radar product. The point product (precipitation_data_generator_sync) classifies by rate: HAIL above 50 mm/h, MIXED above 25, RAIN above 10, else RAIN or SNOW; the area product (precipitation_analysis) by reflectivity: HAIL above 55 dBZ, HEAVY_RAIN above 45, else RAIN">
+      <value name="NONE" value="0" doc="Not classified"/>
+      <value name="RAIN" value="1"/>
+      <value name="SNOW" value="2"/>
+      <value name="MIXED" value="3"/>
+      <value name="HAIL" value="4"/>
+      <value name="HEAVY_RAIN" value="5"/>
+    </enum>
+    <enum id="shear_severity" bits="2" doc="Wind shear event severity (weather_processor.WindShearProcessor): LOW from 15 kt/nm, MODERATE above 20, SEVERE above 30">
+      <value name="NONE" value="0"/>
+      <value name="LOW" value="1"/>
+      <value name="MODERATE" value="2"/>
+      <value name="SEVERE" value="3"/>
+    </enum>
+    <enum id="turbulence_category" bits="3" doc="Turbulence category by eddy dissipation rate proxy (weather_processor.TurbulenceProcessor, the FAA AC 120-88A bands): LIGHT from 0.1, MODERATE from 0.2, SEVERE from 0.4, EXTREME from 0.6">
+      <value name="NONE" value="0"/>
+      <value name="LIGHT" value="1"/>
+      <value name="MODERATE" value="2"/>
+      <value name="SEVERE" value="3"/>
+      <value name="EXTREME" value="4"/>
+    </enum>
   </enums>
 
   <terminals>
@@ -169,7 +191,7 @@
     <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
     <terminal rt="7" id="nav" name="Navigation - GPS position solver and GPS/dead-reckoning fusion" status="existing" source="Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py" note="Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2)"/>
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
-    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before"/>
+    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19); the other four are still Python"/>
     <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
     <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address"/>
     <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py" note="Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object"/>
@@ -229,6 +251,31 @@
       <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
       <field name="range_km" word="1" bits="15-0" type="uint" doc="Scan range; limits from rmConfig.xml weather_radar scan_range (WeatherRadar.set_range takes km)" lsb="1" units="km" min="10" max="200"/>
       <field name="tilt" word="2" bits="15-0" type="sint" doc="Antenna tilt, up positive; limits from rmConfig.xml weather_radar tilt_range" lsb="180/32768" units="deg" min="0" max="90"/>
+    </message>
+    <message id="RDR_WX_SCAN" rt="9" sa="18" dir="T" words="10" rate="5" title="Weather radar scan summary">
+      <doc>What the last completed scan found, for the display's header and for anyone who does not reassemble the RDR_WX_PRODUCTS block. While NORMAL in an operating mode the radar sweeps the full circle over 60 minor frames (1.2 s), six azimuth degrees per frame, rendering the volume from the weather truth it latched when the sweep began; the products of a scan are published as one block when the scan completes, and products_version is the block version carrying them. The counts are what was detected before the block's record limits were applied.</doc>
+      <field name="scan_id" word="0" bits="15-8" type="uint" doc="Id of the last completed scan, increments mod 256"/>
+      <field name="mode" word="0" bits="7-4" type="enum" enum="weather_mode" doc="Mode the scan was made in; NONE when no scan has completed since the mode was left"/>
+      <field name="scanning" word="0" bits="3" type="bool" doc="1 = a scan is in progress"/>
+      <field name="max_turbulence" word="0" bits="2-0" type="enum" enum="turbulence_category" doc="Strongest turbulence category found (TURBULENCE mode)"/>
+      <field name="microburst" word="1" bits="15" type="bool" doc="1 = a wind shear event with microburst divergence was found (WINDSHEAR mode)"/>
+      <field name="spare_1" word="1" bits="14-12" type="spare"/>
+      <field name="elevations" word="1" bits="11-8" type="uint" doc="Elevation angles in the scan's volume coverage pattern: 4 for SURVEILLANCE, 7 for MAPPING and PRECIPITATION, 1 for TURBULENCE and WINDSHEAR"/>
+      <field name="products_version" word="1" bits="7-0" type="uint" doc="RDR_WX_PRODUCTS block version carrying this scan's products"/>
+      <field name="range_km" word="2" bits="15-0" type="uint" lsb="1" units="km" min="10" max="200" doc="Instrumented range in effect; range bins beyond it are not scanned"/>
+      <field name="tilt" word="3" bits="15-0" type="sint" lsb="180/32768" units="deg" min="0" max="90" doc="Antenna tilt in effect, reported as commanded; the sensor model has no antenna to tilt"/>
+      <field name="max_reflectivity" word="4" bits="15-0" type="sint" lsb="1/128" units="dBZ" min="-20" max="65" doc="Strongest return in the volume"/>
+      <field name="storm_cells" word="5" bits="15-8" type="uint" doc="Storm cells the tracker holds (saturates at 255)"/>
+      <field name="precip_areas" word="5" bits="7-0" type="uint" doc="Precipitation areas the analyzer found (saturates at 255)"/>
+      <field name="windshear_events" word="6" bits="15-8" type="uint" doc="Wind shear events detected (saturates at 255)"/>
+      <field name="turbulence_cells" word="6" bits="7-0" type="uint" doc="Turbulence cells detected (saturates at 255)"/>
+      <field name="vil_points" word="7" bits="15-8" type="uint" doc="VIL points in the block"/>
+      <field name="precip_points" word="7" bits="7-0" type="uint" doc="Precipitation points in the block"/>
+      <field name="vil_max" word="8" bits="15-0" type="uint" lsb="1/4" units="kg/m2" min="0" max="16383.75" doc="Largest VIL in the field"/>
+      <field name="scan_frame" word="9" bits="15-0" type="uint" doc="The radar's own frame count (mod 65536) when the scan completed"/>
+    </message>
+    <message id="RDR_WX_WEATHER" rt="9" sa="19" dir="R" layout_of="PLANT_WEATHER" rate="1" title="Weather truth, for the radar's sensor model">
+      <doc>PLANT_WEATHER relayed to the radar. The radar renders what its antenna would see from it (reflectivity_simulator._render_storm_cells, _render_stratiform_areas and _add_ground_clutter) and processes that volume; nothing else about the weather is known to it.</doc>
     </message>
     <message id="RDR_TFR_STATUS" rt="9" sa="2" dir="T" words="2" rate="5" title="Terrain-following radar status" replaces="tfr_radarStatusRequest tfr_radarStatusResponse tfr_radarModeChangeResponse radarStatusRequest radarStatusResponse">
       <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
@@ -708,6 +755,59 @@
       <field name="pseudorange_11" word="21-22" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
       <field name="pseudorange_12" word="23-24" bits="31-0" type="sint" lsb="1/16" units="m" min="0" max="100000000"/>
     </message>
+    <message id="PLANT_WEATHER" rt="27" sa="3" dir="T" words="32" rate="1" title="Weather truth from the plant">
+      <doc>The simulated weather the radar's sensor model renders: the storm cells and the stratiform area of weather_state_manager.py, which the plant moves with the wind and ages through their lifecycles as that module did, published once a second. The radar never sees this as weather; it renders a reflectivity volume from it, as reflectivity_simulator.py did, and processes that. Cells beyond cell_count and an absent area are zero. A cell's vertical profile is one of the two the Python used: entry_profile 0 is the profile of the initial cells (1.0, 0.9, 0.8, 0.7 for the lowest four elevations, then 0.2), 1 the profile of cells that entered at the edge of the picture (1 - 0.15 per elevation, floor 0.2).</doc>
+      <field name="weather_seq" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every publication"/>
+      <field name="cell_count" word="0" bits="7-4" type="uint" doc="Storm cells present, 0-8"/>
+      <field name="area_count" word="0" bits="3-0" type="uint" doc="Stratiform areas present, 0-1"/>
+      <field name="cell_1_azimuth" word="1" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 1 centre, true azimuth"/>
+      <field name="cell_1_range" word="2" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 1 centre, range"/>
+      <field name="cell_1_size" word="3" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 1 radius"/>
+      <field name="cell_1_entry_profile" word="3" bits="8" type="bool" doc="Cell 1 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_1_intensity" word="3" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 1 peak reflectivity"/>
+      <field name="cell_2_azimuth" word="4" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 2 centre, true azimuth"/>
+      <field name="cell_2_range" word="5" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 2 centre, range"/>
+      <field name="cell_2_size" word="6" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 2 radius"/>
+      <field name="cell_2_entry_profile" word="6" bits="8" type="bool" doc="Cell 2 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_2_intensity" word="6" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 2 peak reflectivity"/>
+      <field name="cell_3_azimuth" word="7" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 3 centre, true azimuth"/>
+      <field name="cell_3_range" word="8" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 3 centre, range"/>
+      <field name="cell_3_size" word="9" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 3 radius"/>
+      <field name="cell_3_entry_profile" word="9" bits="8" type="bool" doc="Cell 3 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_3_intensity" word="9" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 3 peak reflectivity"/>
+      <field name="cell_4_azimuth" word="10" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 4 centre, true azimuth"/>
+      <field name="cell_4_range" word="11" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 4 centre, range"/>
+      <field name="cell_4_size" word="12" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 4 radius"/>
+      <field name="cell_4_entry_profile" word="12" bits="8" type="bool" doc="Cell 4 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_4_intensity" word="12" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 4 peak reflectivity"/>
+      <field name="cell_5_azimuth" word="13" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 5 centre, true azimuth"/>
+      <field name="cell_5_range" word="14" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 5 centre, range"/>
+      <field name="cell_5_size" word="15" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 5 radius"/>
+      <field name="cell_5_entry_profile" word="15" bits="8" type="bool" doc="Cell 5 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_5_intensity" word="15" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 5 peak reflectivity"/>
+      <field name="cell_6_azimuth" word="16" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 6 centre, true azimuth"/>
+      <field name="cell_6_range" word="17" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 6 centre, range"/>
+      <field name="cell_6_size" word="18" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 6 radius"/>
+      <field name="cell_6_entry_profile" word="18" bits="8" type="bool" doc="Cell 6 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_6_intensity" word="18" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 6 peak reflectivity"/>
+      <field name="cell_7_azimuth" word="19" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 7 centre, true azimuth"/>
+      <field name="cell_7_range" word="20" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 7 centre, range"/>
+      <field name="cell_7_size" word="21" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 7 radius"/>
+      <field name="cell_7_entry_profile" word="21" bits="8" type="bool" doc="Cell 7 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_7_intensity" word="21" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 7 peak reflectivity"/>
+      <field name="cell_8_azimuth" word="22" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Cell 8 centre, true azimuth"/>
+      <field name="cell_8_range" word="23" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Cell 8 centre, range"/>
+      <field name="cell_8_size" word="24" bits="15-9" type="uint" lsb="1/4" units="km" min="0" max="31.75" doc="Cell 8 radius"/>
+      <field name="cell_8_entry_profile" word="24" bits="8" type="bool" doc="Cell 8 vertical profile: 0 initial, 1 entered at the edge"/>
+      <field name="cell_8_intensity" word="24" bits="7-0" type="uint" lsb="1/2" units="dBZ" min="0" max="127.5" doc="Cell 8 peak reflectivity"/>
+      <field name="area_azimuth" word="25" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Area centre, true azimuth"/>
+      <field name="area_range" word="26" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Area centre, range"/>
+      <field name="area_width" word="27" bits="15-0" type="uint" lsb="1/128" units="deg" min="0" max="511.99" doc="Area width in azimuth"/>
+      <field name="area_depth" word="28" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Area depth in range"/>
+      <field name="area_intensity" word="29" bits="15-0" type="uint" lsb="1/128" units="dBZ" min="0" max="511.99" doc="Area reflectivity at its centre"/>
+      <field name="spare_30" word="30" bits="15-0" type="spare"/>
+      <field name="spare_31" word="31" bits="15-0" type="spare"/>
+    </message>
     <message id="FCS_SENSORS" rt="5" sa="13" dir="R" words="12" rate="50" title="Sensed flight state as received by the flight control computer" layout_of="PLANT_SENSORS">
       <doc>Relayed by the bus controller from PLANT_SENSORS in the same minor frame (relays section). The FCS computes FCS_ATTITUDE, GCAS and the performance envelope from it.</doc>
     </message>
@@ -753,6 +853,7 @@
     <relay from="PLANT_SENSORS" to="FMS_SENSORS"/>
     <relay from="PLANT_SENSORS" to="NAV_SENSORS"/>
     <relay from="PLANT_GPS" to="NAV_GPS"/>
+    <relay from="PLANT_WEATHER" to="RDR_WX_WEATHER"/>
     <relay from="FCS_ATTITUDE" to="FMS_ATTITUDE_IN"/>
     <relay from="NAV_SOLUTION" to="FMS_NAV_SOLUTION"/>
     <relay from="MFD_RDR_WX_CMD" to="RDR_WX_MODE_CMD"/>
@@ -766,8 +867,73 @@
        v1 fixes the addresses and rates; the payload layouts come in v2. (The FMS_DATA block of v1
        became the FMS_FLIGHT_DATA message in v1.2: the flight data fits in one message.) -->
   <blocks>
-    <block id="RDR_WX_VIL" rt="9" desc_sa="6" seg_sa="7" rate="10" title="Weather radar VIL" payload="TBD-v2" replaces="weather_radarVILResponse DISPLAY_VIL_DATA weather_radarData radarDataRequest radarDataResponse"/>
-    <block id="RDR_WX_PRECIP" rt="9" desc_sa="8" seg_sa="9" rate="10" title="Weather radar precipitation" payload="TBD-v2" replaces="weather_radarPrecipitationResponse weather_radarData radarDataResponse"/>
+    <block id="RDR_WX_PRODUCTS" rt="9" desc_sa="6" seg_sa="7" rate="50" title="Weather radar products" replaces="weather_radarVILResponse DISPLAY_VIL_DATA weather_radarData radarDataRequest radarDataResponse weather_radarPrecipitationResponse">
+      <doc>Everything one scan produced, published as one block when the scan completes so a consumer always draws a consistent picture (README section 8). Which sections are filled depends on the mode: SURVEILLANCE fills vil, precip and cells; MAPPING and PRECIPITATION fill precip and areas; WINDSHEAR fills windshear; TURBULENCE fills turbulence. Positions are polar from the aircraft: true azimuth and range. The record limits apply after the selection described in the README (the Python's own limits for the VIL and precipitation points; new for the rest); the counts before the limits are in RDR_WX_SCAN. The segment subaddress is polled every frame, so an 18-segment block arrives in 0.36 s, well inside the 1.2 s scan.</doc>
+      <header words="2">
+        <field name="scan_id" word="0" bits="15-8" type="uint" doc="Scan these products come from (RDR_WX_SCAN.scan_id)"/>
+        <field name="mode" word="0" bits="7-4" type="enum" enum="weather_mode" doc="Mode of that scan; NONE with every section empty when the radar is not scanning"/>
+        <field name="microburst" word="0" bits="3" type="bool" doc="1 = a microburst was detected (WINDSHEAR mode)"/>
+        <field name="max_turbulence" word="0" bits="2-0" type="enum" enum="turbulence_category" doc="Strongest turbulence category (TURBULENCE mode)"/>
+        <field name="max_reflectivity" word="1" bits="15-0" type="sint" lsb="1/128" units="dBZ" min="-20" max="65" doc="Strongest return in the volume"/>
+      </header>
+      <section id="vil" words="4" max="20" title="Vertically integrated liquid" doc="vil_data_generator_sync: VIL per column, the significant columns of the 8x-downsampled field, at most 20 chosen for continuity with the previous scan and then by cluster intensity">
+        <field name="azimuth" word="0" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True azimuth of the column"/>
+        <field name="range" word="1" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Range of the column"/>
+        <field name="value" word="2" bits="15-0" type="uint" lsb="1/4" units="kg/m2" min="0" max="16383.75" doc="VIL as the Python computed it: 3.44e-3 x Z^(4/7) x layer thickness, summed over the elevations"/>
+        <field name="intensity" word="3" bits="15-8" type="uint" lsb="1/200" min="0" max="1.275" doc="min(1, value / 65)"/>
+        <field name="layer_count" word="3" bits="7-4" type="uint" doc="min(15, int(intensity x 15) + 1)"/>
+        <field name="show_values" word="3" bits="3" type="bool" doc="1 = intensity above 0.3: the display labels the point"/>
+        <field name="spare_3" word="3" bits="2-0" type="spare"/>
+      </section>
+      <section id="precip" words="4" max="15" title="Precipitation points" doc="precipitation_data_generator_sync: the Marshall-Palmer rate of each column's strongest return, the significant columns of the 8x-downsampled field, at most 15 chosen as the VIL points are">
+        <field name="azimuth" word="0" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True azimuth of the column"/>
+        <field name="range" word="1" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Range of the column"/>
+        <field name="rate" word="2" bits="15-0" type="uint" lsb="1/10" units="mm/h" min="0" max="6553.5" doc="(Z / 200)^(1 / 1.6)"/>
+        <field name="intensity" word="3" bits="15-8" type="uint" lsb="1/200" min="0" max="1.275" doc="min(1, rate / 50)"/>
+        <field name="type" word="3" bits="7-5" type="enum" enum="precip_type" doc="By rate: HAIL above 50, MIXED above 25, RAIN above 10, else SNOW three times in ten, RAIN otherwise"/>
+        <field name="show_values" word="3" bits="4" type="bool" doc="1 = intensity above 0.3"/>
+        <field name="spare_3" word="3" bits="3-0" type="spare"/>
+      </section>
+      <section id="cells" words="10" max="12" title="Storm cells" doc="stormCellTracking.StormCellTracker: connected regions above 30 dBZ in the composite (maximum over elevation) field, tracked from scan to scan by proximity (5 bins); the 12 largest by size, then reflectivity, are reported">
+        <field name="cell_id" word="0" bits="15-0" type="uint" doc="Tracker id, kept while the cell is followed"/>
+        <field name="azimuth" word="1" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Centroid, true azimuth"/>
+        <field name="range" word="2" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Centroid range"/>
+        <field name="reflectivity" word="3" bits="15-0" type="uint" lsb="1/128" units="dBZ" min="0" max="511.99" doc="Mean over the region"/>
+        <field name="size" word="4" bits="15-0" type="uint" lsb="1/2" units="nm" min="0" max="32767.5" doc="Region size, half a nautical mile per bin as the Python counted it"/>
+        <field name="intensity" word="5" bits="15-0" type="uint" lsb="1/10000" min="0" max="1" doc="(reflectivity - 30) / 35, limited to 0..1"/>
+        <field name="azimuth_rate" word="6" bits="15-0" type="sint" lsb="1/64" units="deg/s" min="-512" max="511.98" doc="Centroid motion since the previous scan"/>
+        <field name="range_rate" word="7" bits="15-0" type="sint" lsb="1/64" units="km/s" min="-512" max="511.98" doc="Centroid motion since the previous scan"/>
+        <field name="altitude" word="8" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="The Python's cell-top estimate: size (as a range proxy) x tan(elevation)"/>
+        <field name="vertical_development" word="9" bits="15-0" type="sint" lsb="1/16" units="ft/min" min="-2048" max="2047.9" doc="Change of that estimate per scan interval"/>
+      </section>
+      <section id="areas" words="5" max="12" title="Precipitation areas" doc="precipitation_analysis.PrecipitationAnalyzer: connected regions above 30 dBZ, with the Marshall-Palmer rate of their mean reflectivity and a type from it; the 12 strongest by reflectivity are reported">
+        <field name="azimuth" word="0" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="Centroid, true azimuth"/>
+        <field name="range" word="1" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Centroid range"/>
+        <field name="reflectivity" word="2" bits="15-0" type="uint" lsb="1/128" units="dBZ" min="0" max="511.99" doc="Mean over the region"/>
+        <field name="rate" word="3" bits="15-0" type="uint" lsb="1/10" units="mm/h" min="0" max="6553.5" doc="(Z / 200)^(1 / 1.6) of the mean"/>
+        <field name="intensity" word="4" bits="15-8" type="uint" lsb="1/200" min="0" max="1.275" doc="(reflectivity - 30) / 35, limited to 0..1"/>
+        <field name="type" word="4" bits="7-5" type="enum" enum="precip_type" doc="HAIL above 55 dBZ, HEAVY_RAIN above 45, else RAIN"/>
+        <field name="spare_4" word="4" bits="4-0" type="spare"/>
+      </section>
+      <section id="windshear" words="5" max="20" title="Wind shear events" doc="weather_processor.WindShearProcessor on the lowest elevation: shear proxy = 0.8 x |azimuthal reflectivity gradient| in kt/nm, an event where that is 15 or more and reflectivity 20 dBZ or more, one per 5x5-bin cluster, in order of severity; the first 20 are reported">
+        <field name="azimuth" word="0" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True azimuth of the bin"/>
+        <field name="range" word="1" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Range of the bin"/>
+        <field name="shear" word="2" bits="15-0" type="uint" lsb="1/16" units="kt/nm" min="0" max="4095.9"/>
+        <field name="severity" word="3" bits="15-14" type="enum" enum="shear_severity"/>
+        <field name="microburst" word="3" bits="13" type="bool" doc="1 = divergence above 0.08"/>
+        <field name="divergence" word="3" bits="12-0" type="sint" lsb="1/512" min="-8" max="7.998" doc="Range gradient / 20; positive is outflow"/>
+        <field name="altitude" word="4" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Beam height at the bin: range x tan(lowest elevation)"/>
+      </section>
+      <section id="turbulence" words="6" max="20" title="Turbulence cells" doc="weather_processor.TurbulenceProcessor on the lowest elevation: spectrum width proxy = local 3x3 standard deviation of reflectivity, EDR proxy = 0.3 x width^(2/3) / range_m^(1/3), a cell where EDR is 0.1 or more, reflectivity 15 dBZ or more and width at least 1, one per 4x4-bin cluster, strongest first; the first 20 are reported">
+        <field name="azimuth" word="0" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True azimuth of the bin"/>
+        <field name="range" word="1" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Range of the bin"/>
+        <field name="intensity" word="2" bits="15-0" type="uint" lsb="1/10000" min="0" max="1" doc="min(1, EDR / 0.6)"/>
+        <field name="spectrum_width" word="3" bits="15-0" type="uint" lsb="1/64" units="m/s" min="0" max="1023.98"/>
+        <field name="category" word="4" bits="15-13" type="enum" enum="turbulence_category"/>
+        <field name="spare_4" word="4" bits="12-0" type="spare"/>
+        <field name="altitude" word="5" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Beam height at the bin: range x tan(lowest elevation)"/>
+      </section>
+    </block>
     <block id="RDR_TGT_TRACKS" rt="9" desc_sa="10" seg_sa="11" rate="10" title="Targeting radar tracks" payload="TBD-v2" replaces="targeting_radarTrackResponse targeting_radarData"/>
     <block id="RDR_AEWC_SECTOR" rt="9" desc_sa="12" seg_sa="13" rate="10" title="AEWC sector scan" payload="TBD-v2" replaces="aewc_radarSectorScanResponse aewc_radarData"/>
     <block id="RDR_TFR_ELEVATION" rt="9" desc_sa="14" seg_sa="15" rate="10" title="TFR elevation profile" payload="TBD-v2" replaces="tfr_radarElevationDataResponse tfr_radarData"/>

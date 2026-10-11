@@ -108,6 +108,13 @@ public:
 
     [[nodiscard]] const RtCounters& counters() const noexcept { return counters_; }
 
+    // How many times the bus controller has read subaddress `sa` since init
+    // or reset. A block transmitter watches this to know when the bus took
+    // the segment it loaded (bus/block.hpp).
+    [[nodiscard]] std::uint32_t transmit_count(std::uint8_t sa) const noexcept {
+        return sa <= kMaxSubaddress ? tx_count_[sa] : 0U;
+    }
+
     // ---- the bus side -----------------------------------------------------
 
     // Processes one datagram from the bus controller. On return `reply_needed`
@@ -137,6 +144,7 @@ private:
     std::array<std::uint8_t, kMaxSubaddress + 1> rx_count_{};
     std::array<bool, kMaxSubaddress + 1> rx_valid_{};
     std::array<bool, kMaxSubaddress + 1> rx_fresh_{};
+    std::array<std::uint32_t, kMaxSubaddress + 1> tx_count_{};
     Word previous_command_{0};
     Word last_command_{0};
     Word sync_word_{0};

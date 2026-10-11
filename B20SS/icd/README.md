@@ -39,6 +39,8 @@ v2 adds it, based on an inventory of what each display reads and what the subsys
 
 **v1.2** adds the navigation and flight management partitions. The plant gains a GPS receiver front end (`PLANT_GPS`: the pseudoranges to the Python's 12-satellite constellation, once a second) and a position that moves. The navigation terminal (RT 7) receives the sensors and the pseudoranges by relay (`NAV_SENSORS`, `NAV_GPS`), solves the fix and fuses it with dead reckoning, and publishes `NAV_SOLUTION`. The FMS (RT 12) receives the FCS attitude, the sensors and the navigation solution by relay (`FMS_ATTITUDE_IN`, `FMS_SENSORS`, `FMS_NAV_SOLUTION`) and publishes what `get_flight_data()` gave the displays as `FMS_FLIGHT_DATA`, which replaces the `FMS_DATA` block. New commands: `FMS_FLIGHT_MODE_CMD` (the five flight modes) and `FMS_CONTROL_CMD` (thrust and gear). `FMS_STATUS`, `FMS_ATTITUDE_STATUS` and `FMS_NAV_UPDATE_STATUS` grew to report what the Python returned (tactical systems, the limited attitude and rates, the applied targets), and `FMS_ENERGY` carries the energy-maneuverability numbers. Two mechanisms came with it: **double-word fields** (32 bits, for latitude, longitude and pseudoranges) and relays with **several consumers** per producer.
 
+**v1.3** adds the weather radar partition. The plant gains the weather (`PLANT_WEATHER`: the storm cells and the stratiform area of `weather_state_manager.py`, which the plant moves and ages, once a second), relayed to the radar as `RDR_WX_WEATHER`. The radar (RT 9, the weather radar's subaddresses) renders what its antenna would see from it exactly as `reflectivity_simulator.py` did, sweeps the circle over 1.2 s, and publishes what the scan found: `RDR_WX_SCAN` (the summary) and the `RDR_WX_PRODUCTS` block (VIL and precipitation points, storm cells, precipitation areas, wind shear events and turbulence cells of one scan), which replaces the `RDR_WX_VIL` and `RDR_WX_PRECIP` streams. With it comes the first **block payload layout**: a header and record sections, generated for both sides like any message (section 8).
+
 ## 2. Decisions this draft is built on
 
 | Decision | From | Effect in the ICD |
@@ -49,6 +51,13 @@ v2 adds it, based on an inventory of what each display reads and what the subsys
 | The INS is not carried | v1.2 | `Systems/nav/ins` integrated random IMU noise into an attitude nothing used: its pitch and roll reached the FMS and were overwritten 20 times a second by the FMS's own values. Attitude comes from the FCS; position comes from the GPS/dead-reckoning fusion |
 | Dead reckoning uses the airspeed as ground speed | v1.2 | `flightManagementSystem.update_flight_data` read `velocity.get('ground_speed', airspeed)`, but the key always exists with the value 0, so the live Python's dead-reckoning rates were always zero. The port uses the formula as written, with the airspeed, since the plant has no wind. The Python also crept the heading by 0.01 degrees per cycle as "small drift"; the port uses the measured heading |
 | The FMS reports the attitude it was commanded, separately from the attitude it measures | v1.2 | `fmsControl.update_attitude` wrote the limited command into the FMS flight data, where the next 50 ms cycle overwrote it. `FMS_ATTITUDE_STATUS` carries the limited command (and which limits held it); `FMS_FLIGHT_DATA` carries the measured attitude from the FCS. The Python mapped FMS flight modes onto its internal flight-control object's modes, which only changed that object's loop rate; that mapping is not carried |
+| The weather is test equipment; the radar's sensor model is flight software | v1.3 | In the Python the weather lived in a singleton that the radar's reflectivity simulator aged and moved whenever it rendered, and the simulator invented a cell or an area when none existed. The plant now owns the cells and the area, applies the same lifecycle and wind rules (its random draws included) and publishes them; the radar renders the reflectivity volume from them bin for bin as `_render_storm_cells`, `_render_stratiform_areas` and `_add_ground_clutter` did, and processes that. A scan latches the truth when it starts and sweeps six degrees of azimuth per frame, so one scan takes 60 frames |
+| The radar's texture is repeatable | v1.3 | The Python drew `random.uniform(-2, 2)` into every stratiform bin and `10 + 5 * random()` into every clutter bin. The radar draws the same amplitudes from a hash of the scan number and the bin, so the same weather gives the same words; the oracle tests turn the texture off and patch the Python's draws to their midpoints |
+| Products are where the radar measured them | v1.3 | The point products carry the azimuth and range of their column. The Python jittered every VIL point by up to ±10° and ±20 % of range "to avoid clustering", scaled the picture to 40 nm for the display, dropped points within half a mile of the aircraft, and invented up to five points by shifting indices when fewer remained. The port keeps the half-mile exclusion and the Python's selection of at most 20 VIL and 15 precipitation points (continuing points first, then the strongest clusters), measured in the Python's 40 nm display frame so the choice is the same; the jitter and the invented points are gone. Where the Python kept a random 500 of more candidates, the port keeps an even spread |
+| The storm cell tracker keeps the cells it finds | v1.3 | `stormCellTracking.StormCellTracker` detected cells correctly, then deleted every new cell in the same call that created it (its "remove unmatched" pass never marked the cells it had just added), so `get_active_cells()` was always empty and no storm cell ever reached a display. The port marks new cells as matched. Its vertical development rate is measured over the scan interval; the Python divided by the wall-clock gap between two of its own statements |
+| Processor geometry is the array's | v1.3 | `weather_processor`'s wind shear and turbulence processors defaulted to a 100 km range for the 200 km array, halving every position and altitude they reported; the port uses the true geometry (one km per range bin), and the oracle tests give the Python that range. The EDR proxy still falls with the cube root of the range in metres, so turbulence cells only ever appear within a few kilometres: the formula is kept as written |
+| PRECIPITATION mode is defined | v1.3 | The Python logged "unknown mode" for it and answered data requests with a `KeyError`. The port gives it the mapping pattern and the precipitation products (points and areas). SURVEILLANCE produces VIL, precipitation points and storm cells; MAPPING precipitation points and areas; WINDSHEAR and TURBULENCE their own products, as the Python's `_update_radar_state` and request handlers did |
+| One block per scan | v1.3 | All of a scan's products travel in one block (`RDR_WX_PRODUCTS`) so a consumer draws one consistent picture, and the five radars share RT 9's thirty subaddresses without running out. Its segment subaddress is polled every frame: an 18-segment block arrives in 0.36 s, inside the 1.2 s scan |
 | BIT merges into avionics; FM fitness and SW configuration fold into another terminal | Alee | All three run in the avionics process at RT 1. FM fitness and SW configuration went there because both are health and maintenance functions; Alee can move them |
 | Bus controller is its own process and the master clock | Alee | Every minor frame starts with a broadcast sync (mode code 17); terminals run their frame on receipt |
 | One process per display | Alee | Each display needs its own RT, because one address is one terminal. RT 11 goes to the PFD; MFD, EICAS, radar display, TSD, SMS and HUD get RT 13–18 |
@@ -91,6 +100,20 @@ v2 adds it, based on an inventory of what each display reads and what the subsys
 | Pseudorange | Double-word `sint`, LSB 1/16 m, 12 per `PLANT_GPS` | Ranges are about 20,000–26,000 km |
 | Navigation solution | `NAV_SOLUTION`: position, fused altitude, GPS validity, satellites used, fix count and age, receiver clock bias | `fuseData.NavDataFusion` and `GPSReceiver` state |
 | Energy | `FMS_ENERGY`: specific excess power, sustained and instantaneous turn rates, climb rate, energy advantage | `fmsControl.calculate_energy_maneuverability` |
+
+**Added in v1.3:**
+
+| Field | Now | Taken from |
+|---|---|---|
+| Weather truth | `PLANT_WEATHER`: up to 8 storm cells (azimuth, range, radius, peak dBZ, which vertical profile) and one stratiform area (azimuth, range, width, depth, dBZ), once a second | `weather_state_manager.StormCell` / `StratiformArea` and `reflectivity_simulator._initialize_weather_state` |
+| Scan summary | `RDR_WX_SCAN`: scan id, mode, pattern size, range and tilt in effect, strongest return, the counts of every product before the block's limits, the block version carrying them | New; what `weather_radar.get_status()` and the log lines said |
+| VIL point | azimuth, range, value (kg/m2, the Python's formula), intensity, layer count, show flag | `vil_data_generator_sync.generate_vil_data_objects` |
+| Precipitation point | azimuth, range, rate (mm/h), intensity, type, show flag | `precipitation_data_generator_sync.generate_precipitation_data_objects` |
+| Storm cell | id, centroid azimuth and range, mean dBZ, size (half a mile per bin), intensity, azimuth and range rates, cell-top estimate and its rate | `stormCellTracking.StormCell` |
+| Precipitation area | centroid, mean dBZ, rate, intensity, type | `precipitation_analysis.PrecipitationData` |
+| Wind shear event | azimuth, range, shear (kt/nm), severity, microburst flag, divergence, beam height | `weather_processor.WindShearEvent` |
+| Turbulence cell | azimuth, range, intensity, spectrum width, category, beam height | `weather_processor.TurbulenceCell` |
+| Types and grades | `precip_type` (RAIN, SNOW, MIXED, HAIL, HEAVY_RAIN), `shear_severity` (LOW, MODERATE, SEVERE), `turbulence_category` (LIGHT to EXTREME) | The strings those modules produced |
 
 ## 3. Word format
 
@@ -239,9 +262,12 @@ Each block stream has a **descriptor** subaddress and a **segment** subaddress, 
 | 1–31 | Payload; the last segment is zero-padded |
 
 **How a block moves:**
-- Each transmit command to the segment subaddress returns the next segment. The terminal starts again from segment 0 when `block_version` changes.
+- Each transmit command to the segment subaddress returns the next segment; the terminal moves on when the bus controller has read the one loaded, and after the last it starts again from segment 0 so a consumer that joined late still gets them all. A new payload gets the next version (1 to 255, never 0: an unloaded subaddress reads as version 0 and means nothing) and starts again from segment 0.
+- The descriptor and the segment subaddress are polled at the block's rate like any periodic message (`RDR_WX_PRODUCTS`: every frame).
 - The largest block is 256 × 31 = 7,936 words.
 - A consumer accepts a block only when it has every segment of one version and the CRC matches. Otherwise it keeps the previous block, which goes stale normally.
+
+**The payload** of a block whose layout the ICD defines (a `<header>` and `<section>` elements in the XML) is its header words, then one count word per section, then every section's records in order; a section's count is at most its `max`. The generated code (`fmofp/icd/blocks.hpp`, `fmofp_bus/icd/blocks.py`) encodes and decodes the whole payload and refuses one whose counts and length disagree; `bus/block.hpp` and `fmofp_bus/block.py` do the descriptor and segment framing on each side. `ICD_TABLES.md` lists the layouts under *Block payloads*. Blocks still marked `TBD-v2` have no layout yet and are not scheduled.
 
 ## 9. Startup and the version handshake
 
@@ -298,9 +324,10 @@ All answered 2026-10-10:
 
 ## 12. Backlog
 
-Done since v1: the C++ and Python code generators (`gen-cpp`, `gen-py`), the relays section, the bus-load check (in the bus controller), the first partition's inputs and outputs (v1.1), the navigation and flight management partitions' inputs and outputs, the PFD's flight data (`FMS_FLIGHT_DATA`), thrust and gear commands (v1.2).
+Done since v1: the C++ and Python code generators (`gen-cpp`, `gen-py`), the relays section, the bus-load check (in the bus controller), the first partition's inputs and outputs (v1.1), the navigation and flight management partitions' inputs and outputs, the PFD's flight data (`FMS_FLIGHT_DATA`), thrust and gear commands (v1.2), block payload layouts and the weather radar's inputs and products (v1.3).
 
-- Payload layouts for the six radar block streams.
+- Payload layouts for the four remaining radar block streams (targeting tracks, AEWC sector, TFR elevation, SAR image), as those radars are ported.
+- The weather radar display reading `RDR_WX_PRODUCTS` and `RDR_WX_SCAN` off the bus; today it still reads the Python radar through `radar_to_display_bridge.py`.
 - Periodic data messages for each remaining subsystem and display input: EICAS, TSD fused tracks, SMS stores, HUD. These come from the display and subsystem inventories, and are added partition by partition as the port reaches them.
 - Engine data (N1, EGT, fuel flow) from RT 3, which `FCS_PERF_STATUS` needs for fuel efficiency; terrain clearance from the radar, which then replaces the plant's.
 - Detailed BIT results per terminal.
@@ -316,4 +343,5 @@ Done since v1: the C++ and Python code generators (`gen-cpp`, `gen-py`), the rel
 | 1.0-draft.2 | 2026-10-10 | Alee's answers 1–3: display addresses accepted; BIT, FM fitness and SW configuration moved into RT 1; bus controller confirmed as its own process; RT 24–26 freed |
 | 1.0-draft.3 | 2026-10-10 | Alee's answers 4–10: UDP accepted; Python frozen at `0ab9236`; codec problems left as they are; WEATHER dropped; every undefined value defined from the code; heading true. Unused `command_parameter` words removed |
 | 1.1-draft | 2026-10-10 | Flight control partition: plant terminal RT 27, `PLANT_SENSORS` → `FCS_SENSORS`, `FCS_GCAS_ALERTS`, `FCS_PERF_STATUS`; the relays section (including the MFD radar commands). Enums `gear_position`, `gcas_status`. Owner: Kevin |
+| 1.3-draft | 2026-10-11 | Weather radar partition: `PLANT_WEATHER` → `RDR_WX_WEATHER`; `RDR_WX_SCAN`; the `RDR_WX_PRODUCTS` block with the first payload layout (header + sections), replacing `RDR_WX_VIL` and `RDR_WX_PRECIP`. Enums `precip_type`, `shear_severity`, `turbulence_category` |
 | 1.2-draft | 2026-10-11 | Navigation and flight management partitions: `PLANT_GPS`; `NAV_SENSORS`, `NAV_GPS`, `NAV_SOLUTION`; `FMS_ATTITUDE_IN`, `FMS_SENSORS`, `FMS_NAV_SOLUTION`, `FMS_FLIGHT_DATA` (replacing the `FMS_DATA` block), `FMS_FLIGHT_MODE_CMD`, `FMS_CONTROL_CMD`/`STATUS`, `FMS_ENERGY`; `FMS_STATUS`, `FMS_ATTITUDE_STATUS`, `FMS_NAV_UPDATE_STATUS` extended. Double-word fields; relays to several consumers. Enums `fms_flight_mode`, `countermeasures_state`, `targeting_state`, `weapons_state` |

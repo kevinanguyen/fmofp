@@ -46,3 +46,20 @@ target_link_libraries(ofp_fms PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
 
 add_executable(fmofp_fms fms/src/main.cpp)
 target_link_libraries(fmofp_fms PRIVATE ofp::fms ofp::rt_process ofp::bc ofp::warnings)
+
+# The radar computer, RT 9, with the weather radar ported: the sensor model
+# that renders the plant's weather, the signal processing (VIL, rain rate,
+# storm cells, precipitation areas, wind shear, turbulence) and the scan.
+# fmofp_radar_tool exposes the pure functions on stdin/stdout for the oracle tests.
+add_library(ofp_radar STATIC radar/src/weather_model.cpp radar/src/weather_products.cpp
+                             radar/src/weather_radar.cpp)
+add_library(ofp::radar ALIAS ofp_radar)
+add_dependencies(ofp_radar ofp_icd_generate)
+target_include_directories(ofp_radar PUBLIC radar/include)
+target_link_libraries(ofp_radar PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
+
+add_executable(fmofp_radar radar/src/main.cpp)
+target_link_libraries(fmofp_radar PRIVATE ofp::radar ofp::rt_process ofp::bc ofp::warnings)
+
+add_executable(fmofp_radar_tool radar/tools/radar_tool.cpp)
+target_link_libraries(fmofp_radar_tool PRIVATE ofp::radar ofp::warnings)

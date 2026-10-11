@@ -5,7 +5,8 @@ add_library(ofp_bus STATIC
     src/command_word.cpp
     src/status_word.cpp
     src/transport.cpp
-    src/remote_terminal.cpp)
+    src/remote_terminal.cpp
+    src/block.cpp)
 add_library(ofp::bus ALIAS ofp_bus)
 
 target_include_directories(ofp_bus PUBLIC include)

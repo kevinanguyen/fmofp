@@ -6,6 +6,8 @@ The binaries are named by environment variables (CI sets them):
     FMOFP_NAV       partitions/fmofp_nav
     FMOFP_NAV_TOOL  partitions/fmofp_nav_tool
     FMOFP_FMS       partitions/fmofp_fms
+    FMOFP_RADAR     partitions/fmofp_radar
+    FMOFP_RADAR_TOOL partitions/fmofp_radar_tool
 """
 
 import os
