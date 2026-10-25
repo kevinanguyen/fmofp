@@ -17,7 +17,10 @@ what the receiver would measure, noise included. It also owns the weather
 model renders, published as PLANT_WEATHER once a second; and the terrain
 (fmofp_plant.terrain): the elevation profile ahead of the aircraft that the
 terrain-following radar assesses, published as the PLANT_TERRAIN block ten times
-a second. --terrain-ft flattens the world to one elevation.
+a second. --terrain-ft flattens the world to one elevation. And it runs the two
+engines (fmofp_plant.engine): engineControlUnit.py's engine model at its 2 Hz,
+at the thrust the engine computer commands (PLANT_THRUST_CMD, relayed from the
+engine terminal's ENG_THRUST_CMD), published as PLANT_ENGINE ten times a second.
 
 --hold freezes named quantities at fixed values, which is how the tests put the
 aircraft into a known situation.
@@ -31,9 +34,10 @@ import sys
 from fmofp_bus.block import BlockPublisher
 from fmofp_bus.icd.blocks import PlantTerrain
 from fmofp_bus.icd.enums import GearPosition, Ssm
-from fmofp_bus.icd.messages import PlantGps, PlantSensors, PlantWeather
+from fmofp_bus.icd.messages import PlantGps, PlantSensors, PlantThrustCmd, PlantWeather
 from fmofp_bus.rt_process import RtProcess
 from fmofp_bus.status import Status
+from fmofp_plant.engine import ECU_DT, ECU_HZ, EngineWorld
 from fmofp_plant.terrain import FlatTerrain, HillTerrain, profile_message
 from fmofp_plant.weather import WeatherWorld
 
@@ -47,6 +51,9 @@ WEATHER_HZ = 1
 SYNCS_PER_WEATHER = SYNC_HZ // WEATHER_HZ
 TERRAIN_HZ = 10  # a new profile each time the aircraft has moved
 SYNCS_PER_TERRAIN = SYNC_HZ // TERRAIN_HZ
+SYNCS_PER_ECU_STEP = SYNC_HZ // ECU_HZ  # the engine model's own rate
+ENGINE_HZ = 10  # PLANT_ENGINE's rate; a reading stays current for three periods at its consumer
+SYNCS_PER_ENGINE = SYNC_HZ // ENGINE_HZ
 
 HOLDABLE = ("altitude", "speed", "heading", "pitch", "roll", "vertical_speed", "angle_of_attack", "g_force",
             "flaps", "latitude", "longitude")
@@ -132,6 +139,8 @@ class PlantModel:
         self.weather_seq = 0
         self.terrain = HillTerrain() if terrain is None else terrain
         self.terrain_seq = 0
+        # The engines draw from their own generator too, for the same reason.
+        self.engines = EngineWorld(random.Random(None if seed is None else seed ^ 0x454E47))
         self.altitude = 10000.0       # feet
         self.speed = 500.0            # knots
         self.heading = 0.0            # degrees true
@@ -224,6 +233,17 @@ class PlantModel:
         m.weather_seq = self.weather_seq
         return m
 
+    def engine_message(self):
+        """PLANT_ENGINE: what the engines' sensors read now."""
+        return self.engines.message()
+
+    def thrust_command(self, words):
+        """A PLANT_THRUST_CMD received: the engines take the engine computer's command. True when applied."""
+        status, cmd = PlantThrustCmd.decode(words)
+        if status != Status.OK:
+            return False
+        return self.engines.command(cmd.payload)
+
     def true_position_ecef(self):
         return wgs84_to_ecef(self.value("latitude"), self.value("longitude"), self.value("altitude"))
 
@@ -270,8 +290,9 @@ class PlantModel:
 
 class PlantTerminal:
     """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame, PLANT_WEATHER once a
-    second, PLANT_GPS with a new epoch once a second and its ranges refreshed at the walk rate, and the
-    PLANT_TERRAIN block ten times a second."""
+    second, PLANT_GPS with a new epoch once a second and its ranges refreshed at the walk rate, the
+    PLANT_TERRAIN block ten times a second and PLANT_ENGINE ten times a second (the engine model steps at 2 Hz),
+    and takes the engine computer's thrust command from PLANT_THRUST_CMD."""
 
     def __init__(self, model, port_base=51000):
         self.model = model
@@ -279,6 +300,7 @@ class PlantTerminal:
         self.port_base = port_base
         self.syncs = 0
         self.publish_failures = 0
+        self.thrust_commands = 0
         self.terrain_block = BlockPublisher(PlantTerrain.MAX_PAYLOAD_WORDS)
 
     def init(self):
@@ -289,6 +311,7 @@ class PlantTerminal:
             self.publish_weather()
             self.publish_terrain()
             self.serve_terrain()
+            self.publish_engine()
         return status
 
     def _load(self, message):
@@ -306,6 +329,15 @@ class PlantTerminal:
 
     def publish_weather(self):
         self._load(self.model.weather_message())
+
+    def publish_engine(self):
+        self._load(self.model.engine_message())
+
+    def take_thrust_command(self):
+        """Applies a PLANT_THRUST_CMD that arrived since the last frame."""
+        status, words, fresh = self.process.terminal.get_received(PlantThrustCmd.SUBADDRESS)
+        if status == Status.OK and fresh and self.model.thrust_command(words):
+            self.thrust_commands += 1
 
     def publish_terrain(self):
         status, words = self.model.terrain_message().encode()
@@ -331,8 +363,14 @@ class PlantTerminal:
                 self.publish_weather()
                 self.publish_terrain()
                 self.serve_terrain()
+                self.publish_engine()
             return False
         self.syncs += 1
+        self.take_thrust_command()
+        if self.syncs % SYNCS_PER_ECU_STEP == 0:
+            self.model.engines.step(ECU_DT)
+        if self.syncs % SYNCS_PER_ENGINE == 0:
+            self.publish_engine()
         if self.syncs % SYNCS_PER_GPS == 0:
             self.model.new_gps_epoch()
         if self.syncs % SYNCS_PER_WALK == 0:
@@ -395,14 +433,15 @@ def main(argv=None):
             if plant.poll() and not args.quiet and plant.syncs % 50 == 1:
                 print(f"plant: frame {plant.syncs}: alt {model.value('altitude'):.0f} ft, "
                       f"{model.value('speed'):.0f} kt, hdg {model.value('heading'):.0f}, "
-                      f"{model.value('latitude'):.4f} {model.value('longitude'):.4f}")
+                      f"{model.value('latitude'):.4f} {model.value('longitude'):.4f}, "
+                      f"thrust {model.engines.engines[0].thrust:.0f}/{model.engines.engines[1].thrust:.0f}%")
     except KeyboardInterrupt:
         pass
     finally:
         plant.shutdown()
     c = plant.process.terminal.counters
     print(f"plant: syncs={plant.syncs} transmits={c.transmits} message_errors={c.message_errors} "
-          f"publish_failures={plant.publish_failures}")
+          f"publish_failures={plant.publish_failures} thrust_commands={plant.thrust_commands}")
     return 0
 
 

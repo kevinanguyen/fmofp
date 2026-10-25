@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="7" status="DRAFT" date="2026-10-25">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="8" status="DRAFT" date="2026-10-25">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -20,6 +20,7 @@
   <revision version="1.5-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">The first displays on the bus. The radar display (RT 15) receives the weather and terrain-following radars' status, scan summary and guidance by relay and their products as receive blocks (DSP_RDR_WX_PRODUCTS, DSP_RDR_TFR_ELEVATION), and is the radars' control panel: the radar commands move from the MFD (MFD_RDR_*_CMD, never implemented) to DSP_RDR_*_CMD. The PFD (RT 11) receives FMS_FLIGHT_DATA, FMS_STATUS and FMS_ATTITUDE_STATUS by relay (PFD_FLIGHT_DATA, PFD_FMS_STATUS, PFD_ATTITUDE_STATUS). A command whose cmd_seq is 0 is no command: an unloaded command subaddress reads as zeros.</revision>
   <revision version="1.6-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">The MFD (RT 13) on the bus. Its radar page mirrors the radar display's pictures: the weather and terrain-following radars' status, scan summary and guidance by relay (MFD_RDR_WX_STATUS, MFD_RDR_WX_SCAN, MFD_RDR_TFR_STATUS, MFD_RDR_TFR_GUIDANCE) and their products as receive blocks (MFD_RDR_WX_PRODUCTS, MFD_RDR_TFR_ELEVATION). Its systems page reads the flight computer's GCAS alerts and envelope exceedances (MFD_GCAS_ALERTS, MFD_PERF_STATUS) and its mission page the FMS flight data (MFD_FLIGHT_DATA). It commands nothing.</revision>
   <revision version="1.7-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Display data by broadcast. The radars' status, scan summary, guidance and product blocks, the flight computer's GCAS alerts and exceedances and the FMS's flight data, status and attitude status are relayed once each to address 31 (BCAST_*), and each display accepts the broadcast subaddresses it draws; a terminal stores a broadcast only on an accepted subaddress. The per-display copies of v1.5 and v1.6 (DSP_RDR_*, PFD_*, MFD_*) are removed. The broadcast map: subaddresses 1-10 the radar and flight-control band, 25-27 the flight-management band.</revision>
+  <revision version="1.8-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Engine management partition (RT 3). The plant runs the two engines of engineControlUnit.py and publishes their measurements (PLANT_ENGINE), following the engine computer's thrust command (ENG_THRUST_CMD, relayed to it as PLANT_THRUST_CMD). The engine computer receives the FMS thrust lever (ENG_FMS_CONTROL), the engine measurements (ENG_ENGINE_IN) and the FMS flight data by broadcast, runs thrustManagement.py's per-engine thrust, autothrottle and asymmetry logic and fuelControl.py's tanks, fuel lines, transfer policy and fuel monitor, takes ENG_CMD (thrust per engine, autothrottle, fuel transfer) and publishes ENG_STATUS, ENG_ENGINE_STATUS (broadcast to the MFD and to the flight control computer, whose FCS_PERF_STATUS fuel efficiency now comes from it) and ENG_FUEL_STATUS (broadcast to the MFD). The first subsystems to listen to broadcasts: RT 3 hears 31/25, RT 5 hears 31/18. The broadcast map gains the engine band, subaddresses 18-19. Enums engine_command, engine_select, fuel_tank.</revision>
   <bus word_bits="16" byte_order="big-endian" bit_numbering="15=MSB" bit_rate_mbps="1"
        minor_frame_ms="20" minor_frames_per_major="50" rates_hz="50 10 5 1"
        broadcast_rt="31" status_sa="29" wraparound_sa="30" max_bus_load_percent="50"
@@ -201,15 +202,33 @@
       <value name="CLEARANCE" value="2"/>
       <value name="OBSTACLE" value="3"/>
     </enum>
+    <enum id="engine_command" bits="3" doc="What ENG_CMD asks of the engine computer (thrustManagement.py and fuelControl.py entry points nothing in the Python ever called)">
+      <value name="NONE" value="0"/>
+      <value name="SET_THRUST" value="1" doc="set_thrust for one engine, or set_all_thrust"/>
+      <value name="AUTOTHROTTLE_ENGAGE" value="2" doc="engage_autothrottle with the target airspeed"/>
+      <value name="AUTOTHROTTLE_DISENGAGE" value="3"/>
+      <value name="FUEL_TRANSFER" value="4" doc="transfer_fuel between two tanks"/>
+    </enum>
+    <enum id="engine_select" bits="2" doc="Which engine a thrust command addresses (FuelManagementSystem.setup_aircraft: Engine 1 and Engine 2)">
+      <value name="ALL" value="0"/>
+      <value name="ENGINE_1" value="1"/>
+      <value name="ENGINE_2" value="2"/>
+    </enum>
+    <enum id="fuel_tank" bits="2" doc="The tanks of FuelManagementSystem.setup_aircraft: Main Left and Main Right 10000 kg, Center 20000 kg">
+      <value name="NONE" value="0"/>
+      <value name="MAIN_LEFT" value="1"/>
+      <value name="MAIN_RIGHT" value="2"/>
+      <value name="CENTER" value="3"/>
+    </enum>
   </enums>
 
   <terminals>
     <terminal rt="0" id="reserved_0" name="Reserved (was 'Unnamed System')" status="reserved"/>
     <terminal rt="1" id="avionics" name="Avionics - LRU health, built-in test, FM fitness, software configuration" status="existing" source="Systems/avionics/hardwareHealth, Systems/builtInTestSystems, Systems/fmFitness, Systems/configurationManagement" note="BIT merged here (Alee, 2026-10-10). FM fitness and SW configuration are here too: Alee said to fold them into another terminal, and both are health/maintenance functions"/>
     <terminal rt="2" id="comms" name="Communications" status="existing" source="Systems/comms/messaging_service.py"/>
-    <terminal rt="3" id="enginemanagement" name="Engine management - ECU, fuel, thrust" status="existing" source="Systems/engineManagement"/>
+    <terminal rt="3" id="enginemanagement" name="Engine management - thrust, autothrottle, fuel" status="existing" source="Systems/engineManagement: thrustManagement/thrustManagement.py, fuelManagement/fuelControl.py and fuelMonitor.py" note="Ported in v1.8 (fmofp_engine). The engine model of ecu/engineControlUnit.py is simulation and runs in the plant (PLANT_ENGINE); this terminal commands the engines (ENG_THRUST_CMD) from the FMS thrust lever, ENG_CMD and its autothrottle, and reports what it measures. It hears the FMS flight data by broadcast (RT 31 SA 25) for the autothrottle's airspeed"/>
     <terminal rt="4" id="enviornmentalcontrolsystem" name="Environmental control system" status="existing" source="Systems/enviornmentalControlSystem" note="id keeps the repo's spelling"/>
-    <terminal rt="5" id="flightcontrolsys" name="Flight control - FCC, GCAS, performance monitor" status="existing" source="Systems/flightControlSys"/>
+    <terminal rt="5" id="flightcontrolsys" name="Flight control - FCC, GCAS, performance monitor" status="existing" source="Systems/flightControlSys" note="Ported in v1.1 (fmofp_fcs). From v1.8 it hears the engine computer's ENG_ENGINE_STATUS by broadcast (RT 31 SA 18), which gives FCS_PERF_STATUS its fuel efficiency"/>
     <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
     <terminal rt="7" id="nav" name="Navigation - GPS position solver and GPS/dead-reckoning fusion" status="existing" source="Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py" note="Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2)"/>
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
@@ -217,7 +236,7 @@
     <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
     <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then)"/>
     <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py" note="Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object"/>
-    <terminal rt="13" id="mfd" name="Multi-function display" status="new" source="Interfaces/userInterface/displays/mfd.py" note="On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10) and its mission page the FMS flight data (31/25); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing"/>
+    <terminal rt="13" id="mfd" name="Multi-function display" status="new" source="Interfaces/userInterface/displays/mfd.py" note="On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10), its mission page the FMS flight data (31/25) and, from v1.8, its systems and engine pages the engine computer's engine and fuel status (31/18, 31/19); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing"/>
     <terminal rt="14" id="eicas" name="Engine indicating and crew alerting display" status="new" source="Interfaces/userInterface/displays"/>
     <terminal rt="15" id="radar_display" name="Radar display - the radars' pictures and their control panel" status="new" source="Interfaces/userInterface/displays/radar" note="On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24)"/>
     <terminal rt="16" id="tsd" name="Tactical situation display" status="new" source="Interfaces/userInterface/displays/tsd.py"/>
@@ -228,7 +247,7 @@
     <terminal rt="21" id="flightsurfaces" name="Flight surfaces" status="new" source="Systems/flightSurfaces"/>
     <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
     <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
-    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4; engine data goes to the engine terminal). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure"/>
+    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD)"/>
     <terminal rt="31" id="broadcast" name="Broadcast address - every terminal that accepts a subaddress hears it" status="reserved" note="Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7"/>
   </terminals>
 
@@ -771,11 +790,15 @@
       <doc>The MFD's systems page rows, and any display that shows the alerts later (EICAS, HUD) by adding itself to the listeners.</doc>
     </message>
     <message id="BCAST_FCS_PERF_STATUS" rt="31" sa="10" dir="R" words="4" rate="1" title="Flight envelope monitoring, broadcast to the displays" layout_of="FCS_PERF_STATUS" listeners="13"/>
-    <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast to the displays" layout_of="FMS_FLIGHT_DATA" listeners="11 13">
-      <doc>What the PFD draws and the MFD's mission page reads; the HUD will listen too.</doc>
+    <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast" layout_of="FMS_FLIGHT_DATA" listeners="3 11 13">
+      <doc>What the PFD draws and the MFD's mission page reads; the HUD will listen too. From v1.8 the engine computer (RT 3) listens as well: its autothrottle holds the airspeed in it.</doc>
     </message>
     <message id="BCAST_FMS_STATUS" rt="31" sa="26" dir="R" words="3" rate="5" title="FMS status, broadcast to the displays" layout_of="FMS_STATUS" listeners="11"/>
     <message id="BCAST_FMS_ATTITUDE_STATUS" rt="31" sa="27" dir="R" words="8" rate="10" title="Attitude command status, broadcast to the displays" layout_of="FMS_ATTITUDE_STATUS" listeners="11"/>
+    <message id="BCAST_ENG_ENGINE_STATUS" rt="31" sa="18" dir="R" words="20" rate="5" title="Engine status, broadcast" layout_of="ENG_ENGINE_STATUS" listeners="5 13">
+      <doc>The engine band of the broadcast map, 18-19 (v1.8). The MFD's systems and engine pages draw it; the flight control computer takes the total fuel flow for FCS_PERF_STATUS's fuel efficiency; the EICAS will listen too.</doc>
+    </message>
+    <message id="BCAST_ENG_FUEL_STATUS" rt="31" sa="19" dir="R" words="7" rate="1" title="Fuel status, broadcast" layout_of="ENG_FUEL_STATUS" listeners="13"/>
 
 
     <!-- ===== v1.1: the plant and the flight control partition's inputs and outputs ===== -->
@@ -892,7 +915,7 @@
       <field name="terrain_clearance" word="3" bits="15-0" type="sint" lsb="1" units="ft" min="-32768" max="32767" doc="The radar's minimum clearance ahead; negative when terrain ahead is above the aircraft"/>
     </message>
     <message id="FCS_PERF_STATUS" rt="5" sa="15" dir="T" words="4" rate="1" title="Flight envelope monitoring">
-      <doc>performaneMonitoring.py: an exceedance bit is set while the magnitude of the parameter is above its limit - g 9.0, angle of attack 25 deg, roll 60 deg, pitch 45 deg, vertical speed 6000 ft/min. Fuel efficiency is airspeed / (fuel flow / 60) in nm per kg and is NO_COMPUTED_DATA until the engine terminal publishes fuel flow.</doc>
+      <doc>performaneMonitoring.py: an exceedance bit is set while the magnitude of the parameter is above its limit - g 9.0, angle of attack 25 deg, roll 60 deg, pitch 45 deg, vertical speed 6000 ft/min. Fuel efficiency is airspeed / (total fuel flow / 60) in nm per kg (performaneMonitoring._compute_fuel_efficiency, 0 when the flow is 0), from the engine computer's ENG_ENGINE_STATUS heard by broadcast (v1.8), and NO_COMPUTED_DATA while that is absent or stale.</doc>
       <field name="exceed_g" word="0" bits="15" type="bool"/>
       <field name="exceed_aoa" word="0" bits="14" type="bool"/>
       <field name="exceed_roll" word="0" bits="13" type="bool"/>
@@ -908,6 +931,141 @@
     </message>
     <message id="FCS_TERRAIN" rt="5" sa="16" dir="R" words="8" rate="10" title="Terrain clearance as received by the flight control computer" layout_of="RDR_TFR_GUIDANCE">
       <doc>The terrain-following radar's guidance, relayed. The ground collision avoidance function reads min_clearance when clearance_ssm is NORMAL and the message is fresh (stale after three periods, 0.3 s); otherwise it has no terrain clearance, as groundCollisionAvoidanceSys.py had none when the TFR gave it nothing.</doc>
+    </message>
+
+    <!-- ===== v1.8: the engines in the plant, and the engine management partition (RT 3): thrust, autothrottle, fuel ===== -->
+    <message id="PLANT_ENGINE" rt="27" sa="6" dir="T" words="19" rate="10" title="Engine measurements from the plant">
+      <doc>What the two turbofans' sensors read, from engineControlUnit.py's engine model run in the plant for each engine: N1 = 0.80 x thrust + 18 %, N2 = 0.75 x thrust + 22 %, EGT = 350 + 4.5 x thrust C, fuel flow = 42 x thrust kg/h, oil pressure 60 + 4 sin(0.1 t) psi, oil temperature 92 + 8 sin(0.05 t + 1) C, vibration 0.2 + 0.15 |sin(0.3 t)|, each with the Python's Gaussian noise, and a compressor efficiency that random-walks between 75 and 98 %; stepped at the ECU's 2 Hz, t being simulated seconds. The thrust is what the engine computer commands (PLANT_THRUST_CMD, applied at the next step); until a valid command exists both engines sit at the ECU's starting 70 %. The Python's thrust random-walked because nothing commanded it. Spool-up is not modelled: the thrust is the command (README section 12).</doc>
+      <field name="engine_1_ssm" word="0" bits="15-14" type="ssm" for="n1_1" doc="Validity of every engine 1 quantity"/>
+      <field name="engine_2_ssm" word="0" bits="13-12" type="ssm" for="n1_2" doc="Validity of every engine 2 quantity"/>
+      <field name="spare_0" word="0" bits="11-0" type="spare"/>
+      <field name="thrust_1" word="1" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="Thrust in force, percent of maximum"/>
+      <field name="n1_1" word="2" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Fan speed"/>
+      <field name="n2_1" word="3" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Core speed"/>
+      <field name="egt_1" word="4" bits="15-0" type="uint" lsb="1/10" units="degC" min="0" max="1500" doc="Exhaust gas temperature"/>
+      <field name="fuel_flow_1" word="5" bits="15-0" type="uint" lsb="1" units="kg/h" min="0" max="65535"/>
+      <field name="oil_pressure_1" word="6" bits="15-0" type="uint" lsb="1/100" units="psi" min="0" max="200"/>
+      <field name="oil_temperature_1" word="7" bits="15-0" type="sint" lsb="1/100" units="degC" min="-100" max="300"/>
+      <field name="vibration_1" word="8" bits="15-0" type="uint" lsb="1/1000" units="EU" min="0" max="10" doc="Engine units, as the ECU reports them"/>
+      <field name="compressor_efficiency_1" word="9" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100"/>
+      <field name="thrust_2" word="10" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="Thrust in force, percent of maximum"/>
+      <field name="n1_2" word="11" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Fan speed"/>
+      <field name="n2_2" word="12" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Core speed"/>
+      <field name="egt_2" word="13" bits="15-0" type="uint" lsb="1/10" units="degC" min="0" max="1500" doc="Exhaust gas temperature"/>
+      <field name="fuel_flow_2" word="14" bits="15-0" type="uint" lsb="1" units="kg/h" min="0" max="65535"/>
+      <field name="oil_pressure_2" word="15" bits="15-0" type="uint" lsb="1/100" units="psi" min="0" max="200"/>
+      <field name="oil_temperature_2" word="16" bits="15-0" type="sint" lsb="1/100" units="degC" min="-100" max="300"/>
+      <field name="vibration_2" word="17" bits="15-0" type="uint" lsb="1/1000" units="EU" min="0" max="10" doc="Engine units, as the ECU reports them"/>
+      <field name="compressor_efficiency_2" word="18" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100"/>
+    </message>
+    <message id="PLANT_THRUST_CMD" rt="27" sa="7" dir="R" words="3" rate="10" title="Thrust command as received by the plant" layout_of="ENG_THRUST_CMD">
+      <doc>ENG_THRUST_CMD relayed to the plant: the thrust each engine runs at, taken while commands_valid is 1.</doc>
+    </message>
+    <message id="ENG_STATUS" rt="3" sa="10" dir="T" words="3" rate="1" title="Engine computer status">
+      <doc>The terminal's state and command handling as FCS_STATUS reports them, plus thrustManagement.get_status (autothrottle engaged, its target, the asymmetry condition) and the fuel monitor's alert summary. engine_cmd_status is the outcome of the last ENG_CMD.</doc>
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last ENG_MODE_CMD processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last ENG_MODE_CMD was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="autothrottle_engaged" word="1" bits="13" type="bool"/>
+      <field name="asymmetric_thrust" word="1" bits="12" type="bool" doc="1 = the commanded thrusts differ by more than 25 percentage points (MAX_SAFE_THRUST_ASYMMETRY_PCT)"/>
+      <field name="low_fuel" word="1" bits="11" type="bool" doc="1 = any tank at or below 20 % (fuelMonitor LOW_FUEL, CRITICAL_FUEL included)"/>
+      <field name="critical_fuel" word="1" bits="10" type="bool" doc="1 = any tank at or below 10 %"/>
+      <field name="leak_suspected" word="1" bits="9" type="bool" doc="1 = an unexplained fuel loss was seen in some tank (latched until reset)"/>
+      <field name="engine_cmd_status" word="1" bits="8-5" type="enum" enum="cmd_status" doc="Outcome of the last ENG_CMD"/>
+      <field name="spare_1" word="1" bits="4-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+      <field name="autothrottle_target" word="2" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="1500" doc="Target airspeed while engaged; 0 otherwise"/>
+    </message>
+    <message id="ENG_MODE_CMD" rt="3" sa="10" dir="R" words="1" rate="aperiodic" title="Engine computer mode command">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="ENG_FMS_CONTROL" rt="3" sa="11" dir="R" words="3" rate="5" title="FMS thrust lever as received by the engine computer" layout_of="FMS_CONTROL_STATUS">
+      <doc>FMS_CONTROL_STATUS relayed: throttle_position is the thrust lever. A new position commands both engines (thrustManagement.set_all_thrust) unless the autothrottle is engaged, which owns the levers until disengaged; the afterburner bit is passed on in ENG_THRUST_CMD. In the Python the FMS's thrust and the thrust management system's per-engine values were separate numbers that nothing connected; here the lever drives the engines.</doc>
+    </message>
+    <message id="ENG_ENGINE_IN" rt="3" sa="12" dir="R" words="19" rate="10" title="Engine measurements as received by the engine computer" layout_of="PLANT_ENGINE">
+      <doc>PLANT_ENGINE relayed. Stale after three periods (0.3 s), after which the engines read NO_COMPUTED_DATA and the terminal is DEGRADED.</doc>
+    </message>
+    <message id="ENG_CMD" rt="3" sa="13" dir="R" words="5" rate="aperiodic" title="Engine computer command">
+      <doc>The entry points of thrustManagement.py and fuelControl.py that nothing in the Python ever called, on the bus: SET_THRUST (set_thrust for one engine, or set_all_thrust for ALL, with thrust 0-100 %), AUTOTHROTTLE_ENGAGE (engage_autothrottle with target_airspeed; the PI loop then runs at the Python's 2 Hz on the airspeed of the FMS flight data), AUTOTHROTTLE_DISENGAGE, FUEL_TRANSFER (transfer_fuel from source to destination: at most amount kg, no more than the source holds or the destination can take). The debug CLI and the scenario engine are the expected senders. The outcome is ENG_STATUS.engine_cmd_status: ACCEPTED, REJECTED_INVALID for an unknown command or a parameter out of range, FAILED for a transfer that could move nothing. The fields a command does not use are ignored.</doc>
+      <field name="command" word="0" bits="15-13" type="enum" enum="engine_command"/>
+      <field name="engine" word="0" bits="12-11" type="enum" enum="engine_select" doc="SET_THRUST: which engine"/>
+      <field name="spare_0" word="0" bits="10-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="thrust" word="1" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="SET_THRUST: the thrust"/>
+      <field name="target_airspeed" word="2" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="1500" doc="AUTOTHROTTLE_ENGAGE: the airspeed to hold; must be above 0"/>
+      <field name="source" word="3" bits="15-14" type="enum" enum="fuel_tank" doc="FUEL_TRANSFER: from"/>
+      <field name="destination" word="3" bits="13-12" type="enum" enum="fuel_tank" doc="FUEL_TRANSFER: to; must differ from source"/>
+      <field name="spare_3" word="3" bits="11-0" type="spare"/>
+      <field name="amount" word="4" bits="15-0" type="uint" lsb="1" units="kg" min="0" max="65535" doc="FUEL_TRANSFER: at most this much; must be above 0"/>
+    </message>
+    <message id="ENG_THRUST_CMD" rt="3" sa="14" dir="T" words="3" rate="10" title="Thrust command to the engines">
+      <doc>The thrust each engine is commanded to: ThrustManagementSystem's per-engine values, which start at 0 (register_engine) and then follow the FMS thrust lever (ENG_FMS_CONTROL), ENG_CMD and the autothrottle. commands_valid is 0 until something has commanded the thrust; the plant's engines keep their own setting until then. asymmetry is check_asymmetry's max minus min. Relayed to the plant as PLANT_THRUST_CMD.</doc>
+      <field name="thrust_1" word="0" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="Engine 1"/>
+      <field name="thrust_2" word="1" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="Engine 2"/>
+      <field name="afterburner" word="2" bits="15" type="bool" doc="The FMS's afterburner state, passed on"/>
+      <field name="autothrottle_engaged" word="2" bits="14" type="bool"/>
+      <field name="asymmetric_thrust" word="2" bits="13" type="bool" doc="1 = asymmetry above 25 percentage points"/>
+      <field name="commands_valid" word="2" bits="12" type="bool" doc="1 = the thrusts are a command; 0 = nothing has commanded the engines yet"/>
+      <field name="spare_2" word="2" bits="11-10" type="spare"/>
+      <field name="asymmetry" word="2" bits="9-0" type="uint" lsb="1/10" units="%" min="0" max="100" doc="Largest difference between the engines' commanded thrusts, percentage points"/>
+    </message>
+    <message id="ENG_ENGINE_STATUS" rt="3" sa="15" dir="T" words="20" rate="5" title="Engine status">
+      <doc>The engines as the engine computer measures them (ENG_ENGINE_IN; NO_COMPUTED_DATA for an engine whose data is absent, stale or invalid, every value of it then 0), with the assessment the MFD's engine page made of each value (mfd.draw_engine_page: red at N1 or N2 100 % and above, EGT above 800 C, oil pressure below 40 psi, oil temperature above 130 C; amber for vibration above 0.8), and the total fuel flow of the engines that report one, which the flight control computer's fuel efficiency uses. Broadcast to the MFD and the flight control computer (BCAST_ENG_ENGINE_STATUS).</doc>
+      <field name="engine_1_ssm" word="0" bits="15-14" type="ssm" for="n1_1" doc="Validity of every engine 1 quantity"/>
+      <field name="engine_2_ssm" word="0" bits="13-12" type="ssm" for="n1_2" doc="Validity of every engine 2 quantity"/>
+      <field name="egt_high_1" word="0" bits="11" type="bool" doc="1 = engine 1 EGT above 800 C"/>
+      <field name="oil_low_1" word="0" bits="10" type="bool" doc="1 = engine 1 oil pressure below 40 psi"/>
+      <field name="oil_hot_1" word="0" bits="9" type="bool" doc="1 = engine 1 oil temperature above 130 C"/>
+      <field name="vibration_high_1" word="0" bits="8" type="bool" doc="1 = engine 1 vibration above 0.8"/>
+      <field name="overspeed_1" word="0" bits="7" type="bool" doc="1 = engine 1 N1 or N2 at 100 % or above"/>
+      <field name="egt_high_2" word="0" bits="6" type="bool"/>
+      <field name="oil_low_2" word="0" bits="5" type="bool"/>
+      <field name="oil_hot_2" word="0" bits="4" type="bool"/>
+      <field name="vibration_high_2" word="0" bits="3" type="bool"/>
+      <field name="overspeed_2" word="0" bits="2" type="bool"/>
+      <field name="spare_0" word="0" bits="1-0" type="spare"/>
+      <field name="thrust_1" word="1" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="Thrust in force, percent of maximum"/>
+      <field name="n1_1" word="2" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Fan speed"/>
+      <field name="n2_1" word="3" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Core speed"/>
+      <field name="egt_1" word="4" bits="15-0" type="uint" lsb="1/10" units="degC" min="0" max="1500" doc="Exhaust gas temperature"/>
+      <field name="fuel_flow_1" word="5" bits="15-0" type="uint" lsb="1" units="kg/h" min="0" max="65535"/>
+      <field name="oil_pressure_1" word="6" bits="15-0" type="uint" lsb="1/100" units="psi" min="0" max="200"/>
+      <field name="oil_temperature_1" word="7" bits="15-0" type="sint" lsb="1/100" units="degC" min="-100" max="300"/>
+      <field name="vibration_1" word="8" bits="15-0" type="uint" lsb="1/1000" units="EU" min="0" max="10" doc="Engine units, as the ECU reports them"/>
+      <field name="compressor_efficiency_1" word="9" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100"/>
+      <field name="thrust_2" word="10" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="Thrust in force, percent of maximum"/>
+      <field name="n1_2" word="11" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Fan speed"/>
+      <field name="n2_2" word="12" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="130" doc="Core speed"/>
+      <field name="egt_2" word="13" bits="15-0" type="uint" lsb="1/10" units="degC" min="0" max="1500" doc="Exhaust gas temperature"/>
+      <field name="fuel_flow_2" word="14" bits="15-0" type="uint" lsb="1" units="kg/h" min="0" max="65535"/>
+      <field name="oil_pressure_2" word="15" bits="15-0" type="uint" lsb="1/100" units="psi" min="0" max="200"/>
+      <field name="oil_temperature_2" word="16" bits="15-0" type="sint" lsb="1/100" units="degC" min="-100" max="300"/>
+      <field name="vibration_2" word="17" bits="15-0" type="uint" lsb="1/1000" units="EU" min="0" max="10" doc="Engine units, as the ECU reports them"/>
+      <field name="compressor_efficiency_2" word="18" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100"/>
+      <field name="total_fuel_flow" word="19" bits="15-0" type="uint" lsb="1" units="kg/h" min="0" max="65535" doc="Sum over the engines whose data is valid"/>
+    </message>
+    <message id="ENG_FUEL_STATUS" rt="3" sa="16" dir="T" words="7" rate="1" title="Fuel status">
+      <doc>The tanks of fuelControl.FuelManagementSystem.setup_aircraft (Main Left and Main Right 10000 kg, Center 20000 kg, full at start), burned along its fuel lines from each engine's measured fuel flow (engine 1 from Main Left and Center in the ratio 100 : 50, engine 2 from Main Right and Center likewise; the Python's FuelSystem.update drew a consumption rate that nothing ever set), topped up by its transfer policy (perform_fuel_transfer: while the Center holds more than 5000 kg, a main below 5000 kg receives 1000 kg) and watched as fuelMonitor.py did: a tank is low at 20 % and critical at 10 %, and an unexplained loss is a drop beyond what the burn and the transfers out explain by more than 2 % of the capacity, latched until reset. burn_rate is the monitor's consumption rates summed; transferred the kg moved by the policy and by FUEL_TRANSFER since reset. Broadcast to the MFD (BCAST_ENG_FUEL_STATUS).</doc>
+      <field name="low_left" word="0" bits="15" type="bool" doc="Main Left at or below 20 % (and above 10 %)"/>
+      <field name="low_right" word="0" bits="14" type="bool"/>
+      <field name="low_center" word="0" bits="13" type="bool"/>
+      <field name="critical_left" word="0" bits="12" type="bool" doc="Main Left at or below 10 %"/>
+      <field name="critical_right" word="0" bits="11" type="bool"/>
+      <field name="critical_center" word="0" bits="10" type="bool"/>
+      <field name="leak_suspected" word="0" bits="9" type="bool" doc="1 = an unexplained loss was seen in some tank"/>
+      <field name="transfer_left" word="0" bits="8" type="bool" doc="1 = the policy moved fuel into Main Left in the last fuel pass"/>
+      <field name="transfer_right" word="0" bits="7" type="bool"/>
+      <field name="spare_0" word="0" bits="6-0" type="spare"/>
+      <field name="main_left" word="1" bits="15-0" type="uint" lsb="1" units="kg" min="0" max="65535"/>
+      <field name="main_right" word="2" bits="15-0" type="uint" lsb="1" units="kg" min="0" max="65535"/>
+      <field name="center" word="3" bits="15-0" type="uint" lsb="1" units="kg" min="0" max="65535"/>
+      <field name="total" word="4" bits="15-0" type="uint" lsb="1" units="kg" min="0" max="65535"/>
+      <field name="burn_rate" word="5" bits="15-0" type="uint" lsb="1" units="kg/h" min="0" max="65535" doc="All tanks; saturates"/>
+      <field name="transferred" word="6" bits="15-0" type="uint" lsb="1" units="kg" min="0" max="65535" doc="Since reset; saturates"/>
     </message>
   </messages>
 
@@ -945,6 +1103,11 @@
     <relay from="FMS_FLIGHT_DATA" to="BCAST_FMS_FLIGHT_DATA"/>
     <relay from="FMS_STATUS" to="BCAST_FMS_STATUS"/>
     <relay from="FMS_ATTITUDE_STATUS" to="BCAST_FMS_ATTITUDE_STATUS"/>
+    <relay from="FMS_CONTROL_STATUS" to="ENG_FMS_CONTROL"/>
+    <relay from="PLANT_ENGINE" to="ENG_ENGINE_IN"/>
+    <relay from="ENG_THRUST_CMD" to="PLANT_THRUST_CMD"/>
+    <relay from="ENG_ENGINE_STATUS" to="BCAST_ENG_ENGINE_STATUS"/>
+    <relay from="ENG_FUEL_STATUS" to="BCAST_ENG_FUEL_STATUS"/>
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.

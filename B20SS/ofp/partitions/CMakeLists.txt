@@ -65,3 +65,20 @@ target_link_libraries(fmofp_radar PRIVATE ofp::radar ofp::rt_process ofp::bc ofp
 
 add_executable(fmofp_radar_tool radar/tools/radar_tool.cpp)
 target_link_libraries(fmofp_radar_tool PRIVATE ofp::radar ofp::warnings)
+
+# Engine management, RT 3: the commanded thrust of each engine, the autothrottle
+# and the asymmetry check (thrustManagement.py), the tanks, fuel lines, transfer
+# policy and fuel monitor (fuelControl.py, fuelMonitor.py), and the assessment
+# of the engines' measurements; the engine model itself runs in the plant.
+# fmofp_engine_tool exposes the pure functions on stdin/stdout for the oracle tests.
+add_library(ofp_engine STATIC engine/src/engine_management.cpp)
+add_library(ofp::engine ALIAS ofp_engine)
+add_dependencies(ofp_engine ofp_icd_generate)
+target_include_directories(ofp_engine PUBLIC engine/include)
+target_link_libraries(ofp_engine PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
+
+add_executable(fmofp_engine engine/src/main.cpp)
+target_link_libraries(fmofp_engine PRIVATE ofp::engine ofp::rt_process ofp::bc ofp::warnings)
+
+add_executable(fmofp_engine_tool engine/tools/engine_tool.cpp)
+target_link_libraries(fmofp_engine_tool PRIVATE ofp::engine ofp::warnings)

@@ -41,6 +41,10 @@ struct EnvelopeLimits {
 constexpr std::uint32_t kSensorStaleFrames = 3;
 // FCS_TERRAIN, the terrain-following radar's guidance, is 10 Hz.
 constexpr std::uint32_t kTerrainStaleFrames = 15;
+// BCAST_ENG_ENGINE_STATUS, the engine computer's status heard by broadcast, is 5 Hz.
+constexpr std::uint32_t kEngineStaleFrames = 30;
+// FCS_PERF_STATUS.fuel_efficiency's largest encodable value.
+constexpr double kMaxFuelEfficiency = 65.535;
 
 // The terrain clearance the ground collision avoidance function works with:
 // the radar's minimum clearance over the profile ahead, or none at all, which
@@ -50,14 +54,23 @@ struct TerrainClearance {
     double feet{0.0};
 };
 
+// The engines' total fuel flow the envelope monitor's fuel efficiency divides
+// by, from ENG_ENGINE_STATUS, or none: performaneMonitoring read it from the
+// engine control unit, which the C++ hears by broadcast from the engine computer.
+struct EngineFuelFlow {
+    bool valid{false};
+    double kgh{0.0};
+};
+
 class FlightControl {
 public:
     [[nodiscard]] Status init() noexcept;
 
-    // The partition's frame. `sensors` is the FCS_SENSORS received this frame
-    // and `terrain` the FCS_TERRAIN, each null if none arrived; `frame` is the
-    // partition's own frame count.
-    void step(const icd::FcsSensors* sensors, const icd::FcsTerrain* terrain, std::uint32_t frame) noexcept;
+    // The partition's frame. `sensors` is the FCS_SENSORS received this frame,
+    // `terrain` the FCS_TERRAIN and `engine` the BCAST_ENG_ENGINE_STATUS, each
+    // null if none arrived; `frame` is the partition's own frame count.
+    void step(const icd::FcsSensors* sensors, const icd::FcsTerrain* terrain, const icd::BcastEngEngineStatus* engine,
+              std::uint32_t frame) noexcept;
 
     // Commands, each applied only when its cmd_seq is new (ICD README section 5).
     void command_mode(const icd::FcsModeCmd& cmd) noexcept;
@@ -78,10 +91,11 @@ public:
     // The two decision functions, exposed so tests can table them against the Python.
     static icd::FcsGcasAlerts evaluate_gcas(const icd::PlantSensors& s, const TerrainClearance& clearance,
                                             const GcasThresholds& t) noexcept;
-    static icd::FcsPerfStatus evaluate_envelope(const icd::PlantSensors& s, const EnvelopeLimits& l) noexcept;
+    static icd::FcsPerfStatus evaluate_envelope(const icd::PlantSensors& s, const EngineFuelFlow& fuel,
+                                                const EnvelopeLimits& l) noexcept;
 
 private:
-    void produce_outputs(bool sensors_valid, bool terrain_valid) noexcept;
+    void produce_outputs(bool sensors_valid, bool terrain_valid, bool engine_valid) noexcept;
     void invalidate_outputs() noexcept;
 
     icd::FcsStatus status_{};
@@ -95,6 +109,9 @@ private:
     icd::RdrTfrGuidance last_terrain_{};
     bool have_terrain_{false};
     std::uint32_t last_terrain_frame_{0};
+    icd::EngEngineStatus last_engine_{};
+    bool have_engine_{false};
+    std::uint32_t last_engine_frame_{0};
     std::uint32_t self_test_started_{0};
     bool self_test_running_{false};
     bus::BitWord bit_{};

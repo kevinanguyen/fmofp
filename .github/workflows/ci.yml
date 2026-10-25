@@ -222,6 +222,8 @@ jobs:
           FMOFP_FMS: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_fms
           FMOFP_RADAR: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_radar
           FMOFP_RADAR_TOOL: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_radar_tool
+          FMOFP_ENGINE: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_engine
+          FMOFP_ENGINE_TOOL: ${{ github.workspace }}/B20SS/ofp/build/linux-gcc/partitions/fmofp_engine_tool
           QT_QPA_PLATFORM: offscreen  # the display windows render to images in test_display_render.py
         run: |
           python3 B20SS/icd/tools/icd_tool.py gen-py

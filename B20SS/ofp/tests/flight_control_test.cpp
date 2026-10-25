@@ -10,6 +10,7 @@
 namespace {
 
 using fmofp::Status;
+using fmofp::fcs::EngineFuelFlow;
 using fmofp::fcs::FlightControl;
 using fmofp::fcs::GcasThresholds;
 using fmofp::fcs::TerrainClearance;
@@ -46,6 +47,18 @@ FcsSensors as_fcs(const PlantSensors& p) {
 // The TFR's minimum clearance ahead, as FCS_TERRAIN carries it.
 TerrainClearance clearance(double feet) { return TerrainClearance{true, feet}; }
 const TerrainClearance kNoClearance{};
+const EngineFuelFlow kNoFuel{};
+
+// The engine computer's status as BCAST_ENG_ENGINE_STATUS carries it, both engines valid.
+BcastEngEngineStatus as_engine(double fuel_flow_1, double fuel_flow_2) {
+    BcastEngEngineStatus e{};
+    e.payload.engine_1_ssm = Ssm::NORMAL;
+    e.payload.engine_2_ssm = Ssm::NORMAL;
+    e.payload.fuel_flow_1 = fuel_flow_1;
+    e.payload.fuel_flow_2 = fuel_flow_2;
+    e.payload.total_fuel_flow = fuel_flow_1 + fuel_flow_2;
+    return e;
+}
 
 FcsTerrain as_terrain(double feet) {
     FcsTerrain t{};
@@ -130,25 +143,25 @@ TEST(Gcas, TerrainComesFromTheRadarAndGoesStale) {
     ASSERT_EQ(Status::kOk, fc.init());
     const FcsSensors in = as_fcs(sensors(3000, 0));
     const FcsTerrain terrain = as_terrain(400);
-    fc.step(&in, nullptr, 1);
+    fc.step(&in, nullptr, nullptr, 1);
     EXPECT_FALSE(fc.gcas().terrain) << "no FCS_TERRAIN yet";
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.gcas().clearance_ssm);
-    fc.step(&in, &terrain, 2);
+    fc.step(&in, &terrain, nullptr, 2);
     EXPECT_TRUE(fc.gcas().terrain);
     EXPECT_EQ(Ssm::NORMAL, fc.gcas().clearance_ssm);
     EXPECT_DOUBLE_EQ(400.0, fc.gcas().terrain_clearance);
     // 10 Hz: the clearance holds for three periods, then it is gone.
     for (std::uint32_t f = 3; f < 2 + fmofp::fcs::kTerrainStaleFrames; ++f) {
-        fc.step(&in, nullptr, f);
+        fc.step(&in, nullptr, nullptr, f);
         EXPECT_TRUE(fc.gcas().terrain) << "frame " << f;
     }
-    fc.step(&in, nullptr, 2 + fmofp::fcs::kTerrainStaleFrames);
+    fc.step(&in, nullptr, nullptr, 2 + fmofp::fcs::kTerrainStaleFrames);
     EXPECT_FALSE(fc.gcas().terrain);
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.gcas().clearance_ssm);
     // A radar that is not operating says so in the SSM: no clearance either.
     FcsTerrain standby = as_terrain(400);
     standby.payload.clearance_ssm = Ssm::NO_COMPUTED_DATA;
-    fc.step(&in, &standby, 40);
+    fc.step(&in, &standby, nullptr, 40);
     EXPECT_FALSE(fc.gcas().terrain);
 }
 
@@ -159,7 +172,7 @@ TEST(Envelope, ExceedancesAtTheLimits) {
     s.roll = -60.0;
     s.pitch = 45.0;
     s.vertical_speed = -6000.0;
-    FcsPerfStatus p = FlightControl::evaluate_envelope(s, {});
+    FcsPerfStatus p = FlightControl::evaluate_envelope(s, kNoFuel, {});
     EXPECT_FALSE(p.exceed_g || p.exceed_aoa || p.exceed_roll || p.exceed_pitch || p.exceed_vertical_speed)
         << "a value at its limit is not an exceedance (strict >)";
     s.g_force = 9.01;
@@ -167,45 +180,88 @@ TEST(Envelope, ExceedancesAtTheLimits) {
     s.roll = 60.1;
     s.pitch = -45.1;
     s.vertical_speed = 6001.0;
-    p = FlightControl::evaluate_envelope(s, {});
+    p = FlightControl::evaluate_envelope(s, kNoFuel, {});
     EXPECT_TRUE(p.exceed_g && p.exceed_aoa && p.exceed_roll && p.exceed_pitch && p.exceed_vertical_speed);
     EXPECT_EQ(Ssm::NORMAL, p.g_ssm);
     EXPECT_DOUBLE_EQ(9.01, p.g_force);
-    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, p.fuel_ssm) << "no engine terminal yet";
+    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, p.fuel_ssm) << "no fuel flow given";
 
     s.g_ssm = Ssm::NO_COMPUTED_DATA;
-    p = FlightControl::evaluate_envelope(s, {});
+    p = FlightControl::evaluate_envelope(s, kNoFuel, {});
     EXPECT_FALSE(p.exceed_g) << "an invalid value reads as 0, as the Python's dict.get did";
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, p.g_ssm);
+}
+
+TEST(FlightControlTest, FuelEfficiencyComesFromTheEngineComputer) {
+    PlantSensors s = sensors(30000.0, 0.0);
+    s.airspeed = 450.0;
+    // performaneMonitoring._compute_fuel_efficiency: 450 kt over 6720 kg/h is 450 / 112 nm per kg.
+    FcsPerfStatus p = FlightControl::evaluate_envelope(s, EngineFuelFlow{true, 6720.0}, {});
+    EXPECT_EQ(Ssm::NORMAL, p.fuel_ssm);
+    EXPECT_NEAR(450.0 / 112.0, p.fuel_efficiency, 1e-9);
+    p = FlightControl::evaluate_envelope(s, EngineFuelFlow{true, 0.0}, {});
+    EXPECT_EQ(Ssm::NORMAL, p.fuel_ssm);
+    EXPECT_DOUBLE_EQ(0.0, p.fuel_efficiency) << "the Python returned 0.0 for a flow that is not positive";
+    p = FlightControl::evaluate_envelope(s, EngineFuelFlow{true, 1.0}, {});
+    EXPECT_DOUBLE_EQ(fmofp::fcs::kMaxFuelEfficiency, p.fuel_efficiency) << "held to what the word can carry";
+    s.airspeed_ssm = Ssm::NO_COMPUTED_DATA;
+    p = FlightControl::evaluate_envelope(s, EngineFuelFlow{true, 6720.0}, {});
+    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, p.fuel_ssm) << "no airspeed, no efficiency";
+
+    // Through the partition: the broadcast status feeds it, and it goes stale after three periods.
+    FlightControl fc;
+    ASSERT_EQ(Status::kOk, fc.init());
+    const FcsSensors in = as_fcs(sensors(30000.0, 0.0));
+    const BcastEngEngineStatus engine = as_engine(3360.0, 3360.0);
+    fc.step(&in, nullptr, &engine, 1);
+    EXPECT_EQ(Ssm::NORMAL, fc.perf().fuel_ssm);
+    EXPECT_NEAR(300.0 / 112.0, fc.perf().fuel_efficiency, 1e-9) << "the sensors' 300 kt over 6720 kg/h";
+    for (std::uint32_t frame = 2; frame < 1 + fmofp::fcs::kEngineStaleFrames; ++frame) {
+        fc.step(&in, nullptr, nullptr, frame);
+    }
+    EXPECT_EQ(Ssm::NORMAL, fc.perf().fuel_ssm) << "still within three periods";
+    fc.step(&in, nullptr, nullptr, 1 + fmofp::fcs::kEngineStaleFrames);
+    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.perf().fuel_ssm) << "the engine status went stale";
+    EXPECT_DOUBLE_EQ(0.0, fc.perf().fuel_efficiency);
+    BcastEngEngineStatus one_engine = as_engine(3360.0, 0.0);
+    one_engine.payload.engine_2_ssm = Ssm::NO_COMPUTED_DATA;
+    fc.step(&in, nullptr, &one_engine, 100);
+    EXPECT_EQ(Ssm::NORMAL, fc.perf().fuel_ssm) << "one valid engine is a flow";
+    EXPECT_NEAR(300.0 / 56.0, fc.perf().fuel_efficiency, 1e-9);
+    BcastEngEngineStatus no_engine = as_engine(0.0, 0.0);
+    no_engine.payload.engine_1_ssm = Ssm::NO_COMPUTED_DATA;
+    no_engine.payload.engine_2_ssm = Ssm::NO_COMPUTED_DATA;
+    fc.step(&in, nullptr, &no_engine, 101);
+    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.perf().fuel_ssm) << "no valid engine, no flow";
 }
 
 TEST(FlightControl, StateFollowsTheSensors) {
     FlightControl fc;
     ASSERT_EQ(Status::kOk, fc.init());
     EXPECT_EQ(TerminalState::INITIALIZING, fc.state());
-    fc.step(nullptr, nullptr, 1);
+    fc.step(nullptr, nullptr, nullptr, 1);
     EXPECT_EQ(TerminalState::INITIALIZING, fc.state());
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.attitude().roll_ssm);
     EXPECT_EQ(GcasStatus::OFF, fc.gcas().status);
 
     const FcsSensors in = as_fcs(sensors(30000, 0));
-    fc.step(&in, nullptr, 2);
+    fc.step(&in, nullptr, nullptr, 2);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
     EXPECT_EQ(Ssm::NORMAL, fc.attitude().roll_ssm);
     EXPECT_EQ(GcasStatus::ARMED, fc.gcas().status);
     EXPECT_DOUBLE_EQ(90.0, fc.attitude().yaw);
 
     // Two frames without sensors are still fresh; the third is stale.
-    fc.step(nullptr, nullptr, 3);
-    fc.step(nullptr, nullptr, 4);
+    fc.step(nullptr, nullptr, nullptr, 3);
+    fc.step(nullptr, nullptr, nullptr, 4);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
-    fc.step(nullptr, nullptr, 2 + kSensorStaleFrames);
+    fc.step(nullptr, nullptr, nullptr, 2 + kSensorStaleFrames);
     EXPECT_EQ(TerminalState::DEGRADED, fc.state());
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.attitude().pitch_ssm);
     EXPECT_EQ(GcasStatus::OFF, fc.gcas().status);
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.gcas().altitude_ssm);
 
-    fc.step(&in, nullptr, 10);
+    fc.step(&in, nullptr, nullptr, 10);
     EXPECT_EQ(TerminalState::NORMAL, fc.state()) << "recovers when data returns";
 }
 
@@ -215,11 +271,11 @@ TEST(FlightControl, YawWrapsHeadingIntoPlusMinus180) {
     PlantSensors p = sensors(30000, 0);
     p.heading = 270.0;
     FcsSensors in = as_fcs(p);
-    fc.step(&in, nullptr, 1);
+    fc.step(&in, nullptr, nullptr, 1);
     EXPECT_DOUBLE_EQ(-90.0, fc.attitude().yaw);
     p.heading = 180.0;
     in = as_fcs(p);
-    fc.step(&in, nullptr, 2);
+    fc.step(&in, nullptr, nullptr, 2);
     EXPECT_DOUBLE_EQ(180.0, fc.attitude().yaw) << "exactly 180 stays 180, which the field cannot carry";
 }
 
@@ -227,14 +283,14 @@ TEST(FlightControl, ModeCommandsFollowTheSequenceRule) {
     FlightControl fc;
     ASSERT_EQ(Status::kOk, fc.init());
     const FcsSensors in = as_fcs(sensors(30000, 0));
-    fc.step(&in, nullptr, 1);
+    fc.step(&in, nullptr, nullptr, 1);
     ASSERT_EQ(TerminalState::NORMAL, fc.state());
 
     FcsModeCmd cmd{};
     cmd.requested_state = TerminalState::STANDBY;
     cmd.cmd_seq = 7;
     fc.command_mode(cmd);
-    fc.step(&in, nullptr, 2);
+    fc.step(&in, nullptr, nullptr, 2);
     EXPECT_EQ(TerminalState::STANDBY, fc.state());
     EXPECT_EQ(7, fc.status().last_cmd_seq);
     EXPECT_FALSE(fc.status().cmd_rejected);
@@ -242,17 +298,17 @@ TEST(FlightControl, ModeCommandsFollowTheSequenceRule) {
 
     cmd.requested_state = TerminalState::NORMAL;
     fc.command_mode(cmd);  // same cmd_seq: ignored
-    fc.step(&in, nullptr, 3);
+    fc.step(&in, nullptr, nullptr, 3);
     EXPECT_EQ(TerminalState::STANDBY, fc.state());
     cmd.cmd_seq = 8;
     fc.command_mode(cmd);
-    fc.step(&in, nullptr, 4);
+    fc.step(&in, nullptr, nullptr, 4);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
 
     cmd.requested_state = TerminalState::FAILURE;  // not something the bus may ask for
     cmd.cmd_seq = 9;
     fc.command_mode(cmd);
-    fc.step(&in, nullptr, 5);
+    fc.step(&in, nullptr, nullptr, 5);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
     EXPECT_TRUE(fc.status().cmd_rejected);
     EXPECT_EQ(9, fc.status().last_cmd_seq);
@@ -303,12 +359,12 @@ TEST(FlightControl, SelfTestRunsForAFewFramesAndResetReinitialises) {
     FlightControl fc;
     ASSERT_EQ(Status::kOk, fc.init());
     const FcsSensors in = as_fcs(sensors(30000, 0));
-    fc.step(&in, nullptr, 1);
+    fc.step(&in, nullptr, nullptr, 1);
     fc.start_self_test();
-    fc.step(&in, nullptr, 2);
+    fc.step(&in, nullptr, nullptr, 2);
     EXPECT_TRUE(fc.bit().in_progress);
     for (std::uint32_t f = 3; f < 20; ++f) {
-        fc.step(&in, nullptr, f);
+        fc.step(&in, nullptr, nullptr, f);
     }
     EXPECT_FALSE(fc.bit().in_progress);
     EXPECT_FALSE(fc.bit().failed);
@@ -317,7 +373,7 @@ TEST(FlightControl, SelfTestRunsForAFewFramesAndResetReinitialises) {
     fc.reset();
     EXPECT_EQ(TerminalState::INITIALIZING, fc.state());
     EXPECT_EQ(Ssm::FAILURE_WARNING, fc.attitude().roll_ssm) << "fresh outputs are the all-zero fail-safe";
-    fc.step(nullptr, nullptr, 1);
+    fc.step(nullptr, nullptr, nullptr, 1);
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.attitude().roll_ssm) << "and NCD once it has run without data";
 }
 
@@ -326,7 +382,7 @@ TEST(FlightControl, OutputsEncodeCleanly) {
     ASSERT_EQ(Status::kOk, fc.init());
     const FcsSensors in = as_fcs(sensors(1500, -4500));
     const FcsTerrain terrain = as_terrain(300);
-    fc.step(&in, &terrain, 1);
+    fc.step(&in, &terrain, nullptr, 1);
     FcsGcasAlerts::Words gw{};
     EXPECT_EQ(Status::kOk, fc.gcas().encode(gw));
     FcsGcasAlerts back{};

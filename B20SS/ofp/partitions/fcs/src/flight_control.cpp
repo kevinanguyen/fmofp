@@ -1,5 +1,6 @@
 #include <fmofp/fcs/flight_control.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 namespace fmofp::fcs {
@@ -79,6 +80,9 @@ Status FlightControl::init() noexcept {
     last_terrain_ = icd::RdrTfrGuidance{};
     have_terrain_ = false;
     last_terrain_frame_ = 0;
+    last_engine_ = icd::EngEngineStatus{};
+    have_engine_ = false;
+    last_engine_frame_ = 0;
     self_test_running_ = false;
     self_test_started_ = 0;
     bit_ = bus::BitWord{};
@@ -95,7 +99,7 @@ void FlightControl::start_self_test() noexcept {
 }
 
 void FlightControl::step(const icd::FcsSensors* sensors, const icd::FcsTerrain* terrain,
-                         std::uint32_t frame) noexcept {
+                         const icd::BcastEngEngineStatus* engine, std::uint32_t frame) noexcept {
     if (sensors != nullptr) {
         last_sensors_ = sensors->payload;
         have_sensors_ = true;
@@ -106,8 +110,14 @@ void FlightControl::step(const icd::FcsSensors* sensors, const icd::FcsTerrain* 
         have_terrain_ = true;
         last_terrain_frame_ = frame;
     }
+    if (engine != nullptr) {
+        last_engine_ = engine->payload;
+        have_engine_ = true;
+        last_engine_frame_ = frame;
+    }
     const bool fresh = have_sensors_ && frame - last_sensor_frame_ < kSensorStaleFrames;
     const bool terrain_fresh = have_terrain_ && frame - last_terrain_frame_ < kTerrainStaleFrames;
+    const bool engine_fresh = have_engine_ && frame - last_engine_frame_ < kEngineStaleFrames;
 
     if (self_test_running_) {
         if (self_test_started_ == 0) {
@@ -133,13 +143,13 @@ void FlightControl::step(const icd::FcsSensors* sensors, const icd::FcsTerrain* 
     status_.healthy = !bit_.failed;
     status_.mode_transition = false;
     if (status_.state == TerminalState::NORMAL || status_.state == TerminalState::DEGRADED) {
-        produce_outputs(fresh, terrain_fresh);
+        produce_outputs(fresh, terrain_fresh, engine_fresh);
     } else {
         invalidate_outputs();
     }
 }
 
-void FlightControl::produce_outputs(bool sensors_valid, bool terrain_valid) noexcept {
+void FlightControl::produce_outputs(bool sensors_valid, bool terrain_valid, bool engine_valid) noexcept {
     if (!sensors_valid) {
         invalidate_outputs();
         return;
@@ -148,6 +158,11 @@ void FlightControl::produce_outputs(bool sensors_valid, bool terrain_valid) noex
     TerrainClearance clearance{};
     clearance.valid = terrain_valid && usable(last_terrain_.clearance_ssm);
     clearance.feet = last_terrain_.min_clearance;
+    // The total fuel flow counts only engines whose data is valid; with neither
+    // valid the engine computer has no flow to offer.
+    EngineFuelFlow fuel{};
+    fuel.valid = engine_valid && (usable(last_engine_.engine_1_ssm) || usable(last_engine_.engine_2_ssm));
+    fuel.kgh = last_engine_.total_fuel_flow;
 
     attitude_.roll_ssm = s.roll_ssm;
     attitude_.pitch_ssm = s.pitch_ssm;
@@ -158,7 +173,7 @@ void FlightControl::produce_outputs(bool sensors_valid, bool terrain_valid) noex
     attitude_.yaw = s.heading > 180.0 ? s.heading - 360.0 : s.heading;
 
     gcas_ = evaluate_gcas(s, clearance, gcas_thresholds_);
-    perf_ = evaluate_envelope(s, limits_);
+    perf_ = evaluate_envelope(s, fuel, limits_);
 }
 
 void FlightControl::invalidate_outputs() noexcept {
@@ -209,7 +224,8 @@ icd::FcsGcasAlerts FlightControl::evaluate_gcas(const icd::PlantSensors& s, cons
     return a;
 }
 
-icd::FcsPerfStatus FlightControl::evaluate_envelope(const icd::PlantSensors& s, const EnvelopeLimits& l) noexcept {
+icd::FcsPerfStatus FlightControl::evaluate_envelope(const icd::PlantSensors& s, const EngineFuelFlow& fuel,
+                                                    const EnvelopeLimits& l) noexcept {
     icd::FcsPerfStatus p{};
     // performaneMonitoring._check_envelope: abs(state.get(param, 0)) > limit,
     // so an invalid value reads as 0 and cannot exceed anything.
@@ -227,10 +243,15 @@ icd::FcsPerfStatus FlightControl::evaluate_envelope(const icd::PlantSensors& s, 
     p.aoa_ssm = usable(s.aoa_ssm) ? Ssm::NORMAL : Ssm::NO_COMPUTED_DATA;
     p.g_force = usable(s.g_ssm) ? s.g_force : 0.0;
     p.angle_of_attack = usable(s.aoa_ssm) ? s.angle_of_attack : 0.0;
-    // Fuel efficiency needs fuel flow from the engine terminal, which does
-    // not exist yet (ICD README section 12).
-    p.fuel_ssm = Ssm::NO_COMPUTED_DATA;
+    // performaneMonitoring._compute_fuel_efficiency: speed_kts / (ff_kgh / 60),
+    // 0.0 when the flow is not positive; the flow is the engine computer's
+    // total over the valid engines (ICD README section 2).
+    const bool fuel_ok = fuel.valid && std::isfinite(fuel.kgh) && usable(s.airspeed_ssm) && std::isfinite(s.airspeed);
+    p.fuel_ssm = fuel_ok ? Ssm::NORMAL : Ssm::NO_COMPUTED_DATA;
     p.fuel_efficiency = 0.0;
+    if (fuel_ok && fuel.kgh > 0.0) {
+        p.fuel_efficiency = std::min(kMaxFuelEfficiency, std::max(0.0, s.airspeed / (fuel.kgh / 60.0)));
+    }
     return p;
 }
 

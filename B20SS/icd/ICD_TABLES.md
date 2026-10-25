@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.7 (DRAFT, 2026-10-25). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.8 (DRAFT, 2026-10-25). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -9,9 +9,9 @@
 | 0 | `reserved_0` | Reserved (was 'Unnamed System') | reserved |  |  |
 | 1 | `avionics` | Avionics - LRU health, built-in test, FM fitness, software configuration | existing | Systems/avionics/hardwareHealth, Systems/builtInTestSystems, Systems/fmFitness, Systems/configurationManagement | BIT merged here (Alee, 2026-10-10). FM fitness and SW configuration are here too: Alee said to fold them into another terminal, and both are health/maintenance functions |
 | 2 | `comms` | Communications | existing | Systems/comms/messaging_service.py |  |
-| 3 | `enginemanagement` | Engine management - ECU, fuel, thrust | existing | Systems/engineManagement |  |
+| 3 | `enginemanagement` | Engine management - thrust, autothrottle, fuel | existing | Systems/engineManagement: thrustManagement/thrustManagement.py, fuelManagement/fuelControl.py and fuelMonitor.py | Ported in v1.8 (fmofp_engine). The engine model of ecu/engineControlUnit.py is simulation and runs in the plant (PLANT_ENGINE); this terminal commands the engines (ENG_THRUST_CMD) from the FMS thrust lever, ENG_CMD and its autothrottle, and reports what it measures. It hears the FMS flight data by broadcast (RT 31 SA 25) for the autothrottle's airspeed |
 | 4 | `enviornmentalcontrolsystem` | Environmental control system | existing | Systems/enviornmentalControlSystem | id keeps the repo's spelling |
-| 5 | `flightcontrolsys` | Flight control - FCC, GCAS, performance monitor | existing | Systems/flightControlSys |  |
+| 5 | `flightcontrolsys` | Flight control - FCC, GCAS, performance monitor | existing | Systems/flightControlSys | Ported in v1.1 (fmofp_fcs). From v1.8 it hears the engine computer's ENG_ENGINE_STATUS by broadcast (RT 31 SA 18), which gives FCS_PERF_STATUS its fuel efficiency |
 | 6 | `missionplanning` | Mission planning | existing | Systems/missionPlanning/missionService.py |  |
 | 7 | `nav` | Navigation - GPS position solver and GPS/dead-reckoning fusion | existing | Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py | Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2) |
 | 8 | `powermanagement` | Power management | existing | Systems/powerManagement |  |
@@ -19,7 +19,7 @@
 | 10 | `sensormanagement` | Sensor management | existing | Systems/sensorManagement |  |
 | 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then) |
 | 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py | Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object |
-| 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py | On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10) and its mission page the FMS flight data (31/25); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing |
+| 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py | On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10), its mission page the FMS flight data (31/25) and, from v1.8, its systems and engine pages the engine computer's engine and fuel status (31/18, 31/19); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing |
 | 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays |  |
 | 15 | `radar_display` | Radar display - the radars' pictures and their control panel | new | Interfaces/userInterface/displays/radar | On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24) |
 | 16 | `tsd` | Tactical situation display | new | Interfaces/userInterface/displays/tsd.py |  |
@@ -30,7 +30,7 @@
 | 21 | `flightsurfaces` | Flight surfaces | new | Systems/flightSurfaces |  |
 | 22 | `defensive` | Defensive systems - RWR, chaff, flare, ECM | new | Systems/defensiveSys |  |
 | 23 | `flightdatamonitoring` | Flight data monitoring | new | Systems/flightDataMonitoring |  |
-| 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4; engine data goes to the engine terminal). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure |
+| 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD) |
 | 31 | `broadcast` | Broadcast address - every terminal that accepts a subaddress hears it | reserved |  | Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7 |
 
 RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
@@ -39,6 +39,14 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 
 | ID | RT | SA | Dir | Words | Rate (Hz) | Title | Status |
 |---|---|---|---|---|---|---|---|
+| [`ENG_MODE_CMD`](#eng_mode_cmd) | 3 | 10 | R | 1 | aperiodic | Engine computer mode command | DRAFT |
+| [`ENG_STATUS`](#eng_status) | 3 | 10 | T | 3 | 1 | Engine computer status | DRAFT |
+| [`ENG_FMS_CONTROL`](#eng_fms_control) | 3 | 11 | R | 3 | 5 | FMS thrust lever as received by the engine computer | DRAFT |
+| [`ENG_ENGINE_IN`](#eng_engine_in) | 3 | 12 | R | 19 | 10 | Engine measurements as received by the engine computer | DRAFT |
+| [`ENG_CMD`](#eng_cmd) | 3 | 13 | R | 5 | aperiodic | Engine computer command | DRAFT |
+| [`ENG_THRUST_CMD`](#eng_thrust_cmd) | 3 | 14 | T | 3 | 10 | Thrust command to the engines | DRAFT |
+| [`ENG_ENGINE_STATUS`](#eng_engine_status) | 3 | 15 | T | 20 | 5 | Engine status | DRAFT |
+| [`ENG_FUEL_STATUS`](#eng_fuel_status) | 3 | 16 | T | 7 | 1 | Fuel status | DRAFT |
 | [`FCS_MODE_CMD`](#fcs_mode_cmd) | 5 | 10 | R | 1 | aperiodic | Flight control mode command | DRAFT |
 | [`FCS_STATUS`](#fcs_status) | 5 | 10 | T | 2 | 5 | Flight control status | DRAFT |
 | [`FCS_SURFACE_CMD`](#fcs_surface_cmd) | 5 | 11 | R | 2 | aperiodic | Control surface command | DRAFT |
@@ -103,13 +111,17 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`PLANT_SENSORS`](#plant_sensors) | 27 | 1 | T | 11 | 50 | Sensed flight state from the plant | DRAFT |
 | [`PLANT_GPS`](#plant_gps) | 27 | 2 | T | 25 | 1 | GPS pseudoranges from the plant | DRAFT |
 | [`PLANT_WEATHER`](#plant_weather) | 27 | 3 | T | 32 | 1 | Weather truth from the plant | DRAFT |
+| [`PLANT_ENGINE`](#plant_engine) | 27 | 6 | T | 19 | 10 | Engine measurements from the plant | DRAFT |
+| [`PLANT_THRUST_CMD`](#plant_thrust_cmd) | 27 | 7 | R | 3 | 10 | Thrust command as received by the plant | DRAFT |
 | [`BCAST_RDR_WX_STATUS`](#bcast_rdr_wx_status) | 31 | 1 | R | 2 | 5 | Weather radar status, broadcast to the displays | DRAFT |
 | [`BCAST_RDR_WX_SCAN`](#bcast_rdr_wx_scan) | 31 | 2 | R | 10 | 5 | Weather radar scan summary, broadcast to the displays | DRAFT |
 | [`BCAST_RDR_TFR_STATUS`](#bcast_rdr_tfr_status) | 31 | 3 | R | 2 | 5 | Terrain-following radar status, broadcast to the displays | DRAFT |
 | [`BCAST_RDR_TFR_GUIDANCE`](#bcast_rdr_tfr_guidance) | 31 | 4 | R | 8 | 10 | Terrain-following guidance, broadcast to the displays | DRAFT |
 | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) | 31 | 5 | R | 4 | 5 | GCAS alerts, broadcast to the displays | DRAFT |
 | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) | 31 | 10 | R | 4 | 1 | Flight envelope monitoring, broadcast to the displays | DRAFT |
-| [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) | 31 | 25 | R | 21 | 10 | FMS flight data, broadcast to the displays | DRAFT |
+| [`BCAST_ENG_ENGINE_STATUS`](#bcast_eng_engine_status) | 31 | 18 | R | 20 | 5 | Engine status, broadcast | DRAFT |
+| [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) | 31 | 19 | R | 7 | 1 | Fuel status, broadcast | DRAFT |
+| [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) | 31 | 25 | R | 21 | 10 | FMS flight data, broadcast | DRAFT |
 | [`BCAST_FMS_STATUS`](#bcast_fms_status) | 31 | 26 | R | 3 | 5 | FMS status, broadcast to the displays | DRAFT |
 | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) | 31 | 27 | R | 8 | 10 | Attitude command status, broadcast to the displays | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
@@ -162,9 +174,14 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) | `BCAST_RDR_TFR_ELEVATION` (broadcast, heard by RT 13, 15) | block: 4 + 32 per frame | 25 |
 | [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) (broadcast, heard by RT 13) | 4 | 5 |
 | [`FCS_PERF_STATUS`](#fcs_perf_status) | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) (broadcast, heard by RT 13) | 4 | 1 |
-| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 11, 13) | 21 | 10 |
+| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 3, 11, 13) | 21 | 10 |
 | [`FMS_STATUS`](#fms_status) | [`BCAST_FMS_STATUS`](#bcast_fms_status) (broadcast, heard by RT 11) | 3 | 5 |
 | [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) (broadcast, heard by RT 11) | 8 | 10 |
+| [`FMS_CONTROL_STATUS`](#fms_control_status) | [`ENG_FMS_CONTROL`](#eng_fms_control) | 3 | 5 |
+| [`PLANT_ENGINE`](#plant_engine) | [`ENG_ENGINE_IN`](#eng_engine_in) | 19 | 10 |
+| [`ENG_THRUST_CMD`](#eng_thrust_cmd) | [`PLANT_THRUST_CMD`](#plant_thrust_cmd) | 3 | 10 |
+| [`ENG_ENGINE_STATUS`](#eng_engine_status) | [`BCAST_ENG_ENGINE_STATUS`](#bcast_eng_engine_status) (broadcast, heard by RT 5, 13) | 20 | 5 |
+| [`ENG_FUEL_STATUS`](#eng_fuel_status) | [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) (broadcast, heard by RT 13) | 7 | 1 |
 
 ## Mode codes
 
@@ -475,6 +492,39 @@ Why a terrain-following altitude command exists (tfr_processor.PathOptimiser): T
 | 1 | TERRAIN_AVOIDANCE |  |  |
 | 2 | CLEARANCE |  |  |
 | 3 | OBSTACLE |  |  |
+
+### `engine_command` (3 bits)
+
+What ENG_CMD asks of the engine computer (thrustManagement.py and fuelControl.py entry points nothing in the Python ever called)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | SET_THRUST |  | set_thrust for one engine, or set_all_thrust |
+| 2 | AUTOTHROTTLE_ENGAGE |  | engage_autothrottle with the target airspeed |
+| 3 | AUTOTHROTTLE_DISENGAGE |  |  |
+| 4 | FUEL_TRANSFER |  | transfer_fuel between two tanks |
+
+### `engine_select` (2 bits)
+
+Which engine a thrust command addresses (FuelManagementSystem.setup_aircraft: Engine 1 and Engine 2)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | ALL |  |  |
+| 1 | ENGINE_1 |  |  |
+| 2 | ENGINE_2 |  |  |
+
+### `fuel_tank` (2 bits)
+
+The tanks of FuelManagementSystem.setup_aircraft: Main Left and Main Right 10000 kg, Center 20000 kg
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | MAIN_LEFT |  |  |
+| 2 | MAIN_RIGHT |  |  |
+| 3 | CENTER |  |  |
 
 ## Messages
 
@@ -1426,9 +1476,9 @@ Same layout as [`FCS_PERF_STATUS`](#fcs_perf_status).
 
 ### BCAST_FMS_FLIGHT_DATA
 
-**FMS flight data, broadcast to the displays** — RT 31 · SA 25 · receive (bus to terminal) · 21 words · 10 Hz
+**FMS flight data, broadcast** — RT 31 · SA 25 · receive (bus to terminal) · 21 words · 10 Hz
 
-What the PFD draws and the MFD's mission page reads; the HUD will listen too.
+What the PFD draws and the MFD's mission page reads; the HUD will listen too. From v1.8 the engine computer (RT 3) listens as well: its autothrottle holds the airspeed in it.
 
 Same layout as [`FMS_FLIGHT_DATA`](#fms_flight_data).
 
@@ -1443,6 +1493,20 @@ Same layout as [`FMS_STATUS`](#fms_status).
 **Attitude command status, broadcast to the displays** — RT 31 · SA 27 · receive (bus to terminal) · 8 words · 10 Hz
 
 Same layout as [`FMS_ATTITUDE_STATUS`](#fms_attitude_status).
+
+### BCAST_ENG_ENGINE_STATUS
+
+**Engine status, broadcast** — RT 31 · SA 18 · receive (bus to terminal) · 20 words · 5 Hz
+
+The engine band of the broadcast map, 18-19 (v1.8). The MFD's systems and engine pages draw it; the flight control computer takes the total fuel flow for FCS_PERF_STATUS's fuel efficiency; the EICAS will listen too.
+
+Same layout as [`ENG_ENGINE_STATUS`](#eng_engine_status).
+
+### BCAST_ENG_FUEL_STATUS
+
+**Fuel status, broadcast** — RT 31 · SA 19 · receive (bus to terminal) · 7 words · 1 Hz
+
+Same layout as [`ENG_FUEL_STATUS`](#eng_fuel_status).
 
 ### PLANT_SENSORS
 
@@ -1589,7 +1653,7 @@ groundCollisionAvoidanceSys.py, evaluated every frame: PULLUP when vertical spee
 
 **Flight envelope monitoring** — RT 5 · SA 15 · transmit (terminal to bus) · 4 words · 1 Hz
 
-performaneMonitoring.py: an exceedance bit is set while the magnitude of the parameter is above its limit - g 9.0, angle of attack 25 deg, roll 60 deg, pitch 45 deg, vertical speed 6000 ft/min. Fuel efficiency is airspeed / (fuel flow / 60) in nm per kg and is NO_COMPUTED_DATA until the engine terminal publishes fuel flow.
+performaneMonitoring.py: an exceedance bit is set while the magnitude of the parameter is above its limit - g 9.0, angle of attack 25 deg, roll 60 deg, pitch 45 deg, vertical speed 6000 ft/min. Fuel efficiency is airspeed / (total fuel flow / 60) in nm per kg (performaneMonitoring._compute_fuel_efficiency, 0 when the flow is 0), from the engine computer's ENG_ENGINE_STATUS heard by broadcast (v1.8), and NO_COMPUTED_DATA while that is absent or stale.
 
 | Word | Bits | Field | Type | Scaling | Notes |
 |---|---|---|---|---|---|
@@ -1613,6 +1677,195 @@ performaneMonitoring.py: an exceedance bit is set while the magnitude of the par
 The terrain-following radar's guidance, relayed. The ground collision avoidance function reads min_clearance when clearance_ssm is NORMAL and the message is fresh (stale after three periods, 0.3 s); otherwise it has no terrain clearance, as groundCollisionAvoidanceSys.py had none when the TFR gave it nothing.
 
 Same layout as [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance).
+
+### PLANT_ENGINE
+
+**Engine measurements from the plant** — RT 27 · SA 6 · transmit (terminal to bus) · 19 words · 10 Hz
+
+What the two turbofans' sensors read, from engineControlUnit.py's engine model run in the plant for each engine: N1 = 0.80 x thrust + 18 %, N2 = 0.75 x thrust + 22 %, EGT = 350 + 4.5 x thrust C, fuel flow = 42 x thrust kg/h, oil pressure 60 + 4 sin(0.1 t) psi, oil temperature 92 + 8 sin(0.05 t + 1) C, vibration 0.2 + 0.15 \|sin(0.3 t)\|, each with the Python's Gaussian noise, and a compressor efficiency that random-walks between 75 and 98 %; stepped at the ECU's 2 Hz, t being simulated seconds. The thrust is what the engine computer commands (PLANT_THRUST_CMD, applied at the next step); until a valid command exists both engines sit at the ECU's starting 70 %. The Python's thrust random-walked because nothing commanded it. Spool-up is not modelled: the thrust is the command (README section 12).
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `engine_1_ssm` | ssm | validity of `n1_1` | Validity of every engine 1 quantity |
+| 0 | 13-12 | `engine_2_ssm` | ssm | validity of `n1_2` | Validity of every engine 2 quantity |
+| 0 | 11-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `thrust_1` | uint | LSB 1/100 %, range 0 to 100 | Thrust in force, percent of maximum |
+| 2 | 15-0 | `n1_1` | uint | LSB 1/100 %, range 0 to 130 | Fan speed |
+| 3 | 15-0 | `n2_1` | uint | LSB 1/100 %, range 0 to 130 | Core speed |
+| 4 | 15-0 | `egt_1` | uint | LSB 1/10 degC, range 0 to 1500 | Exhaust gas temperature |
+| 5 | 15-0 | `fuel_flow_1` | uint | LSB 1 kg/h, range 0 to 65535 |  |
+| 6 | 15-0 | `oil_pressure_1` | uint | LSB 1/100 psi, range 0 to 200 |  |
+| 7 | 15-0 | `oil_temperature_1` | sint | LSB 1/100 degC, range -100 to 300 |  |
+| 8 | 15-0 | `vibration_1` | uint | LSB 1/1000 EU, range 0 to 10 | Engine units, as the ECU reports them |
+| 9 | 15-0 | `compressor_efficiency_1` | uint | LSB 1/100 %, range 0 to 100 |  |
+| 10 | 15-0 | `thrust_2` | uint | LSB 1/100 %, range 0 to 100 | Thrust in force, percent of maximum |
+| 11 | 15-0 | `n1_2` | uint | LSB 1/100 %, range 0 to 130 | Fan speed |
+| 12 | 15-0 | `n2_2` | uint | LSB 1/100 %, range 0 to 130 | Core speed |
+| 13 | 15-0 | `egt_2` | uint | LSB 1/10 degC, range 0 to 1500 | Exhaust gas temperature |
+| 14 | 15-0 | `fuel_flow_2` | uint | LSB 1 kg/h, range 0 to 65535 |  |
+| 15 | 15-0 | `oil_pressure_2` | uint | LSB 1/100 psi, range 0 to 200 |  |
+| 16 | 15-0 | `oil_temperature_2` | sint | LSB 1/100 degC, range -100 to 300 |  |
+| 17 | 15-0 | `vibration_2` | uint | LSB 1/1000 EU, range 0 to 10 | Engine units, as the ECU reports them |
+| 18 | 15-0 | `compressor_efficiency_2` | uint | LSB 1/100 %, range 0 to 100 |  |
+
+### PLANT_THRUST_CMD
+
+**Thrust command as received by the plant** — RT 27 · SA 7 · receive (bus to terminal) · 3 words · 10 Hz
+
+ENG_THRUST_CMD relayed to the plant: the thrust each engine runs at, taken while commands_valid is 1.
+
+Same layout as [`ENG_THRUST_CMD`](#eng_thrust_cmd).
+
+### ENG_STATUS
+
+**Engine computer status** — RT 3 · SA 10 · transmit (terminal to bus) · 3 words · 1 Hz
+
+The terminal's state and command handling as FCS_STATUS reports them, plus thrustManagement.get_status (autothrottle engaged, its target, the asymmetry condition) and the fuel monitor's alert summary. engine_cmd_status is the outcome of the last ENG_CMD.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last ENG_MODE_CMD processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last ENG_MODE_CMD was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13 | `autothrottle_engaged` | bool |  |  |
+| 1 | 12 | `asymmetric_thrust` | bool |  | 1 = the commanded thrusts differ by more than 25 percentage points (MAX_SAFE_THRUST_ASYMMETRY_PCT) |
+| 1 | 11 | `low_fuel` | bool |  | 1 = any tank at or below 20 % (fuelMonitor LOW_FUEL, CRITICAL_FUEL included) |
+| 1 | 10 | `critical_fuel` | bool |  | 1 = any tank at or below 10 % |
+| 1 | 9 | `leak_suspected` | bool |  | 1 = an unexplained fuel loss was seen in some tank (latched until reset) |
+| 1 | 8-5 | `engine_cmd_status` | enum | enum `cmd_status` | Outcome of the last ENG_CMD |
+| 1 | 4-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+| 2 | 15-0 | `autothrottle_target` | uint | LSB 1/10 kt, range 0 to 1500 | Target airspeed while engaged; 0 otherwise |
+
+### ENG_MODE_CMD
+
+**Engine computer mode command** — RT 3 · SA 10 · receive (bus to terminal) · 1 words · aperiodic
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### ENG_FMS_CONTROL
+
+**FMS thrust lever as received by the engine computer** — RT 3 · SA 11 · receive (bus to terminal) · 3 words · 5 Hz
+
+FMS_CONTROL_STATUS relayed: throttle_position is the thrust lever. A new position commands both engines (thrustManagement.set_all_thrust) unless the autothrottle is engaged, which owns the levers until disengaged; the afterburner bit is passed on in ENG_THRUST_CMD. In the Python the FMS's thrust and the thrust management system's per-engine values were separate numbers that nothing connected; here the lever drives the engines.
+
+Same layout as [`FMS_CONTROL_STATUS`](#fms_control_status).
+
+### ENG_ENGINE_IN
+
+**Engine measurements as received by the engine computer** — RT 3 · SA 12 · receive (bus to terminal) · 19 words · 10 Hz
+
+PLANT_ENGINE relayed. Stale after three periods (0.3 s), after which the engines read NO_COMPUTED_DATA and the terminal is DEGRADED.
+
+Same layout as [`PLANT_ENGINE`](#plant_engine).
+
+### ENG_CMD
+
+**Engine computer command** — RT 3 · SA 13 · receive (bus to terminal) · 5 words · aperiodic
+
+The entry points of thrustManagement.py and fuelControl.py that nothing in the Python ever called, on the bus: SET_THRUST (set_thrust for one engine, or set_all_thrust for ALL, with thrust 0-100 %), AUTOTHROTTLE_ENGAGE (engage_autothrottle with target_airspeed; the PI loop then runs at the Python's 2 Hz on the airspeed of the FMS flight data), AUTOTHROTTLE_DISENGAGE, FUEL_TRANSFER (transfer_fuel from source to destination: at most amount kg, no more than the source holds or the destination can take). The debug CLI and the scenario engine are the expected senders. The outcome is ENG_STATUS.engine_cmd_status: ACCEPTED, REJECTED_INVALID for an unknown command or a parameter out of range, FAILED for a transfer that could move nothing. The fields a command does not use are ignored.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-13 | `command` | enum | enum `engine_command` |  |
+| 0 | 12-11 | `engine` | enum | enum `engine_select` | SET_THRUST: which engine |
+| 0 | 10-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-0 | `thrust` | uint | LSB 1/100 %, range 0 to 100 | SET_THRUST: the thrust |
+| 2 | 15-0 | `target_airspeed` | uint | LSB 1/10 kt, range 0 to 1500 | AUTOTHROTTLE_ENGAGE: the airspeed to hold; must be above 0 |
+| 3 | 15-14 | `source` | enum | enum `fuel_tank` | FUEL_TRANSFER: from |
+| 3 | 13-12 | `destination` | enum | enum `fuel_tank` | FUEL_TRANSFER: to; must differ from source |
+| 3 | 11-0 | `spare_3` | spare |  |  |
+| 4 | 15-0 | `amount` | uint | LSB 1 kg, range 0 to 65535 | FUEL_TRANSFER: at most this much; must be above 0 |
+
+### ENG_THRUST_CMD
+
+**Thrust command to the engines** — RT 3 · SA 14 · transmit (terminal to bus) · 3 words · 10 Hz
+
+The thrust each engine is commanded to: ThrustManagementSystem's per-engine values, which start at 0 (register_engine) and then follow the FMS thrust lever (ENG_FMS_CONTROL), ENG_CMD and the autothrottle. commands_valid is 0 until something has commanded the thrust; the plant's engines keep their own setting until then. asymmetry is check_asymmetry's max minus min. Relayed to the plant as PLANT_THRUST_CMD.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `thrust_1` | uint | LSB 1/100 %, range 0 to 100 | Engine 1 |
+| 1 | 15-0 | `thrust_2` | uint | LSB 1/100 %, range 0 to 100 | Engine 2 |
+| 2 | 15 | `afterburner` | bool |  | The FMS's afterburner state, passed on |
+| 2 | 14 | `autothrottle_engaged` | bool |  |  |
+| 2 | 13 | `asymmetric_thrust` | bool |  | 1 = asymmetry above 25 percentage points |
+| 2 | 12 | `commands_valid` | bool |  | 1 = the thrusts are a command; 0 = nothing has commanded the engines yet |
+| 2 | 11-10 | `spare_2` | spare |  |  |
+| 2 | 9-0 | `asymmetry` | uint | LSB 1/10 %, range 0 to 100 | Largest difference between the engines' commanded thrusts, percentage points |
+
+### ENG_ENGINE_STATUS
+
+**Engine status** — RT 3 · SA 15 · transmit (terminal to bus) · 20 words · 5 Hz
+
+The engines as the engine computer measures them (ENG_ENGINE_IN; NO_COMPUTED_DATA for an engine whose data is absent, stale or invalid, every value of it then 0), with the assessment the MFD's engine page made of each value (mfd.draw_engine_page: red at N1 or N2 100 % and above, EGT above 800 C, oil pressure below 40 psi, oil temperature above 130 C; amber for vibration above 0.8), and the total fuel flow of the engines that report one, which the flight control computer's fuel efficiency uses. Broadcast to the MFD and the flight control computer (BCAST_ENG_ENGINE_STATUS).
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-14 | `engine_1_ssm` | ssm | validity of `n1_1` | Validity of every engine 1 quantity |
+| 0 | 13-12 | `engine_2_ssm` | ssm | validity of `n1_2` | Validity of every engine 2 quantity |
+| 0 | 11 | `egt_high_1` | bool |  | 1 = engine 1 EGT above 800 C |
+| 0 | 10 | `oil_low_1` | bool |  | 1 = engine 1 oil pressure below 40 psi |
+| 0 | 9 | `oil_hot_1` | bool |  | 1 = engine 1 oil temperature above 130 C |
+| 0 | 8 | `vibration_high_1` | bool |  | 1 = engine 1 vibration above 0.8 |
+| 0 | 7 | `overspeed_1` | bool |  | 1 = engine 1 N1 or N2 at 100 % or above |
+| 0 | 6 | `egt_high_2` | bool |  |  |
+| 0 | 5 | `oil_low_2` | bool |  |  |
+| 0 | 4 | `oil_hot_2` | bool |  |  |
+| 0 | 3 | `vibration_high_2` | bool |  |  |
+| 0 | 2 | `overspeed_2` | bool |  |  |
+| 0 | 1-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `thrust_1` | uint | LSB 1/100 %, range 0 to 100 | Thrust in force, percent of maximum |
+| 2 | 15-0 | `n1_1` | uint | LSB 1/100 %, range 0 to 130 | Fan speed |
+| 3 | 15-0 | `n2_1` | uint | LSB 1/100 %, range 0 to 130 | Core speed |
+| 4 | 15-0 | `egt_1` | uint | LSB 1/10 degC, range 0 to 1500 | Exhaust gas temperature |
+| 5 | 15-0 | `fuel_flow_1` | uint | LSB 1 kg/h, range 0 to 65535 |  |
+| 6 | 15-0 | `oil_pressure_1` | uint | LSB 1/100 psi, range 0 to 200 |  |
+| 7 | 15-0 | `oil_temperature_1` | sint | LSB 1/100 degC, range -100 to 300 |  |
+| 8 | 15-0 | `vibration_1` | uint | LSB 1/1000 EU, range 0 to 10 | Engine units, as the ECU reports them |
+| 9 | 15-0 | `compressor_efficiency_1` | uint | LSB 1/100 %, range 0 to 100 |  |
+| 10 | 15-0 | `thrust_2` | uint | LSB 1/100 %, range 0 to 100 | Thrust in force, percent of maximum |
+| 11 | 15-0 | `n1_2` | uint | LSB 1/100 %, range 0 to 130 | Fan speed |
+| 12 | 15-0 | `n2_2` | uint | LSB 1/100 %, range 0 to 130 | Core speed |
+| 13 | 15-0 | `egt_2` | uint | LSB 1/10 degC, range 0 to 1500 | Exhaust gas temperature |
+| 14 | 15-0 | `fuel_flow_2` | uint | LSB 1 kg/h, range 0 to 65535 |  |
+| 15 | 15-0 | `oil_pressure_2` | uint | LSB 1/100 psi, range 0 to 200 |  |
+| 16 | 15-0 | `oil_temperature_2` | sint | LSB 1/100 degC, range -100 to 300 |  |
+| 17 | 15-0 | `vibration_2` | uint | LSB 1/1000 EU, range 0 to 10 | Engine units, as the ECU reports them |
+| 18 | 15-0 | `compressor_efficiency_2` | uint | LSB 1/100 %, range 0 to 100 |  |
+| 19 | 15-0 | `total_fuel_flow` | uint | LSB 1 kg/h, range 0 to 65535 | Sum over the engines whose data is valid |
+
+### ENG_FUEL_STATUS
+
+**Fuel status** — RT 3 · SA 16 · transmit (terminal to bus) · 7 words · 1 Hz
+
+The tanks of fuelControl.FuelManagementSystem.setup_aircraft (Main Left and Main Right 10000 kg, Center 20000 kg, full at start), burned along its fuel lines from each engine's measured fuel flow (engine 1 from Main Left and Center in the ratio 100 : 50, engine 2 from Main Right and Center likewise; the Python's FuelSystem.update drew a consumption rate that nothing ever set), topped up by its transfer policy (perform_fuel_transfer: while the Center holds more than 5000 kg, a main below 5000 kg receives 1000 kg) and watched as fuelMonitor.py did: a tank is low at 20 % and critical at 10 %, and an unexplained loss is a drop beyond what the burn and the transfers out explain by more than 2 % of the capacity, latched until reset. burn_rate is the monitor's consumption rates summed; transferred the kg moved by the policy and by FUEL_TRANSFER since reset. Broadcast to the MFD (BCAST_ENG_FUEL_STATUS).
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15 | `low_left` | bool |  | Main Left at or below 20 % (and above 10 %) |
+| 0 | 14 | `low_right` | bool |  |  |
+| 0 | 13 | `low_center` | bool |  |  |
+| 0 | 12 | `critical_left` | bool |  | Main Left at or below 10 % |
+| 0 | 11 | `critical_right` | bool |  |  |
+| 0 | 10 | `critical_center` | bool |  |  |
+| 0 | 9 | `leak_suspected` | bool |  | 1 = an unexplained loss was seen in some tank |
+| 0 | 8 | `transfer_left` | bool |  | 1 = the policy moved fuel into Main Left in the last fuel pass |
+| 0 | 7 | `transfer_right` | bool |  |  |
+| 0 | 6-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `main_left` | uint | LSB 1 kg, range 0 to 65535 |  |
+| 2 | 15-0 | `main_right` | uint | LSB 1 kg, range 0 to 65535 |  |
+| 3 | 15-0 | `center` | uint | LSB 1 kg, range 0 to 65535 |  |
+| 4 | 15-0 | `total` | uint | LSB 1 kg, range 0 to 65535 |  |
+| 5 | 15-0 | `burn_rate` | uint | LSB 1 kg/h, range 0 to 65535 | All tanks; saturates |
+| 6 | 15-0 | `transferred` | uint | LSB 1 kg, range 0 to 65535 | Since reset; saturates |
 
 ## Block payloads
 

@@ -245,7 +245,8 @@ class PfdWindow(QWidget):
 def mfd_terminal(port_base):
     return DisplayTerminal(MFD_RT, port_base, m.DspMfdStatus, m.DspMfdModeCmd,
                            receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance,
-                                     m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus, m.BcastFmsFlightData),
+                                     m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus, m.BcastFmsFlightData,
+                                     m.BcastEngEngineStatus, m.BcastEngFuelStatus),
                            blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation))
 
 

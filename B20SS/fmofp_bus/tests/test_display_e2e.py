@@ -1,15 +1,16 @@
 """The displays on the bus, end to end, headless.
 
-The plant, the real fmofp_fcs, fmofp_nav, fmofp_fms and fmofp_radar, and three
-DisplayTerminals in this process (the radar display, RT 15, the PFD, RT 11, and
-the MFD, RT 13) under the real fmofp_bc. The radar display commands both radars from its own
+The plant, the real fmofp_fcs, fmofp_nav, fmofp_fms, fmofp_radar and
+fmofp_engine, and three DisplayTerminals in this process (the radar display,
+RT 15, the PFD, RT 11, and the MFD, RT 13) under the real fmofp_bc. The radar display commands both radars from its own
 transmit subaddresses, exactly as the window's buttons do; the bus controller
 broadcasts the radars' status, scan summary, guidance and product blocks, the
-flight computer's alerts and exceedances and the FMS's flight data once each to
-address 31, and each display accepts the subaddresses it draws (ICD v1.7). The
-feeds then make of it what the Qt windows would draw.
+flight computer's alerts and exceedances, the FMS's flight data and the engine
+computer's engine and fuel status once each to address 31, and each display
+accepts the subaddresses it draws (ICD v1.7, v1.8). The feeds then make of it
+what the Qt windows would draw.
 
-Needs FMOFP_BC, FMOFP_FCS, FMOFP_NAV, FMOFP_FMS and FMOFP_RADAR (CI sets them).
+Needs FMOFP_BC, FMOFP_FCS, FMOFP_NAV, FMOFP_FMS, FMOFP_RADAR and FMOFP_ENGINE (CI sets them).
 """
 
 import os
@@ -35,7 +36,7 @@ from fmofp_plant.plant import PlantModel, PlantTerminal
 PORT_BASE = 61000
 FRAMES = 260
 SYNC_MODE_CODE = 17
-BINARIES = ("FMOFP_FCS", "FMOFP_NAV", "FMOFP_FMS", "FMOFP_RADAR")
+BINARIES = ("FMOFP_FCS", "FMOFP_NAV", "FMOFP_FMS", "FMOFP_RADAR", "FMOFP_ENGINE")
 
 
 class PlantThread(threading.Thread):
@@ -105,7 +106,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
 
     def run_bus(self):
         terminals = ["27", str(m.FcsStatus.RT), str(m.NavSolution.RT), str(m.FmsStatus.RT), str(m.RdrWxStatus.RT),
-                     str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT)]
+                     str(m.EngStatus.RT), str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT)]
         args = [os.environ["FMOFP_BC"]]
         for rt in terminals:
             args += ["--rt", rt]
@@ -218,7 +219,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # copy written into any display.
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
-        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 25, 26, 27}, broadcast)
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 19, 25, 26, 27}, broadcast)
         for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}
@@ -243,8 +244,22 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # Level at 5000 ft over hills that reach 1500 m: the radar's clearance ahead is under 500 ft.
         self.assertIn("TERRAIN", [a["code"] for a in alerts])
         self.assertTrue(alerts[-1]["message"].startswith("TERRAIN  "), alerts)
-        self.assertIsNotNone(self.mfd.fresh(m.BcastFcsPerfStatus, stale_after_s=60.0))
+        perf = self.mfd.fresh(m.BcastFcsPerfStatus, stale_after_s=60.0)
+        self.assertIsNotNone(perf)
         self.assertEqual([], systems.get_exceedances())
+        # The engine computer: its engines at the FMS's lever (50 %), their fuel, and the fuel efficiency the
+        # flight computer makes of the broadcast engine status.
+        engine = systems.engine.get_data()
+        self.assertAlmostEqual(50.0, engine["thrust_pct"], delta=0.01, msg="the FMS lever starts at 50")
+        self.assertAlmostEqual(58.0, engine["n1_pct"], delta=0.6)
+        self.assertAlmostEqual(2100.0, engine["ff_kgh"], delta=25.0)
+        fuel = systems.fuel_data()
+        self.assertEqual(([], [], False), (fuel["low"], fuel["critical"], fuel["leak_suspected"]))
+        self.assertLess(fuel["total"], 40000.0)
+        self.assertGreater(fuel["total"], 39900.0)
+        self.assertEqual(Ssm.NORMAL, perf.payload.fuel_ssm, "the FCS heard the engine status broadcast")
+        self.assertAlmostEqual(450.0 / (4200.0 / 60.0), perf.payload.fuel_efficiency, delta=0.1)
+        self.assertIn("ENG N1", systems.status_text())
         position = systems.mission_data()["current_position"]
         self.assertAlmostEqual(5000.0, position["alt_ft"], delta=1.0)
         self.assertLess(abs(position["lat"]) + abs(position["lon"]), 0.1, "the plant flies from 0 N 0 E")

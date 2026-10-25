@@ -3,9 +3,10 @@
 //   fmofp_fcs [--port-base 51000] [--syncs 0] [--quiet]
 //
 // Each SYNCHRONIZE_WITH_DATA frame: take what arrived (FCS_SENSORS, FCS_TERRAIN,
-// FCS_MODE_CMD, FCS_SURFACE_CMD), run FlightControl::step(), and load the
-// outputs (FCS_STATUS, FCS_SURFACE_STATUS, FCS_ATTITUDE, FCS_GCAS_ALERTS,
-// FCS_PERF_STATUS, TERM_STATUS) for the bus controller to collect.
+// the engine computer's BCAST_ENG_ENGINE_STATUS, FCS_MODE_CMD, FCS_SURFACE_CMD),
+// run FlightControl::step(), and load the outputs (FCS_STATUS,
+// FCS_SURFACE_STATUS, FCS_ATTITUDE, FCS_GCAS_ALERTS, FCS_PERF_STATUS,
+// TERM_STATUS) for the bus controller to collect.
 
 #include <cstdio>
 #include <cstdlib>
@@ -134,6 +135,11 @@ int main(int argc, char** argv) {
         return 1;
     }
     fmofp::bus::RemoteTerminal& terminal = process.terminal();
+    // The engine computer's status comes by broadcast (ICD README section 8).
+    if (terminal.accept_broadcast(icd::BcastEngEngineStatus::kSubaddress) != Status::kOk) {
+        std::fprintf(stderr, "fcs: cannot accept the engine status broadcast\n");
+        return 1;
+    }
     (void)load_outputs(terminal, fc, 0);
     if (!o.quiet) {
         std::printf("fcs: RT %u on 127.0.0.1:%u\n", kRt, static_cast<unsigned>(o.rt.port_base + kRt));
@@ -170,7 +176,10 @@ int main(int argc, char** argv) {
         const bool have_sensors = take_fresh(terminal, sensors);
         icd::FcsTerrain terrain{};
         const bool have_terrain = take_fresh(terminal, terrain);
-        fc.step(have_sensors ? &sensors : nullptr, have_terrain ? &terrain : nullptr, frame);
+        icd::BcastEngEngineStatus engine{};
+        const bool have_engine = take_fresh(terminal, engine);
+        fc.step(have_sensors ? &sensors : nullptr, have_terrain ? &terrain : nullptr, have_engine ? &engine : nullptr,
+                frame);
         terminal.set_subsystem_flag(fc.state() == icd::TerminalState::DEGRADED);
         (void)load_outputs(terminal, fc, sync);
 

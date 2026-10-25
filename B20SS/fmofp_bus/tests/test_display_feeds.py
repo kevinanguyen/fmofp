@@ -335,7 +335,7 @@ class SystemsFeedTest(unittest.TestCase):
         self.assertIn("exceed g_force,roll,vertical_speed", self.feed.status_text())
 
     def test_pages_without_a_producer_and_the_position_from_the_fms(self):
-        self.assertEqual({}, self.feed.engine.get_data())
+        self.assertEqual({}, self.feed.engine.get_data(), "no engine computer yet")
         self.assertEqual({}, self.feed.comms.get_data())
         self.assertEqual({}, self.feed.mission.get_data())
         self.assertEqual({"summary": {}, "friendly": [], "enemy": [], "neutral": []}, self.feed.mission.get_oob())
@@ -345,6 +345,35 @@ class SystemsFeedTest(unittest.TestCase):
         self.assertEqual({"lat": 1.5, "lon": -2.25}, self.feed.mission.get_data()["current_position"])
         self.terminal.put(m.BcastFmsFlightData(payload=flight_payload(position_ssm=Ssm.NO_COMPUTED_DATA)))
         self.assertEqual({}, self.feed.mission.get_data())
+
+    def test_engine_rows_are_the_ecus_dictionary_and_the_fuel_is_the_tanks(self):
+        engine = m.EngEngineStatus(engine_1_ssm=Ssm.NORMAL, engine_2_ssm=Ssm.NORMAL, thrust_1=80.0, n1_1=82.004,
+                                   n2_1=82.0, egt_1=710.25, fuel_flow_1=3360.0, oil_pressure_1=61.237,
+                                   oil_temperature_1=95.5, vibration_1=0.3124, compressor_efficiency_1=88.0,
+                                   thrust_2=40.0, n1_2=50.0, total_fuel_flow=5040.0, egt_high_1=False)
+        self.terminal.put(m.BcastEngEngineStatus(payload=engine))
+        data = self.feed.engine.get_data()
+        self.assertEqual({"thrust_pct": 80.0, "n1_pct": 82.0, "n2_pct": 82.0, "egt_c": 710.2, "ff_kgh": 3360.0,
+                          "oil_psi": 61.24, "oil_temp_c": 95.5, "vibration": 0.312, "compressor_eff": 88.0,
+                          "timestamp": 1000.0}, data, "engine 1, rounded as EngineControlUnit._snapshot did")
+        self.assertIn("ENG N1 82.0% EGT 710C", self.feed.status_text())
+        engine.engine_1_ssm = Ssm.NO_COMPUTED_DATA
+        self.terminal.put(m.BcastEngEngineStatus(payload=engine))
+        self.assertEqual({}, self.feed.engine.get_data(), "an invalid engine is no engine")
+        self.terminal.put(m.BcastEngEngineStatus(payload=m.EngEngineStatus(engine_1_ssm=Ssm.NORMAL, n1_1=58.0)), age=3.0)
+        self.assertEqual({}, self.feed.engine.get_data(), "stale data is no data")
+
+        self.assertEqual({}, self.feed.fuel_data())
+        self.terminal.put(m.BcastEngFuelStatus(payload=m.EngFuelStatus(main_left=1500.0, main_right=9000.0, center=900.0,
+                                                                       total=11400.0, burn_rate=8400.0, transferred=1000.0,
+                                                                       low_left=True, critical_center=True,
+                                                                       leak_suspected=True, transfer_left=True)))
+        fuel = self.feed.fuel_data()
+        self.assertEqual((1500.0, 9000.0, 900.0, 11400.0, 8400.0, 1000.0),
+                         (fuel["Main Left"], fuel["Main Right"], fuel["Center"], fuel["total"], fuel["burn_rate_kgh"],
+                          fuel["transferred_kg"]))
+        self.assertEqual((["Main Left"], ["Center"], True), (fuel["low"], fuel["critical"], fuel["leak_suspected"]))
+        self.assertIn("fuel 11400 kg CRITICAL Center LEAK?", self.feed.status_text())
 
     def test_the_terrain_clearance_stand_in(self):
         radar = next(iter(self.feed.radar_management.radars.values()))
