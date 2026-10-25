@@ -82,7 +82,7 @@ v2 adds it, based on an inventory of what each display reads and what the subsys
 | Big-endian on the socket | Alee | Every word, header included |
 | UDP on 127.0.0.1, port base 51000 | Alee | Section 7 |
 | One machine-readable file generates both sides | Alee | XML, because Python reads it with the standard library and it matches the existing config files |
-| Freeze the Python code until the conversion is finished | Alee | The port is measured against upstream `main` at `0ab9236` (2026-10-08). Nothing in it changes while it is being ported |
+| Freeze the Python code until the conversion is finished | Alee | The port is measured against upstream `main` at `0ab9236` (2026-10-08): that is the Python each partition was translated from. Upstream kept moving, so from 2026-10-25 (Kevin) its commits are merged into `port/cpp` whenever they merge cleanly and change none of the mirrored logic (the ICD sources, the ported modules, the modules the oracle tests import, the display classes the display processes embed); a merge that would is not made, and is reported. The oracle tests, which compare the C++ with the Python in the tree, arbitrate every merge |
 | Legacy `WEATHER` mode: keep it unless it's unnecessary | Alee | Dropped as unnecessary. No radar implements it, nothing sends it, and it only existed in the old lookup tables, where it clashed with FAILURE |
 | Undefined values and units: full creative liberty | Alee | Defined from the code that actually uses each one (table below) |
 | Heading and yaw are true | Alee | Every heading and yaw field is relative to true north |
@@ -366,7 +366,7 @@ All answered 2026-10-10:
 | 3 | Bus controller: its own process, or inside the FMS? | Its own process | Already the design |
 | 4 | UDP on 127.0.0.1, port base 51000? | Yes | No change needed |
 | 5 | Which MSYS2 environment do interns use? | UCRT64 | Same as the authoring machine |
-| 6 | Is the Python code still changing? | Freeze everything until the conversion is finished | Port baseline is upstream `0ab9236` |
+| 6 | Is the Python code still changing? | Freeze everything until the conversion is finished | Port baseline is upstream `0ab9236`; upstream's later commits are merged when they change none of the mirrored logic (section 2) |
 | 7 | Fix the section 10 problems in Python? | No, leave them | Section 10 |
 | 8 | Legacy `WEATHER` mode? | Keep it unless it's unnecessary | Dropped as unnecessary (section 2) |
 | 9 | Undefined values and units? | Full creative liberty | Defined from the code that uses them (section 2) |
