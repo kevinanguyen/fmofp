@@ -11,10 +11,10 @@ from fmofp_bus.status import Status
 class GeneratedMessagesTest(unittest.TestCase):
     def test_version_and_table(self):
         self.assertEqual(1, m.ICD_MAJOR)
-        self.assertEqual(3, m.ICD_MINOR)
-        self.assertEqual(12, len(m.RELAYS))
-        self.assertEqual(("PLANT_SENSORS", "FCS_SENSORS", 27, 1, 5, 13, 12, 50), tuple(m.RELAYS[0]))
-        self.assertEqual(63, len(m.MESSAGES))
+        self.assertEqual(4, m.ICD_MINOR)
+        self.assertEqual(14, len(m.RELAYS))
+        self.assertEqual(("PLANT_SENSORS", "FCS_SENSORS", 27, 1, 5, 13, 11, 50), tuple(m.RELAYS[0]))
+        self.assertEqual(66, len(m.MESSAGES))
         self.assertIs(m.FcsAttitude, m.MESSAGE_CLASSES["FCS_ATTITUDE"])
         self.assertEqual(m.EVERY_TERMINAL, m.TermStatus.RT)
 

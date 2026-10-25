@@ -2,7 +2,7 @@
 //
 //   fmofp_fcs [--port-base 51000] [--syncs 0] [--quiet]
 //
-// Each SYNCHRONIZE_WITH_DATA frame: take what arrived (FCS_SENSORS,
+// Each SYNCHRONIZE_WITH_DATA frame: take what arrived (FCS_SENSORS, FCS_TERRAIN,
 // FCS_MODE_CMD, FCS_SURFACE_CMD), run FlightControl::step(), and load the
 // outputs (FCS_STATUS, FCS_SURFACE_STATUS, FCS_ATTITUDE, FCS_GCAS_ALERTS,
 // FCS_PERF_STATUS, TERM_STATUS) for the bus controller to collect.
@@ -168,7 +168,9 @@ int main(int argc, char** argv) {
         }
         icd::FcsSensors sensors{};
         const bool have_sensors = take_fresh(terminal, sensors);
-        fc.step(have_sensors ? &sensors : nullptr, frame);
+        icd::FcsTerrain terrain{};
+        const bool have_terrain = take_fresh(terminal, terrain);
+        fc.step(have_sensors ? &sensors : nullptr, have_terrain ? &terrain : nullptr, frame);
         terminal.set_subsystem_flag(fc.state() == icd::TerminalState::DEGRADED);
         (void)load_outputs(terminal, fc, sync);
 

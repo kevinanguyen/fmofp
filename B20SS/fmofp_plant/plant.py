@@ -1,6 +1,6 @@
 """The plant terminal.
 
-    py -m fmofp_plant [--port-base 51000] [--syncs 0] [--seed N] [--terrain-ft 0]
+    py -m fmofp_plant [--port-base 51000] [--syncs 0] [--seed N] [--terrain-ft ELEVATION]
                       [--lat 0.0] [--lon 0.0]
                       [--gps-noise-m 3.0] [--gps-clock-bias-us 1.0] [--gps-outage]
                       [--no-weather]
@@ -14,7 +14,10 @@ constellation of Systems/nav/gps/globalPositionSystem.py once a second. The
 position solver itself lives in the navigation terminal; the plant only produces
 what the receiver would measure, noise included. It also owns the weather
 (fmofp_plant.weather): the storm cells and stratiform area the radar's sensor
-model renders, published as PLANT_WEATHER once a second.
+model renders, published as PLANT_WEATHER once a second; and the terrain
+(fmofp_plant.terrain): the elevation profile ahead of the aircraft that the
+terrain-following radar assesses, published as the PLANT_TERRAIN block ten times
+a second. --terrain-ft flattens the world to one elevation.
 
 --hold freezes named quantities at fixed values, which is how the tests put the
 aircraft into a known situation.
@@ -25,10 +28,13 @@ import math
 import random
 import sys
 
+from fmofp_bus.block import BlockPublisher
+from fmofp_bus.icd.blocks import PlantTerrain
 from fmofp_bus.icd.enums import GearPosition, Ssm
 from fmofp_bus.icd.messages import PlantGps, PlantSensors, PlantWeather
 from fmofp_bus.rt_process import RtProcess
 from fmofp_bus.status import Status
+from fmofp_plant.terrain import FlatTerrain, HillTerrain, profile_message
 from fmofp_plant.weather import WeatherWorld
 
 PLANT_RT = PlantSensors.RT
@@ -39,9 +45,11 @@ GPS_HZ = 1  # GPSSystem.UPDATE_INTERVAL_S
 SYNCS_PER_GPS = SYNC_HZ // GPS_HZ
 WEATHER_HZ = 1
 SYNCS_PER_WEATHER = SYNC_HZ // WEATHER_HZ
+TERRAIN_HZ = 10  # a new profile each time the aircraft has moved
+SYNCS_PER_TERRAIN = SYNC_HZ // TERRAIN_HZ
 
 HOLDABLE = ("altitude", "speed", "heading", "pitch", "roll", "vertical_speed", "angle_of_attack", "g_force",
-            "flaps", "terrain_clearance", "latitude", "longitude")
+            "flaps", "latitude", "longitude")
 
 # Where the Python aircraft lived: flightManagementSystem's navigation dict starts
 # at latitude 0, longitude 0, and the GPS truth followed it, so every fix in the
@@ -116,13 +124,14 @@ def elevation_deg(receiver, satellite):
 class PlantModel:
     """FlightControlComputer._adjust(), including its clamps and starting state, plus position and GPS."""
 
-    def __init__(self, seed=None, terrain_ft=0.0, latitude=HOME_LATITUDE, longitude=HOME_LONGITUDE,
+    def __init__(self, seed=None, terrain=None, latitude=HOME_LATITUDE, longitude=HOME_LONGITUDE,
                  gps_noise_m=3.0, gps_clock_bias_us=1.0, gps_outage=False, weather=True):
         self.rng = random.Random(seed)
         # The weather draws from its own generator so adding it changed nothing else about a seeded run.
         self.weather = WeatherWorld(random.Random(None if seed is None else seed ^ 0x5745)) if weather else None
         self.weather_seq = 0
-        self.terrain_ft = float(terrain_ft)
+        self.terrain = HillTerrain() if terrain is None else terrain
+        self.terrain_seq = 0
         self.altitude = 10000.0       # feet
         self.speed = 500.0            # knots
         self.heading = 0.0            # degrees true
@@ -178,10 +187,6 @@ class PlantModel:
         if self.weather is not None:
             self.weather.update(dt)
 
-    @property
-    def terrain_clearance(self):
-        return max(0.0, self.altitude - self.terrain_ft)
-
     def value(self, name):
         return self.hold.get(name, getattr(self, name))
 
@@ -189,7 +194,7 @@ class PlantModel:
         """PLANT_SENSORS for the current state, every quantity NORMAL."""
         s = PlantSensors()
         for ssm in ("altitude_ssm", "airspeed_ssm", "pitch_ssm", "roll_ssm", "heading_ssm", "vertical_speed_ssm",
-                    "aoa_ssm", "g_ssm", "clearance_ssm", "flaps_ssm"):
+                    "aoa_ssm", "g_ssm", "flaps_ssm"):
             setattr(s, ssm, Ssm.NORMAL)
         s.gear = GearPosition.DOWN if self.landing_gear == "down" else GearPosition.UP
         s.altitude = self.value("altitude")
@@ -201,8 +206,13 @@ class PlantModel:
         s.angle_of_attack = self.value("angle_of_attack")
         s.g_force = self.value("g_force")
         s.flaps = self.value("flaps")
-        s.terrain_clearance = self.value("terrain_clearance")
         return s
+
+    def terrain_message(self):
+        """PLANT_TERRAIN for the current position and heading: the profile the radar's antenna would measure."""
+        self.terrain_seq = (self.terrain_seq + 1) % 256
+        return profile_message(self.terrain, self.value("latitude"), self.value("longitude"), self.value("heading"),
+                               self.terrain_seq)
 
     def weather_message(self):
         """PLANT_WEATHER for the current weather; an empty sky when the weather is off."""
@@ -245,7 +255,8 @@ class PlantModel:
 
 
 class PlantTerminal:
-    """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame, PLANT_GPS and PLANT_WEATHER once a second."""
+    """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame, PLANT_GPS and
+    PLANT_WEATHER once a second, and the PLANT_TERRAIN block ten times a second."""
 
     def __init__(self, model, port_base=51000):
         self.model = model
@@ -253,6 +264,7 @@ class PlantTerminal:
         self.port_base = port_base
         self.syncs = 0
         self.publish_failures = 0
+        self.terrain_block = BlockPublisher(PlantTerrain.MAX_PAYLOAD_WORDS)
 
     def init(self):
         status = self.process.init(PLANT_RT, self.port_base)
@@ -260,6 +272,8 @@ class PlantTerminal:
             self.publish()
             self.publish_gps()
             self.publish_weather()
+            self.publish_terrain()
+            self.serve_terrain()
         return status
 
     def _load(self, message):
@@ -278,15 +292,30 @@ class PlantTerminal:
     def publish_weather(self):
         self._load(self.model.weather_message())
 
+    def publish_terrain(self):
+        status, words = self.model.terrain_message().encode()
+        if status not in (Status.OK, Status.CLAMPED):
+            self.publish_failures += 1
+            return
+        if self.terrain_block.publish(self.process.terminal, PlantTerrain.SEGMENT_SUBADDRESS, words) != Status.OK:
+            self.publish_failures += 1
+
+    def serve_terrain(self):
+        self.terrain_block.serve(self.process.terminal, PlantTerrain.DESCRIPTOR_SUBADDRESS,
+                                 PlantTerrain.SEGMENT_SUBADDRESS)
+
     def poll(self, timeout_s=0.1):
         """One iteration of the loop: handle a datagram, step on sync. Returns True on a sync."""
         self.process.poll(timeout_s)
         got, _ = self.process.terminal.take_sync()
         if not got:
             if self.process.terminal.take_reset_request():
+                self.terrain_block = BlockPublisher(PlantTerrain.MAX_PAYLOAD_WORDS)
                 self.publish()
                 self.publish_gps()
                 self.publish_weather()
+                self.publish_terrain()
+                self.serve_terrain()
             return False
         self.syncs += 1
         if self.syncs % SYNCS_PER_WALK == 0:
@@ -296,6 +325,9 @@ class PlantTerminal:
             self.publish_gps()
         if self.syncs % SYNCS_PER_WEATHER == 0:
             self.publish_weather()
+        if self.syncs % SYNCS_PER_TERRAIN == 0:
+            self.publish_terrain()
+        self.serve_terrain()
         self.publish()
         return True
 
@@ -318,7 +350,8 @@ def main(argv=None):
     parser.add_argument("--port-base", type=int, default=51000)
     parser.add_argument("--syncs", type=int, default=0, help="exit after this many frames (0 = run until killed)")
     parser.add_argument("--seed", type=int, default=None, help="random seed, for repeatable runs")
-    parser.add_argument("--terrain-ft", type=float, default=0.0, help="terrain elevation under the aircraft")
+    parser.add_argument("--terrain-ft", type=float, default=None,
+                        help="flat terrain at this elevation everywhere (default: the hills of fmofp_plant.terrain)")
     parser.add_argument("--lat", type=float, default=HOME_LATITUDE, help="starting latitude, degrees")
     parser.add_argument("--lon", type=float, default=HOME_LONGITUDE, help="starting longitude, degrees")
     parser.add_argument("--gps-noise-m", type=float, default=3.0, help="pseudorange noise, 1 sigma")
@@ -329,7 +362,8 @@ def main(argv=None):
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
-    model = PlantModel(seed=args.seed, terrain_ft=args.terrain_ft, latitude=args.lat, longitude=args.lon,
+    terrain = None if args.terrain_ft is None else FlatTerrain(args.terrain_ft)
+    model = PlantModel(seed=args.seed, terrain=terrain, latitude=args.lat, longitude=args.lon,
                        gps_noise_m=args.gps_noise_m, gps_clock_bias_us=args.gps_clock_bias_us,
                        gps_outage=args.gps_outage, weather=not args.no_weather)
     model.hold = args.hold

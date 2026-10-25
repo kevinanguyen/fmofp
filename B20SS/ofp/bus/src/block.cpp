@@ -181,4 +181,57 @@ bool BlockReceiver::check_complete() noexcept {
     return false;
 }
 
+Status BlockPublisher::init(Word* storage, std::uint16_t capacity) noexcept {
+    segment_reads_ = 0;
+    published_ = false;
+    return tx_.init(storage, capacity);
+}
+
+Status BlockPublisher::publish(const RemoteTerminal& terminal, std::uint8_t segment_sa, const Word* payload,
+                               std::uint16_t count) noexcept {
+    const Status s = tx_.set_payload(payload, count);
+    if (s != Status::kOk) {
+        return s;
+    }
+    segment_reads_ = terminal.transmit_count(segment_sa);
+    published_ = true;
+    return Status::kOk;
+}
+
+Status BlockPublisher::serve(RemoteTerminal& terminal, std::uint8_t descriptor_sa, std::uint8_t segment_sa) noexcept {
+    const std::uint32_t reads = terminal.transmit_count(segment_sa);
+    if (!published_ && reads != segment_reads_) {
+        tx_.advance();
+    }
+    segment_reads_ = reads;
+    published_ = false;
+    std::array<Word, kBlockDescriptorWords> descriptor{};
+    tx_.descriptor(descriptor.data());
+    const Status d = terminal.set_transmit(descriptor_sa, descriptor.data(), kBlockDescriptorWords);
+    std::array<Word, kBlockSegmentWords> segment{};
+    tx_.next_segment(segment.data());
+    return worst(d, terminal.set_transmit(segment_sa, segment.data(), kBlockSegmentWords));
+}
+
+Status BlockCollector::init(Word* storage, std::uint16_t capacity) noexcept { return rx_.init(storage, capacity); }
+
+bool BlockCollector::collect(RemoteTerminal& terminal, std::uint8_t descriptor_sa, std::uint8_t segment_sa) noexcept {
+    bool done = false;
+    std::array<Word, kBlockDescriptorWords> descriptor{};
+    std::uint8_t count = 0;
+    bool fresh = false;
+    if (terminal.get_received(descriptor_sa, descriptor.data(), kBlockDescriptorWords, count, fresh) == Status::kOk &&
+        fresh && count == kBlockDescriptorWords) {
+        done = rx_.feed_descriptor(descriptor.data());
+    }
+    std::array<Word, kBlockSegmentWords> segment{};
+    count = 0;
+    fresh = false;
+    if (terminal.get_received(segment_sa, segment.data(), kBlockSegmentWords, count, fresh) == Status::kOk && fresh &&
+        count == kBlockSegmentWords) {
+        done = rx_.feed_segment(segment.data()) || done;
+    }
+    return done;
+}
+
 }  // namespace fmofp::bus

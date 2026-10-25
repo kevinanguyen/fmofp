@@ -2,13 +2,14 @@
 
 A payload longer than one message travels as a 4-word descriptor and 32-word
 segments on two transmit subaddresses. BlockTransmitter is the producer's side,
-BlockReceiver the consumer's; blocks_from_records reassembles what a monitor
+BlockReceiver the consumer's; BlockPublisher and BlockCollector put them on a
+RemoteTerminal's subaddresses; blocks_from_records reassembles what a monitor
 saw. The C++ twin is ofp/bus/include/fmofp/bus/block.hpp.
 """
 
 from dataclasses import dataclass
 
-from fmofp_bus.status import Status
+from fmofp_bus.status import Status, worst
 
 DESCRIPTOR_WORDS = 4
 SEGMENT_WORDS = 32
@@ -158,6 +159,61 @@ class BlockReceiver:
             self.completed_blocks += 1
             return True
         return False
+
+
+class BlockPublisher:
+    """A producer's block on its two transmit subaddresses: publish() a payload, then serve() it every frame.
+
+    The segment on offer moves on each time the terminal's transmit count for the
+    segment subaddress shows the bus took it.
+    """
+
+    def __init__(self, capacity=MAX_PAYLOAD_WORDS):
+        self.transmitter = BlockTransmitter(capacity)
+        self._segment_reads = 0
+        self._published = False
+
+    @property
+    def version(self):
+        return self.transmitter.version
+
+    def publish(self, terminal, segment_sa, words):
+        """A new payload, served from its first segment."""
+        status = self.transmitter.set_payload(words)
+        if status != Status.OK:
+            return status
+        self._segment_reads = terminal.transmit_count(segment_sa)
+        self._published = True
+        return Status.OK
+
+    def serve(self, terminal, descriptor_sa, segment_sa):
+        """Every frame: advance past a segment the bus took, then load the descriptor and the next segment."""
+        reads = terminal.transmit_count(segment_sa)
+        if not self._published and reads != self._segment_reads:
+            self.transmitter.advance()
+        self._segment_reads = reads
+        self._published = False
+        d = terminal.set_transmit(descriptor_sa, self.transmitter.descriptor())
+        s = terminal.set_transmit(segment_sa, self.transmitter.next_segment())
+        return worst(d, s)
+
+
+class BlockCollector:
+    """A consumer's block on its two receive subaddresses (the far end of a block relay)."""
+
+    def __init__(self, capacity=MAX_PAYLOAD_WORDS):
+        self.receiver = BlockReceiver(capacity)
+
+    def collect(self, terminal, descriptor_sa, segment_sa):
+        """Feeds what arrived since the last call; True when a block has just completed."""
+        done = False
+        status, words, fresh = terminal.get_received(descriptor_sa)
+        if status == Status.OK and fresh and len(words) == DESCRIPTOR_WORDS:
+            done = self.receiver.feed_descriptor(words)
+        status, words, fresh = terminal.get_received(segment_sa)
+        if status == Status.OK and fresh and len(words) == SEGMENT_WORDS:
+            done = self.receiver.feed_segment(words) or done
+        return done
 
 
 def blocks_from_records(records, rt, descriptor_sa, segment_sa, capacity=MAX_PAYLOAD_WORDS):

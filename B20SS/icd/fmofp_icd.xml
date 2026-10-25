@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="3" status="DRAFT" date="2026-10-11">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="4" status="DRAFT" date="2026-10-25">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -16,6 +16,7 @@
   <revision version="1.1-draft" date="2026-10-10" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">First partition (flight control): the plant terminal RT 27 and PLANT_SENSORS, relayed to the FCS as FCS_SENSORS; FCS_GCAS_ALERTS and FCS_PERF_STATUS outputs; the relays section, which also makes the BC deliver the MFD's radar commands. Kevin owns the ICD from this revision.</revision>
   <revision version="1.2-draft" date="2026-10-11" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Navigation and flight management partitions: PLANT_GPS pseudoranges, the nav terminal's NAV_SENSORS/NAV_GPS inputs and NAV_SOLUTION; the FMS's relayed inputs (FMS_ATTITUDE_IN, FMS_SENSORS, FMS_NAV_SOLUTION), FMS_FLIGHT_DATA (replacing the FMS_DATA block), FMS_FLIGHT_MODE_CMD, FMS_CONTROL_CMD/STATUS, FMS_ENERGY; FMS_STATUS, FMS_ATTITUDE_STATUS and FMS_NAV_UPDATE_STATUS grown to report what the Python returned. Double-word (32-bit) fields; a producer may be relayed to several consumers. Enums fms_flight_mode, countermeasures_state, targeting_state, weapons_state.</revision>
   <revision version="1.3-draft" date="2026-10-11" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Weather radar partition: PLANT_WEATHER (the simulated storm cells and stratiform area, moved by the plant) relayed to the radar as RDR_WX_WEATHER; RDR_WX_SCAN; the RDR_WX_PRODUCTS block (VIL and precipitation points, storm cells, precipitation areas, wind shear events, turbulence cells of one scan), replacing the RDR_WX_VIL and RDR_WX_PRECIP streams. Block payload layouts: a header and record sections, generated for both sides. Enums precip_type, shear_severity, turbulence_category.</revision>
+  <revision version="1.4-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Terrain-following radar partition: the plant gains the terrain (PLANT_TERRAIN, the elevation profile ahead of the aircraft, a block relayed to the radar as RDR_TFR_TERRAIN - the first block relay and the first receive block); the radar gets the aircraft state as RDR_TFR_SENSORS and publishes RDR_TFR_GUIDANCE and the RDR_TFR_ELEVATION block (the assessed profile and the path commands). The flight control computer takes its terrain clearance from the radar (FCS_TERRAIN) instead of the plant: PLANT_SENSORS loses terrain_clearance. Enums clearance_level, terrain_warning, path_reason.</revision>
   <bus word_bits="16" byte_order="big-endian" bit_numbering="15=MSB" bit_rate_mbps="1"
        minor_frame_ms="20" minor_frames_per_major="50" rates_hz="50 10 5 1"
        broadcast_rt="31" status_sa="29" wraparound_sa="30" max_bus_load_percent="50"
@@ -179,6 +180,24 @@
       <value name="SEVERE" value="3"/>
       <value name="EXTREME" value="4"/>
     </enum>
+    <enum id="clearance_level" bits="3" doc="Terrain clearance advisory level (tfr_processor.ClearanceManager): CLEAR at 600 m of clearance or more, LOW from 300 m, CAUTION from 150 m, PULL_UP below that. NONE when no assessment exists">
+      <value name="NONE" value="0"/>
+      <value name="CLEAR" value="1"/>
+      <value name="LOW" value="2"/>
+      <value name="CAUTION" value="3"/>
+      <value name="PULL_UP" value="4"/>
+    </enum>
+    <enum id="terrain_warning" bits="2" doc="Terrain feature warning at a profile sample (tfr_radar._check_terrain_warnings): HIGH_TERRAIN above 1500 m, else STEEP_TERRAIN more than 300 m from the 1000 m reference">
+      <value name="NONE" value="0"/>
+      <value name="HIGH_TERRAIN" value="1"/>
+      <value name="STEEP_TERRAIN" value="2"/>
+    </enum>
+    <enum id="path_reason" bits="2" doc="Why a terrain-following altitude command exists (tfr_processor.PathOptimiser): TERRAIN_AVOIDANCE for the rate-limited commands along the look-ahead window, CLEARANCE for the final command that clears the highest terrain in the window. OBSTACLE is reserved">
+      <value name="NONE" value="0"/>
+      <value name="TERRAIN_AVOIDANCE" value="1"/>
+      <value name="CLEARANCE" value="2"/>
+      <value name="OBSTACLE" value="3"/>
+    </enum>
   </enums>
 
   <terminals>
@@ -191,7 +210,7 @@
     <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
     <terminal rt="7" id="nav" name="Navigation - GPS position solver and GPS/dead-reckoning fusion" status="existing" source="Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py" note="Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2)"/>
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
-    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19); the other four are still Python"/>
+    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19) and the terrain-following radar in v1.4 (SA 2, 14-15, 20-23); SAR, targeting and AEWC are still Python"/>
     <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
     <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address"/>
     <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py" note="Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object"/>
@@ -206,7 +225,7 @@
     <terminal rt="21" id="flightsurfaces" name="Flight surfaces" status="new" source="Systems/flightSurfaces"/>
     <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
     <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
-    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance to the radar, engine data to the engine terminal)"/>
+    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4; engine data goes to the engine terminal). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure"/>
   </terminals>
 
   <messages>
@@ -291,7 +310,29 @@
       <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="requested_mode" word="0" bits="11-8" type="enum" enum="tfr_mode"/>
       <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
-      <field name="set_clearance" word="1" bits="15-0" type="uint" doc="Terrain-following set clearance height; limits from rmConfig.xml tfr_radar altitude_range, read as feet" lsb="1" units="ft" min="30" max="5000"/>
+      <field name="set_clearance" word="1" bits="15-0" type="uint" doc="Terrain-following set clearance height; limits from rmConfig.xml tfr_radar altitude_range, read as feet. The path optimiser commands this much above the terrain (tfr_processor's MIN_CLEARANCE_M was a fixed 300 m)" lsb="1" units="ft" min="30" max="5000"/>
+    </message>
+    <message id="RDR_TFR_GUIDANCE" rt="9" sa="20" dir="T" words="8" rate="10" title="Terrain-following guidance">
+      <doc>What the terrain-following radar makes of the terrain ahead, from tfr_processor.py: the clearance assessment of the latest profile against the aircraft's altitude (ClearanceManager.assess_profile: the minimum clearance, the advisory level, which latches at the worst level seen until a profile with no advisory at all), the first altitude command of the path optimiser (PathOptimiser.compute_path, flown at the set clearance), and whether any sample carries a terrain warning (tfr_radar._check_terrain_warnings). Every operating mode produces it, as the Python's radar ran both processors whatever its mode. The flight control computer receives it as FCS_TERRAIN; its minimum clearance is what the ground collision avoidance TERRAIN alert tests. Clearances are negative when the terrain is above the aircraft.</doc>
+      <field name="clearance_ssm" word="0" bits="15-14" type="ssm" for="min_clearance" doc="NORMAL while the radar is operating with a terrain profile and the aircraft's altitude; NO_COMPUTED_DATA otherwise, when every value below is 0"/>
+      <field name="level" word="0" bits="13-11" type="enum" enum="clearance_level" doc="The clearance manager's master level"/>
+      <field name="mode" word="0" bits="10-7" type="enum" enum="tfr_mode" doc="Mode the guidance was computed in; NONE when not operating"/>
+      <field name="pull_up" word="0" bits="6" type="bool" doc="1 = level is PULL_UP"/>
+      <field name="high_terrain" word="0" bits="5" type="bool" doc="1 = a sample is above 1500 m"/>
+      <field name="steep_terrain" word="0" bits="4" type="bool" doc="1 = a sample is more than 300 m from the 1000 m reference (and not high terrain)"/>
+      <field name="commands_valid" word="0" bits="3" type="bool" doc="1 = the path optimiser produced at least one command"/>
+      <field name="spare_0" word="0" bits="2-0" type="spare"/>
+      <field name="profile_seq" word="1" bits="15-8" type="uint" doc="terrain_seq of the profile assessed (PLANT_TERRAIN)"/>
+      <field name="warning_count" word="1" bits="7-0" type="uint" doc="Samples with a terrain warning"/>
+      <field name="terrain_clearance" word="2" bits="15-0" type="sint" lsb="1" units="ft" min="-32768" max="32767" doc="Altitude minus the terrain at the first sample, under the aircraft"/>
+      <field name="min_clearance" word="3" bits="15-0" type="sint" lsb="1" units="ft" min="-32768" max="32767" doc="The smallest clearance over the whole profile"/>
+      <field name="min_clearance_distance" word="4" bits="15-0" type="uint" lsb="1" units="m" min="0" max="65535" doc="Ground distance of that sample"/>
+      <field name="commanded_altitude" word="5" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="The first path command's altitude (MSL); 0 when commands_valid is 0"/>
+      <field name="command_distance" word="6" bits="15-0" type="uint" lsb="1" units="m" min="0" max="65535" doc="Ground distance of that command"/>
+      <field name="set_clearance" word="7" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="The set clearance in force (RDR_TFR_MODE_CMD; 1000 ft until commanded)"/>
+    </message>
+    <message id="RDR_TFR_SENSORS" rt="9" sa="23" dir="R" words="11" rate="50" title="Sensed flight state as received by the radar" layout_of="PLANT_SENSORS">
+      <doc>The terrain-following radar needs the aircraft's altitude for the clearance assessment and its airspeed for the path optimiser's rate limiting; tfr_radar.py used a fixed 1000 m and 250 m/s ("FMS would supply real value").</doc>
     </message>
     <message id="RDR_SAR_STATUS" rt="9" sa="3" dir="T" words="2" rate="5" title="Synthetic aperture radar status" replaces="sar_radarStatusRequest sar_radarStatusResponse sar_radarModeChangeResponse radarStatusRequest radarStatusResponse">
       <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
@@ -713,7 +754,7 @@
     </message>
 
     <!-- ===== v1.1: the plant and the flight control partition's inputs and outputs ===== -->
-    <message id="PLANT_SENSORS" rt="27" sa="1" dir="T" words="12" rate="50" title="Sensed flight state from the plant">
+    <message id="PLANT_SENSORS" rt="27" sa="1" dir="T" words="11" rate="50" title="Sensed flight state from the plant">
       <doc>What the aircraft's sensors would measure, published by the simulated aircraft. Ranges follow flightControlComputer.py (altitude 0-60000 ft, speed 100-1000 kt, pitch +-45, roll +-60, AoA 0-25, g 0.5-9) with headroom. Each quantity carries its own SSM so a sensor can fail alone.</doc>
       <field name="altitude_ssm" word="0" bits="15-14" type="ssm" for="altitude"/>
       <field name="airspeed_ssm" word="0" bits="13-12" type="ssm" for="airspeed"/>
@@ -723,7 +764,7 @@
       <field name="vertical_speed_ssm" word="0" bits="5-4" type="ssm" for="vertical_speed"/>
       <field name="aoa_ssm" word="0" bits="3-2" type="ssm" for="angle_of_attack"/>
       <field name="g_ssm" word="0" bits="1-0" type="ssm" for="g_force"/>
-      <field name="clearance_ssm" word="1" bits="15-14" type="ssm" for="terrain_clearance"/>
+      <field name="spare_1a" word="1" bits="15-14" type="spare" doc="Was the terrain clearance SSM until v1.4"/>
       <field name="flaps_ssm" word="1" bits="13-12" type="ssm" for="flaps"/>
       <field name="gear" word="1" bits="11-10" type="enum" enum="gear_position"/>
       <field name="spare_1" word="1" bits="9-0" type="spare"/>
@@ -736,7 +777,6 @@
       <field name="angle_of_attack" word="8" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
       <field name="g_force" word="9" bits="15-0" type="sint" lsb="1/1000" units="g" min="-20" max="20" doc="Normal load factor, 1.0 in level flight"/>
       <field name="flaps" word="10" bits="15-0" type="uint" lsb="1/100" units="deg" min="0" max="30" doc="fmsControl flaps range"/>
-      <field name="terrain_clearance" word="11" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Height above terrain. From the plant until the radar terminal publishes it"/>
     </message>
     <message id="PLANT_GPS" rt="27" sa="2" dir="T" words="25" rate="1" title="GPS pseudoranges from the plant">
       <doc>What the simulated GPS receiver measures each epoch: for every satellite of the 12-satellite constellation of globalPositionSystem._build_constellation() that is at least 5 degrees above the horizon, pseudorange = geometric range + c x (receiver clock bias - satellite clock bias) + measurement noise (3 m, 1 sigma). The noise is drawn once per epoch here, in the plant; the solver in the navigation terminal is deterministic. epoch increments with each new set; a pseudorange whose satellite bit is 0 in visible_mask is not valid.</doc>
@@ -812,7 +852,7 @@
       <doc>Relayed by the bus controller from PLANT_SENSORS in the same minor frame (relays section). The FCS computes FCS_ATTITUDE, GCAS and the performance envelope from it.</doc>
     </message>
     <message id="FCS_GCAS_ALERTS" rt="5" sa="14" dir="T" words="4" rate="5" title="Ground collision avoidance alerts">
-      <doc>groundCollisionAvoidanceSys.py, evaluated every frame: PULLUP when vertical speed is at or below -4000 ft/min and altitude is below 2000 ft; otherwise SINK_RATE when vertical speed is at or below -2000 ft/min; TERRAIN when terrain clearance is below 500 ft; ALT_LOW when altitude is below 200 ft and TERRAIN is not set. PULLUP, SINK_RATE and TERRAIN are severity 1 (WARNING); ALT_LOW is severity 2 (CAUTION). The values that drove the decision ride along so a display can show them without another message.</doc>
+      <doc>groundCollisionAvoidanceSys.py, evaluated every frame: PULLUP when vertical speed is at or below -4000 ft/min and altitude is below 2000 ft; otherwise SINK_RATE when vertical speed is at or below -2000 ft/min; TERRAIN when the terrain clearance is below 500 ft; ALT_LOW when altitude is below 200 ft and TERRAIN is not set. PULLUP, SINK_RATE and TERRAIN are severity 1 (WARNING); ALT_LOW is severity 2 (CAUTION). The terrain clearance is the terrain-following radar's minimum clearance over the profile ahead (FCS_TERRAIN, from v1.4); while the radar provides none (not operating, no profile, or the message stale) there is no TERRAIN alert and the clearance SSM is NO_COMPUTED_DATA, as the Python's GCAS treated a missing TFR value. The values that drove the decision ride along so a display can show them without another message.</doc>
       <field name="status" word="0" bits="15-14" type="enum" enum="gcas_status"/>
       <field name="pullup" word="0" bits="13" type="bool"/>
       <field name="sink_rate" word="0" bits="12" type="bool"/>
@@ -824,7 +864,7 @@
       <field name="spare_0" word="0" bits="3-0" type="spare"/>
       <field name="vertical_speed" word="1" bits="15-0" type="sint" lsb="1" units="ft/min" min="-30000" max="30000"/>
       <field name="altitude" word="2" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
-      <field name="terrain_clearance" word="3" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
+      <field name="terrain_clearance" word="3" bits="15-0" type="sint" lsb="1" units="ft" min="-32768" max="32767" doc="The radar's minimum clearance ahead; negative when terrain ahead is above the aircraft"/>
     </message>
     <message id="FCS_PERF_STATUS" rt="5" sa="15" dir="T" words="4" rate="1" title="Flight envelope monitoring">
       <doc>performaneMonitoring.py: an exceedance bit is set while the magnitude of the parameter is above its limit - g 9.0, angle of attack 25 deg, roll 60 deg, pitch 45 deg, vertical speed 6000 ft/min. Fuel efficiency is airspeed / (fuel flow / 60) in nm per kg and is NO_COMPUTED_DATA until the engine terminal publishes fuel flow.</doc>
@@ -841,13 +881,18 @@
       <field name="angle_of_attack" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90"/>
       <field name="fuel_efficiency" word="3" bits="15-0" type="uint" lsb="1/1000" units="nm/kg" min="0" max="65.535"/>
     </message>
+    <message id="FCS_TERRAIN" rt="5" sa="16" dir="R" words="8" rate="10" title="Terrain clearance as received by the flight control computer" layout_of="RDR_TFR_GUIDANCE">
+      <doc>The terrain-following radar's guidance, relayed. The ground collision avoidance function reads min_clearance when clearance_ssm is NORMAL and the message is fresh (stale after three periods, 0.3 s); otherwise it has no terrain clearance, as groundCollisionAvoidanceSys.py had none when the TFR gave it nothing.</doc>
+    </message>
   </messages>
 
   <!-- RT-to-RT transfers the bus controller performs: in the minor frame where it polls `from`,
        it writes the same words into `to` straight away. The two must share a layout (one is
        layout_of the other); `from` transmits periodically, `to` receives. A producer may feed
        several consumers (one relay each, at most four). This is how a producer's data reaches its
-       consumers, and how a display's command reaches the terminal it is for. -->
+       consumers, and how a display's command reaches the terminal it is for. A relay may also connect two block streams
+       (section 8): the BC forwards the descriptor and every segment, and the receiving block is
+       layout_of the transmitted one. -->
   <relays>
     <relay from="PLANT_SENSORS" to="FCS_SENSORS"/>
     <relay from="PLANT_SENSORS" to="FMS_SENSORS"/>
@@ -861,11 +906,16 @@
     <relay from="MFD_RDR_SAR_CMD" to="RDR_SAR_MODE_CMD"/>
     <relay from="MFD_RDR_TGT_CMD" to="RDR_TGT_MODE_CMD"/>
     <relay from="MFD_RDR_AEWC_CMD" to="RDR_AEWC_MODE_CMD"/>
+    <relay from="PLANT_SENSORS" to="RDR_TFR_SENSORS"/>
+    <relay from="RDR_TFR_GUIDANCE" to="FCS_TERRAIN"/>
+    <relay from="PLANT_TERRAIN" to="RDR_TFR_TERRAIN"/>
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
-       v1 fixes the addresses and rates; the payload layouts come in v2. (The FMS_DATA block of v1
-       became the FMS_FLIGHT_DATA message in v1.2: the flight data fits in one message.) -->
+       v1 fixed the addresses and rates; each radar's payload layout arrives with its port
+       (RDR_WX_PRODUCTS v1.3, RDR_TFR_ELEVATION v1.4). (The FMS_DATA block of v1 became the
+       FMS_FLIGHT_DATA message in v1.2: the flight data fits in one message.) A block with
+       dir="R" is the receiving end of a block relay and is layout_of the block it copies. -->
   <blocks>
     <block id="RDR_WX_PRODUCTS" rt="9" desc_sa="6" seg_sa="7" rate="50" title="Weather radar products" replaces="weather_radarVILResponse DISPLAY_VIL_DATA weather_radarData radarDataRequest radarDataResponse weather_radarPrecipitationResponse">
       <doc>Everything one scan produced, published as one block when the scan completes so a consumer always draws a consistent picture (README section 8). Which sections are filled depends on the mode: SURVEILLANCE fills vil, precip and cells; MAPPING and PRECIPITATION fill precip and areas; WINDSHEAR fills windshear; TURBULENCE fills turbulence. Positions are polar from the aircraft: true azimuth and range. The record limits apply after the selection described in the README (the Python's own limits for the VIL and precipitation points; new for the rest); the counts before the limits are in RDR_WX_SCAN. The segment subaddress is polled every frame, so an 18-segment block arrives in 0.36 s, well inside the 1.2 s scan.</doc>
@@ -936,8 +986,48 @@
     </block>
     <block id="RDR_TGT_TRACKS" rt="9" desc_sa="10" seg_sa="11" rate="10" title="Targeting radar tracks" payload="TBD-v2" replaces="targeting_radarTrackResponse targeting_radarData"/>
     <block id="RDR_AEWC_SECTOR" rt="9" desc_sa="12" seg_sa="13" rate="10" title="AEWC sector scan" payload="TBD-v2" replaces="aewc_radarSectorScanResponse aewc_radarData"/>
-    <block id="RDR_TFR_ELEVATION" rt="9" desc_sa="14" seg_sa="15" rate="10" title="TFR elevation profile" payload="TBD-v2" replaces="tfr_radarElevationDataResponse tfr_radarData"/>
+    <block id="RDR_TFR_ELEVATION" rt="9" desc_sa="14" seg_sa="15" rate="50" title="TFR elevation profile" replaces="tfr_radarElevationDataResponse tfr_radarData">
+      <doc>The terrain profile the radar assessed, sample by sample with its clearance level and terrain warning, and the path optimiser's altitude commands, as tfr_radar.py's elevation profile and terrain warning messages carried them to the display. Sample i is at ground distance i x range_m / (samples - 1) ahead along the heading; the samples are the profile section's records. The block is republished when a new profile has been assessed and at least 15 frames (0.3 s) have passed since the last one, so a 10-segment block always arrives whole; the guidance message carries the latest assessment every frame. An empty profile with mode NONE is published when the radar stops operating.</doc>
+      <header words="6">
+        <field name="profile_seq" word="0" bits="15-8" type="uint" doc="terrain_seq of the PLANT_TERRAIN profile assessed"/>
+        <field name="mode" word="0" bits="7-4" type="enum" enum="tfr_mode" doc="Mode the radar was in; NONE with every section empty when not operating"/>
+        <field name="level" word="0" bits="3-1" type="enum" enum="clearance_level" doc="The clearance manager's master level"/>
+        <field name="pull_up" word="0" bits="0" type="bool"/>
+        <field name="range_m" word="1" bits="15-0" type="uint" lsb="1" units="m" min="0" max="65535" doc="Ground distance of the last sample"/>
+        <field name="commands_truncated" word="2" bits="15" type="bool" doc="1 = the path optimiser produced more commands than the section holds; the nearest are kept"/>
+        <field name="spare_2" word="2" bits="14-0" type="spare"/>
+        <field name="altitude" word="3" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Aircraft altitude the profile was assessed against"/>
+        <field name="set_clearance" word="4" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Set clearance the path was computed for"/>
+        <field name="min_clearance" word="5" bits="15-0" type="sint" lsb="1" units="ft" min="-32768" max="32767" doc="The smallest clearance over the profile"/>
+      </header>
+      <section id="profile" words="2" max="100" title="Assessed terrain profile" doc="One record per terrain sample, nearest first: the elevation, the clearance level of that sample against the aircraft's altitude (ClearanceManager), and the terrain warning of that sample (HIGH_TERRAIN above 1500 m, else STEEP_TERRAIN when more than 300 m from 1000 m)">
+        <field name="elevation" word="0" bits="15-0" type="sint" lsb="1/4" units="m" min="-8192" max="8191.75" doc="Terrain height above mean sea level"/>
+        <field name="level" word="1" bits="15-13" type="enum" enum="clearance_level"/>
+        <field name="warning" word="1" bits="12-11" type="enum" enum="terrain_warning"/>
+        <field name="spare_1" word="1" bits="10-0" type="spare"/>
+      </section>
+      <section id="commands" words="3" max="32" title="Path altitude commands" doc="PathOptimiser.compute_path over the samples within the 9260 m look-ahead window: the required altitude is the highest terrain in a sliding window of max(5, n / 10) samples plus the set clearance, rate-limited to 25 m/s of altitude change at the aircraft's speed, a command emitted when it moves by more than 20 m from the last one, and a final CLEARANCE command at the window's end when the last command is below the window's highest terrain plus the set clearance. Nearest first">
+        <field name="distance" word="0" bits="15-0" type="uint" lsb="1" units="m" min="0" max="65535" doc="Ground distance of the command"/>
+        <field name="altitude" word="1" bits="15-0" type="uint" lsb="1/2" units="m" min="0" max="32767.5" doc="Commanded altitude above mean sea level"/>
+        <field name="reason" word="2" bits="15-14" type="enum" enum="path_reason"/>
+        <field name="spare_2" word="2" bits="13-0" type="spare"/>
+      </section>
+    </block>
     <block id="RDR_SAR_IMAGE" rt="9" desc_sa="16" seg_sa="17" rate="1" title="SAR image" payload="TBD-v2" replaces="sar_radarImageResponse sar_radarData"/>
+    <block id="PLANT_TERRAIN" rt="27" desc_sa="4" seg_sa="5" rate="50" title="Terrain profile ahead, from the plant">
+      <doc>What the terrain-following radar's antenna would measure: the terrain elevation at evenly spaced ground distances ahead of the aircraft along its heading, from the aircraft (sample 0) to range_m (the last sample), 100 samples over 10 km as tfr_radar.py's profile was. The plant samples its terrain, a fixed function of position (fmofp_plant.terrain), at the aircraft's position and heading every tenth of a second; sample i is at distance i x range_m / (samples - 1), the samples being this block's elevation records. The four segments take four frames, so a profile is complete at the radar before the next one is published.</doc>
+      <header words="2">
+        <field name="terrain_seq" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every profile"/>
+        <field name="spare_0" word="0" bits="7-0" type="spare"/>
+        <field name="range_m" word="1" bits="15-0" type="uint" lsb="1" units="m" min="0" max="65535" doc="Ground distance of the last sample"/>
+      </header>
+      <section id="elevation" words="1" max="100" title="Terrain elevation samples" doc="Nearest first; the record count is the sample count">
+        <field name="elevation" word="0" bits="15-0" type="sint" lsb="1/4" units="m" min="-8192" max="8191.75" doc="Terrain height above mean sea level"/>
+      </section>
+    </block>
+    <block id="RDR_TFR_TERRAIN" rt="9" dir="R" desc_sa="21" seg_sa="22" rate="50" title="Terrain profile as received by the radar" layout_of="PLANT_TERRAIN">
+      <doc>The relayed PLANT_TERRAIN: the bus controller writes the plant's descriptor and segments here in the frames it polls them, and the radar reassembles the profile.</doc>
+    </block>
   </blocks>
 
   <mode_codes>

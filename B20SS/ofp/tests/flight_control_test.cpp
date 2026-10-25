@@ -12,10 +12,11 @@ namespace {
 using fmofp::Status;
 using fmofp::fcs::FlightControl;
 using fmofp::fcs::GcasThresholds;
+using fmofp::fcs::TerrainClearance;
 using fmofp::fcs::kSensorStaleFrames;
 using namespace fmofp::icd;  // NOLINT: test
 
-PlantSensors sensors(double altitude, double vs, double clearance = 10000.0) {
+PlantSensors sensors(double altitude, double vs) {
     PlantSensors s{};
     s.altitude_ssm = Ssm::NORMAL;
     s.airspeed_ssm = Ssm::NORMAL;
@@ -25,13 +26,11 @@ PlantSensors sensors(double altitude, double vs, double clearance = 10000.0) {
     s.vertical_speed_ssm = Ssm::NORMAL;
     s.aoa_ssm = Ssm::NORMAL;
     s.g_ssm = Ssm::NORMAL;
-    s.clearance_ssm = Ssm::NORMAL;
     s.flaps_ssm = Ssm::NORMAL;
     s.gear = GearPosition::UP;
     s.altitude = altitude;
     s.airspeed = 300.0;
     s.vertical_speed = vs;
-    s.terrain_clearance = clearance;
     s.g_force = 1.0;
     s.angle_of_attack = 2.0;
     s.heading = 90.0;
@@ -44,13 +43,26 @@ FcsSensors as_fcs(const PlantSensors& p) {
     return f;
 }
 
+// The TFR's minimum clearance ahead, as FCS_TERRAIN carries it.
+TerrainClearance clearance(double feet) { return TerrainClearance{true, feet}; }
+const TerrainClearance kNoClearance{};
+
+FcsTerrain as_terrain(double feet) {
+    FcsTerrain t{};
+    t.payload.clearance_ssm = Ssm::NORMAL;
+    t.payload.level = ClearanceLevel::CLEAR;
+    t.payload.min_clearance = feet;
+    t.payload.terrain_clearance = feet;
+    return t;
+}
+
 struct Expected {
     bool pullup, sink_rate, terrain, alt_low;
     GcasStatus status;
 };
 
-void expect_gcas(const PlantSensors& s, const Expected& e, const char* why) {
-    const FcsGcasAlerts a = FlightControl::evaluate_gcas(s, GcasThresholds{});
+void expect_gcas(const PlantSensors& s, const TerrainClearance& c, const Expected& e, const char* why) {
+    const FcsGcasAlerts a = FlightControl::evaluate_gcas(s, c, GcasThresholds{});
     EXPECT_EQ(e.pullup, a.pullup) << why;
     EXPECT_EQ(e.sink_rate, a.sink_rate) << why;
     EXPECT_EQ(e.terrain, a.terrain) << why;
@@ -60,31 +72,37 @@ void expect_gcas(const PlantSensors& s, const Expected& e, const char* why) {
 
 TEST(Gcas, ReproducesEveryBranchOfThePython) {
     // (altitude, vs, clearance) -> alerts, from groundCollisionAvoidanceSys._evaluate.
-    expect_gcas(sensors(30000, 0), {false, false, false, false, GcasStatus::ARMED}, "cruise");
-    expect_gcas(sensors(1500, -4000), {true, false, false, false, GcasStatus::WARNING}, "pullup at the threshold");
-    expect_gcas(sensors(1999, -4500), {true, false, false, false, GcasStatus::WARNING}, "pullup below 2000 ft");
-    expect_gcas(sensors(2000, -4500), {false, true, false, false, GcasStatus::WARNING},
+    const TerrainClearance high = clearance(10000);
+    expect_gcas(sensors(30000, 0), high, {false, false, false, false, GcasStatus::ARMED}, "cruise");
+    expect_gcas(sensors(1500, -4000), high, {true, false, false, false, GcasStatus::WARNING}, "pullup at the threshold");
+    expect_gcas(sensors(1999, -4500), high, {true, false, false, false, GcasStatus::WARNING}, "pullup below 2000 ft");
+    expect_gcas(sensors(2000, -4500), high, {false, true, false, false, GcasStatus::WARNING},
                 "at 2000 ft it is only a sink rate");
-    expect_gcas(sensors(30000, -2000), {false, true, false, false, GcasStatus::WARNING}, "sink rate at the threshold");
-    expect_gcas(sensors(30000, -1999), {false, false, false, false, GcasStatus::ARMED}, "just above sink rate");
-    expect_gcas(sensors(30000, 0, 499), {false, false, true, false, GcasStatus::WARNING}, "terrain below 500 ft");
-    expect_gcas(sensors(30000, 0, 500), {false, false, false, false, GcasStatus::ARMED}, "500 ft is not terrain");
-    expect_gcas(sensors(199, 0), {false, false, false, true, GcasStatus::CAUTION}, "alt low");
-    expect_gcas(sensors(200, 0), {false, false, false, false, GcasStatus::ARMED}, "200 ft is not low");
-    expect_gcas(sensors(150, 0, 100), {false, false, true, false, GcasStatus::WARNING},
+    expect_gcas(sensors(30000, -2000), high, {false, true, false, false, GcasStatus::WARNING},
+                "sink rate at the threshold");
+    expect_gcas(sensors(30000, -1999), high, {false, false, false, false, GcasStatus::ARMED}, "just above sink rate");
+    expect_gcas(sensors(30000, 0), clearance(499), {false, false, true, false, GcasStatus::WARNING},
+                "terrain below 500 ft");
+    expect_gcas(sensors(30000, 0), clearance(500), {false, false, false, false, GcasStatus::ARMED},
+                "500 ft is not terrain");
+    expect_gcas(sensors(30000, 0), clearance(-650), {false, false, true, false, GcasStatus::WARNING},
+                "terrain ahead above the aircraft is terrain");
+    expect_gcas(sensors(199, 0), high, {false, false, false, true, GcasStatus::CAUTION}, "alt low");
+    expect_gcas(sensors(200, 0), high, {false, false, false, false, GcasStatus::ARMED}, "200 ft is not low");
+    expect_gcas(sensors(150, 0), clearance(100), {false, false, true, false, GcasStatus::WARNING},
                 "terrain suppresses alt low");
-    expect_gcas(sensors(150, -4000, 100), {true, false, true, false, GcasStatus::WARNING},
+    expect_gcas(sensors(150, -4000), clearance(100), {true, false, true, false, GcasStatus::WARNING},
                 "pullup and terrain together");
-    expect_gcas(sensors(150, -3000), {false, true, false, true, GcasStatus::WARNING},
+    expect_gcas(sensors(150, -3000), high, {false, true, false, true, GcasStatus::WARNING},
                 "sink rate and alt low: warning wins");
 }
 
 TEST(Gcas, InvalidSensorsBehaveLikeThePythonsDefaults) {
     // The Python read altitude as 30000 and vs as 0 when the FMS had none,
     // and clearance as None when the TFR had none.
-    PlantSensors s = sensors(100, -5000, 100);
+    PlantSensors s = sensors(100, -5000);
     s.altitude_ssm = Ssm::NO_COMPUTED_DATA;
-    FcsGcasAlerts a = FlightControl::evaluate_gcas(s, GcasThresholds{});
+    FcsGcasAlerts a = FlightControl::evaluate_gcas(s, clearance(100), GcasThresholds{});
     EXPECT_FALSE(a.pullup) << "no altitude: cannot be below 2000 ft";
     EXPECT_TRUE(a.sink_rate) << "the vs alone still says sink rate";
     EXPECT_FALSE(a.alt_low);
@@ -92,19 +110,46 @@ TEST(Gcas, InvalidSensorsBehaveLikeThePythonsDefaults) {
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, a.altitude_ssm);
     EXPECT_DOUBLE_EQ(0.0, a.altitude);
 
-    s = sensors(100, -5000, 100);
+    s = sensors(100, -5000);
     s.vertical_speed_ssm = Ssm::FAILURE_WARNING;
-    a = FlightControl::evaluate_gcas(s, GcasThresholds{});
+    a = FlightControl::evaluate_gcas(s, clearance(100), GcasThresholds{});
     EXPECT_FALSE(a.pullup);
     EXPECT_FALSE(a.sink_rate);
     EXPECT_TRUE(a.terrain);
 
-    s = sensors(100, 0, 100);
-    s.clearance_ssm = Ssm::NO_COMPUTED_DATA;
-    a = FlightControl::evaluate_gcas(s, GcasThresholds{});
+    s = sensors(100, 0);
+    a = FlightControl::evaluate_gcas(s, kNoClearance, GcasThresholds{});
     EXPECT_FALSE(a.terrain) << "no clearance: no terrain alert";
     EXPECT_TRUE(a.alt_low) << "and nothing suppresses alt low";
     EXPECT_EQ(GcasStatus::CAUTION, a.status);
+    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, a.clearance_ssm);
+}
+
+TEST(Gcas, TerrainComesFromTheRadarAndGoesStale) {
+    FlightControl fc;
+    ASSERT_EQ(Status::kOk, fc.init());
+    const FcsSensors in = as_fcs(sensors(3000, 0));
+    const FcsTerrain terrain = as_terrain(400);
+    fc.step(&in, nullptr, 1);
+    EXPECT_FALSE(fc.gcas().terrain) << "no FCS_TERRAIN yet";
+    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.gcas().clearance_ssm);
+    fc.step(&in, &terrain, 2);
+    EXPECT_TRUE(fc.gcas().terrain);
+    EXPECT_EQ(Ssm::NORMAL, fc.gcas().clearance_ssm);
+    EXPECT_DOUBLE_EQ(400.0, fc.gcas().terrain_clearance);
+    // 10 Hz: the clearance holds for three periods, then it is gone.
+    for (std::uint32_t f = 3; f < 2 + fmofp::fcs::kTerrainStaleFrames; ++f) {
+        fc.step(&in, nullptr, f);
+        EXPECT_TRUE(fc.gcas().terrain) << "frame " << f;
+    }
+    fc.step(&in, nullptr, 2 + fmofp::fcs::kTerrainStaleFrames);
+    EXPECT_FALSE(fc.gcas().terrain);
+    EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.gcas().clearance_ssm);
+    // A radar that is not operating says so in the SSM: no clearance either.
+    FcsTerrain standby = as_terrain(400);
+    standby.payload.clearance_ssm = Ssm::NO_COMPUTED_DATA;
+    fc.step(&in, &standby, 40);
+    EXPECT_FALSE(fc.gcas().terrain);
 }
 
 TEST(Envelope, ExceedancesAtTheLimits) {
@@ -138,29 +183,29 @@ TEST(FlightControl, StateFollowsTheSensors) {
     FlightControl fc;
     ASSERT_EQ(Status::kOk, fc.init());
     EXPECT_EQ(TerminalState::INITIALIZING, fc.state());
-    fc.step(nullptr, 1);
+    fc.step(nullptr, nullptr, 1);
     EXPECT_EQ(TerminalState::INITIALIZING, fc.state());
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.attitude().roll_ssm);
     EXPECT_EQ(GcasStatus::OFF, fc.gcas().status);
 
     const FcsSensors in = as_fcs(sensors(30000, 0));
-    fc.step(&in, 2);
+    fc.step(&in, nullptr, 2);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
     EXPECT_EQ(Ssm::NORMAL, fc.attitude().roll_ssm);
     EXPECT_EQ(GcasStatus::ARMED, fc.gcas().status);
     EXPECT_DOUBLE_EQ(90.0, fc.attitude().yaw);
 
     // Two frames without sensors are still fresh; the third is stale.
-    fc.step(nullptr, 3);
-    fc.step(nullptr, 4);
+    fc.step(nullptr, nullptr, 3);
+    fc.step(nullptr, nullptr, 4);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
-    fc.step(nullptr, 2 + kSensorStaleFrames);
+    fc.step(nullptr, nullptr, 2 + kSensorStaleFrames);
     EXPECT_EQ(TerminalState::DEGRADED, fc.state());
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.attitude().pitch_ssm);
     EXPECT_EQ(GcasStatus::OFF, fc.gcas().status);
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.gcas().altitude_ssm);
 
-    fc.step(&in, 10);
+    fc.step(&in, nullptr, 10);
     EXPECT_EQ(TerminalState::NORMAL, fc.state()) << "recovers when data returns";
 }
 
@@ -170,11 +215,11 @@ TEST(FlightControl, YawWrapsHeadingIntoPlusMinus180) {
     PlantSensors p = sensors(30000, 0);
     p.heading = 270.0;
     FcsSensors in = as_fcs(p);
-    fc.step(&in, 1);
+    fc.step(&in, nullptr, 1);
     EXPECT_DOUBLE_EQ(-90.0, fc.attitude().yaw);
     p.heading = 180.0;
     in = as_fcs(p);
-    fc.step(&in, 2);
+    fc.step(&in, nullptr, 2);
     EXPECT_DOUBLE_EQ(180.0, fc.attitude().yaw) << "exactly 180 stays 180, which the field cannot carry";
 }
 
@@ -182,14 +227,14 @@ TEST(FlightControl, ModeCommandsFollowTheSequenceRule) {
     FlightControl fc;
     ASSERT_EQ(Status::kOk, fc.init());
     const FcsSensors in = as_fcs(sensors(30000, 0));
-    fc.step(&in, 1);
+    fc.step(&in, nullptr, 1);
     ASSERT_EQ(TerminalState::NORMAL, fc.state());
 
     FcsModeCmd cmd{};
     cmd.requested_state = TerminalState::STANDBY;
     cmd.cmd_seq = 7;
     fc.command_mode(cmd);
-    fc.step(&in, 2);
+    fc.step(&in, nullptr, 2);
     EXPECT_EQ(TerminalState::STANDBY, fc.state());
     EXPECT_EQ(7, fc.status().last_cmd_seq);
     EXPECT_FALSE(fc.status().cmd_rejected);
@@ -197,17 +242,17 @@ TEST(FlightControl, ModeCommandsFollowTheSequenceRule) {
 
     cmd.requested_state = TerminalState::NORMAL;
     fc.command_mode(cmd);  // same cmd_seq: ignored
-    fc.step(&in, 3);
+    fc.step(&in, nullptr, 3);
     EXPECT_EQ(TerminalState::STANDBY, fc.state());
     cmd.cmd_seq = 8;
     fc.command_mode(cmd);
-    fc.step(&in, 4);
+    fc.step(&in, nullptr, 4);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
 
     cmd.requested_state = TerminalState::FAILURE;  // not something the bus may ask for
     cmd.cmd_seq = 9;
     fc.command_mode(cmd);
-    fc.step(&in, 5);
+    fc.step(&in, nullptr, 5);
     EXPECT_EQ(TerminalState::NORMAL, fc.state());
     EXPECT_TRUE(fc.status().cmd_rejected);
     EXPECT_EQ(9, fc.status().last_cmd_seq);
@@ -258,12 +303,12 @@ TEST(FlightControl, SelfTestRunsForAFewFramesAndResetReinitialises) {
     FlightControl fc;
     ASSERT_EQ(Status::kOk, fc.init());
     const FcsSensors in = as_fcs(sensors(30000, 0));
-    fc.step(&in, 1);
+    fc.step(&in, nullptr, 1);
     fc.start_self_test();
-    fc.step(&in, 2);
+    fc.step(&in, nullptr, 2);
     EXPECT_TRUE(fc.bit().in_progress);
     for (std::uint32_t f = 3; f < 20; ++f) {
-        fc.step(&in, f);
+        fc.step(&in, nullptr, f);
     }
     EXPECT_FALSE(fc.bit().in_progress);
     EXPECT_FALSE(fc.bit().failed);
@@ -272,15 +317,16 @@ TEST(FlightControl, SelfTestRunsForAFewFramesAndResetReinitialises) {
     fc.reset();
     EXPECT_EQ(TerminalState::INITIALIZING, fc.state());
     EXPECT_EQ(Ssm::FAILURE_WARNING, fc.attitude().roll_ssm) << "fresh outputs are the all-zero fail-safe";
-    fc.step(nullptr, 1);
+    fc.step(nullptr, nullptr, 1);
     EXPECT_EQ(Ssm::NO_COMPUTED_DATA, fc.attitude().roll_ssm) << "and NCD once it has run without data";
 }
 
 TEST(FlightControl, OutputsEncodeCleanly) {
     FlightControl fc;
     ASSERT_EQ(Status::kOk, fc.init());
-    const FcsSensors in = as_fcs(sensors(1500, -4500, 300));
-    fc.step(&in, 1);
+    const FcsSensors in = as_fcs(sensors(1500, -4500));
+    const FcsTerrain terrain = as_terrain(300);
+    fc.step(&in, &terrain, 1);
     FcsGcasAlerts::Words gw{};
     EXPECT_EQ(Status::kOk, fc.gcas().encode(gw));
     FcsGcasAlerts back{};

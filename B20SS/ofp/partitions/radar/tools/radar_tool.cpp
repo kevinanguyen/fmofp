@@ -1,9 +1,11 @@
-// fmofp_radar_tool: the weather radar's pure functions on stdin/stdout, so the
+// fmofp_radar_tool: the radar computer's pure functions on stdin/stdout, so the
 // Python tests can run the original Python beside them
-// (B20SS/fmofp_bus/tests/test_weather_oracle.py). Test support, not flight code.
+// (B20SS/fmofp_bus/tests/test_weather_oracle.py, test_tfr_oracle.py). Test
+// support, not flight code.
 //
 // One command per line; numbers are printed with 17 significant digits. The
-// tool keeps a truth, a mode, a texture and a range, and one WeatherRadar.
+// tool keeps a weather truth, a mode, a texture, a range and one WeatherRadar,
+// plus a terrain profile and the clearance manager's latch.
 //   sigfigs <x> [n]                               -> round_to_sigfigs
 //   truth <n> {az range size dbz profile}*n <m> [az range width depth dbz]   (m is 0 or 1)
 //   mode SURVEILLANCE|MAPPING|TURBULENCE|WINDSHEAR|PRECIPITATION
@@ -17,6 +19,13 @@
 //   cells | areas | windshear | turbulence        -> one line per item, then "end"
 //   summary                                       -> the RDR_WX_SCAN numbers
 //   payload                                       -> "payload <length> <hex words...>" of the products block
+// Terrain following (tfr_processor.py, tfr_radar.py):
+//   tfr_profile <range_m> <n> <elevation_m>*n     -> ok; the profile the next commands work on
+//   tfr_assess <altitude_m>                       -> "<master> <min_clearance_m> <min_index> <advisories>",
+//                                                    then "i distance level" per sample, "end"; updates the latch
+//   tfr_reset                                     -> the latch back to CLEAR
+//   tfr_path <altitude_m> <speed_mps> <clearance_m> -> "distance altitude reason" per command, "end"
+//   tfr_warnings                                  -> "i distance warning" per sample, "end"
 
 #include <cstdio>
 #include <iostream>
@@ -26,6 +35,7 @@
 
 #include <fmofp/bus/status.hpp>
 #include <fmofp/icd/blocks.hpp>
+#include <fmofp/radar/terrain_following.hpp>
 #include <fmofp/radar/weather_model.hpp>
 #include <fmofp/radar/weather_products.hpp>
 #include <fmofp/radar/weather_radar.hpp>
@@ -43,6 +53,8 @@ radar::Texture g_texture;
 double g_range_km = 200.0;
 std::uint32_t g_frame = 0;
 std::vector<fmofp::bus::Word> g_payload(icd::RdrWxProducts::kMaxPayloadWords);
+radar::TerrainProfile g_profile;
+icd::ClearanceLevel g_master = icd::ClearanceLevel::CLEAR;
 
 void print_values(const std::vector<double>& values) {
     bool first = true;
@@ -140,6 +152,53 @@ void do_payload() {
         std::printf(" %04X", static_cast<unsigned>(g_payload[i]));
     }
     std::printf("\n");
+}
+
+bool do_tfr_profile(std::istringstream& in) {
+    std::vector<double> head;
+    if (!read(in, head, 2)) {
+        return false;
+    }
+    const auto n = static_cast<std::size_t>(head[1]);
+    std::vector<double> heights;
+    if (n == 0 || n > radar::kMaxProfileSamples || !read(in, heights, n)) {
+        return false;
+    }
+    g_profile = radar::TerrainProfile{};
+    g_profile.range_m = head[0];
+    g_profile.samples = n;
+    for (std::size_t i = 0; i < n; ++i) {
+        g_profile.elevation_m[i] = heights[i];
+    }
+    return true;
+}
+
+void do_tfr_assess(double altitude_m) {
+    radar::ClearanceAssessment a{};
+    radar::assess_profile(g_profile, altitude_m, g_master, a);
+    g_master = a.master;
+    std::printf("%s %.17g %zu %zu\n", icd::to_string(a.master), a.min_clearance_m, a.min_index, a.advisories);
+    for (std::size_t i = 0; i < g_profile.samples; ++i) {
+        std::printf("%zu %.17g %s\n", i, g_profile.distance_m(i), icd::to_string(a.level[i]));
+    }
+    std::printf("end\n");
+}
+
+void do_tfr_path(double altitude_m, double speed_mps, double clearance_m) {
+    radar::PathCommands c{};
+    radar::compute_path(g_profile, altitude_m, speed_mps, clearance_m, c);
+    for (std::size_t i = 0; i < c.count; ++i) {
+        std::printf("%.17g %.17g %s\n", c.command[i].distance_m, c.command[i].altitude_m,
+                    icd::to_string(c.command[i].reason));
+    }
+    std::printf("end\n");
+}
+
+void do_tfr_warnings() {
+    for (std::size_t i = 0; i < g_profile.samples; ++i) {
+        std::printf("%zu %.17g %s\n", i, g_profile.distance_m(i), icd::to_string(radar::terrain_warning(g_profile.elevation_m[i])));
+    }
+    std::printf("end\n");
 }
 
 }  // namespace
@@ -271,6 +330,17 @@ int main() {
             do_summary();
         } else if (cmd == "payload") {
             do_payload();
+        } else if (cmd == "tfr_profile") {
+            std::printf(do_tfr_profile(in) ? "ok\n" : "error kInvalidArgument\n");
+        } else if (cmd == "tfr_assess" && read(in, a, 1)) {
+            do_tfr_assess(a[0]);
+        } else if (cmd == "tfr_reset") {
+            g_master = icd::ClearanceLevel::CLEAR;
+            std::printf("ok\n");
+        } else if (cmd == "tfr_path" && read(in, a, 3)) {
+            do_tfr_path(a[0], a[1], a[2]);
+        } else if (cmd == "tfr_warnings") {
+            do_tfr_warnings();
         } else {
             std::printf("error unknown command '%s'\n", cmd.c_str());
         }

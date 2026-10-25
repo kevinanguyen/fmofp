@@ -39,14 +39,25 @@ struct EnvelopeLimits {
 // Sensor data older than this many frames is treated as absent (ICD README
 // section 4: stale after 3 periods; FCS_SENSORS is 50 Hz, one per frame).
 constexpr std::uint32_t kSensorStaleFrames = 3;
+// FCS_TERRAIN, the terrain-following radar's guidance, is 10 Hz.
+constexpr std::uint32_t kTerrainStaleFrames = 15;
+
+// The terrain clearance the ground collision avoidance function works with:
+// the radar's minimum clearance over the profile ahead, or none at all, which
+// is what the Python's GCAS had whenever the TFR gave it nothing.
+struct TerrainClearance {
+    bool valid{false};
+    double feet{0.0};
+};
 
 class FlightControl {
 public:
     [[nodiscard]] Status init() noexcept;
 
-    // The partition's frame. `sensors` is the FCS_SENSORS received this frame,
-    // or null if none arrived; `frame` is the partition's own frame count.
-    void step(const icd::FcsSensors* sensors, std::uint32_t frame) noexcept;
+    // The partition's frame. `sensors` is the FCS_SENSORS received this frame
+    // and `terrain` the FCS_TERRAIN, each null if none arrived; `frame` is the
+    // partition's own frame count.
+    void step(const icd::FcsSensors* sensors, const icd::FcsTerrain* terrain, std::uint32_t frame) noexcept;
 
     // Commands, each applied only when its cmd_seq is new (ICD README section 5).
     void command_mode(const icd::FcsModeCmd& cmd) noexcept;
@@ -65,11 +76,12 @@ public:
     [[nodiscard]] bus::BitWord bit() const noexcept { return bit_; }
 
     // The two decision functions, exposed so tests can table them against the Python.
-    static icd::FcsGcasAlerts evaluate_gcas(const icd::PlantSensors& s, const GcasThresholds& t) noexcept;
+    static icd::FcsGcasAlerts evaluate_gcas(const icd::PlantSensors& s, const TerrainClearance& clearance,
+                                            const GcasThresholds& t) noexcept;
     static icd::FcsPerfStatus evaluate_envelope(const icd::PlantSensors& s, const EnvelopeLimits& l) noexcept;
 
 private:
-    void produce_outputs(bool sensors_valid) noexcept;
+    void produce_outputs(bool sensors_valid, bool terrain_valid) noexcept;
     void invalidate_outputs() noexcept;
 
     icd::FcsStatus status_{};
@@ -80,6 +92,9 @@ private:
     icd::PlantSensors last_sensors_{};
     bool have_sensors_{false};
     std::uint32_t last_sensor_frame_{0};
+    icd::RdrTfrGuidance last_terrain_{};
+    bool have_terrain_{false};
+    std::uint32_t last_terrain_frame_{0};
     std::uint32_t self_test_started_{0};
     bool self_test_running_{false};
     bus::BitWord bit_{};

@@ -18,6 +18,7 @@ add_executable(ofp_tests
     weather_model_test.cpp
     weather_products_test.cpp
     weather_radar_test.cpp
+    terrain_following_test.cpp
     icd_messages_test.cpp)
 add_dependencies(ofp_tests ofp_icd_generate)
 target_link_libraries(ofp_tests PRIVATE

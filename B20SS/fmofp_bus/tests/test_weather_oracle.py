@@ -30,7 +30,8 @@ import numpy as np
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd.enums import PrecipType, WeatherMode
 from fmofp_bus.status import Status
-from fmofp_bus.tests._support import binary_env, needs
+from fmofp_bus.tests._support import RadarTool as Tool
+from fmofp_bus.tests._support import needs
 
 SCAN_INTERVAL_S = 1.2
 AZIMUTHS, RANGES = 360, 200
@@ -59,38 +60,6 @@ def profile(entry):
     if entry:
         return {i: max(0.2, 1.0 - (i * 0.15)) for i in range(10)}
     return {i: (1.0 - (i * 0.1)) if i < 4 else max(0.2, 1.0 - (i * 0.2)) for i in range(10)}
-
-
-class Tool:
-    """One fmofp_radar_tool run; answers are read back command by command."""
-
-    def __init__(self):
-        self.lines = []
-        self.out = []
-        self.pos = 0
-
-    def send(self, *commands):
-        self.lines += commands
-
-    def run(self):
-        result = subprocess.run([os.environ["FMOFP_RADAR_TOOL"]], input="\n".join(self.lines) + "\n",
-                                capture_output=True, text=True, timeout=600, env=binary_env())
-        assert result.returncode == 0, result.stderr
-        self.out = result.stdout.splitlines()
-        self.pos = 0
-        return self
-
-    def line(self):
-        self.pos += 1
-        return self.out[self.pos - 1].split()
-
-    def block(self):
-        rows = []
-        while True:
-            row = self.line()
-            if row == ["end"]:
-                return rows
-            rows.append(row)
 
 
 def python_volume(cells, area, elevations, azimuths=AZIMUTHS, ranges=RANGES):

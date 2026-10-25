@@ -25,6 +25,7 @@ header, one count word per section, then every section's records in order.
     include/fmofp/icd/enums.hpp     one enum class per ICD enum, with validity checks
     include/fmofp/icd/messages.hpp  one struct per message with encode()/decode()
     include/fmofp/icd/blocks.hpp    one struct per block stream whose payload layout is defined
+                                    (a receive block names its layout's struct), kBlocks, kBlockRelays
     icd_roundtrip_test.cpp          a GoogleTest round-trip test for every message and block
 The generated code uses only fmofp/bus/word.hpp for bit access, so the headers are
 the only place a message layout exists on the C++ side.
@@ -69,6 +70,12 @@ class Icd:
 
     def error(self, where, text):
         self.errors.append(f"{where}: {text}")
+
+    def block(self, block_id):
+        for b in self.blocks:
+            if b["id"] == block_id:
+                return b
+        return None
 
     def message(self, message_id):
         return next((m for m in self.messages if m["id"] == message_id), None)
@@ -145,16 +152,31 @@ def load(path):
             entry["fields"] = by_id[source]["fields"]
             entry["words"] = by_id[source]["words"]
 
+    blocks_by_id = {}
     for b in root.iter("block"):
         entry = dict(b.attrib)
+        entry.setdefault("dir", "T")
         entry["doc"] = (b.findtext("doc") or "").strip()
         header = b.find("header")
         entry["header"] = None if header is None else {
             "words": int(header.get("words", "0")), "fields": [dict(f.attrib) for f in header.iter("field")]}
+        entry["own_header"] = header is not None
         entry["sections"] = [dict(sec.attrib, doc=(sec.get("doc") or "").strip(),
                                   fields=[dict(f.attrib) for f in sec.iter("field")])
                              for sec in b.iter("section")]
+        if entry["id"] in blocks_by_id:
+            icd.error(f"block {entry['id']}", "duplicate block id")
+        blocks_by_id[entry["id"]] = entry
         icd.blocks.append(entry)
+    # A receive block is the consumer's copy of a transmit block: same payload layout.
+    for entry in icd.blocks:
+        source = entry.get("layout_of")
+        if source:
+            if source not in blocks_by_id or blocks_by_id[source].get("layout_of"):
+                icd.error(f"block {entry['id']}", f"layout_of names unknown or derived block '{source}'")
+                continue
+            entry["header"] = blocks_by_id[source]["header"]
+            entry["sections"] = blocks_by_id[source]["sections"]
     icd.mode_codes = [dict(m.attrib) for m in root.iter("mode_code")]
     icd.legacy = [dict(lg.attrib) for lg in root.iter("legacy")]
     icd.relays = [dict(r.attrib) for r in root.iter("relay")]
@@ -346,6 +368,16 @@ def check_block(icd, block):
     where = f"block {block['id']}"
     if block.get("rate") not in RATES - {"aperiodic"}:
         icd.error(where, f"rate '{block.get('rate')}' must be periodic")
+    if block.get("dir") not in ("T", "R"):
+        icd.error(where, f"dir '{block.get('dir')}' must be T or R")
+    if block.get("dir") == "R" and not block.get("layout_of"):
+        icd.error(where, "a receive block must be layout_of the transmit block it is a copy of")
+    if block.get("layout_of"):
+        if block.get("dir") != "R":
+            icd.error(where, "only a receive block may be layout_of another")
+        if block.get("own_header"):
+            icd.error(where, "a layout_of block defines no payload of its own")
+        return  # the layout was checked on its source
     if not has_layout(block):
         if block.get("payload") != "TBD-v2":
             icd.error(where, 'no <header>: a block without a payload layout must say payload="TBD-v2"')
@@ -394,7 +426,7 @@ def check_addresses(icd):
             sa = int(block[key])
             if not MIN_SA <= sa <= MAX_SA:
                 icd.error(where, f"{key} {sa} outside {MIN_SA}-{MAX_SA}")
-            claim(rt, sa, "T", f"{where} ({key})")
+            claim(rt, sa, block.get("dir", "T"), f"{where} ({key})")
 
     codes = set()
     for mc in icd.mode_codes:
@@ -452,10 +484,40 @@ def check_legacy(icd):
     icd.legacy_count = len(legacy)
 
 
+def is_block_relay(icd, relay):
+    return icd.block(relay.get("from")) is not None or icd.block(relay.get("to")) is not None
+
+
+def message_relays(icd):
+    """The relays between messages (the block relays are in kBlockRelays / BLOCK_RELAYS)."""
+    return [r for r in icd.relays if not is_block_relay(icd, r)]
+
+
+def check_block_relay(icd, relay, where):
+    src, dst = icd.block(relay.get("from")), icd.block(relay.get("to"))
+    if src is None or dst is None:
+        icd.error(where, "a block relay must connect two blocks")
+        return
+    if src.get("dir") != "T" or dst.get("dir") != "R":
+        icd.error(where, "`from` must be a transmit block and `to` a receive block")
+    if not has_layout(src) or dst.get("layout_of") != src["id"]:
+        icd.error(where, "`to` must be layout_of `from`, which must define its payload")
+    if int(src["rt"]) == int(dst["rt"]):
+        icd.error(where, "must connect two different terminals")
+    if dst.get("rate") != src.get("rate"):
+        icd.error(where, f"`to` is {dst.get('rate')} Hz but is delivered at `from`'s {src.get('rate')} Hz")
+
+
 def check_relays(icd):
     targets = set()
     for relay in icd.relays:
         where = f"relay {relay.get('from')} -> {relay.get('to')}"
+        if is_block_relay(icd, relay):
+            check_block_relay(icd, relay, where)
+            if relay.get("to") in targets:
+                icd.error(where, f"{relay.get('to')} is already the target of another relay")
+            targets.add(relay.get("to"))
+            continue
         src, dst = icd.message(relay.get("from")), icd.message(relay.get("to"))
         if src is None or dst is None:
             icd.error(where, "names an unknown message")
@@ -563,15 +625,17 @@ def render(icd):
       "one count word per section, then every section's records in order; the layouts are under "
       "[Block payloads](#block-payloads).")
     w("")
-    w("| ID | RT | Descriptor SA | Segment SA | Rate (Hz) | Title | Payload |")
-    w("|---|---|---|---|---|---|---|")
+    w("| ID | RT | Dir | Descriptor SA | Segment SA | Rate (Hz) | Title | Payload |")
+    w("|---|---|---|---|---|---|---|---|")
     for b in icd.blocks:
-        if has_layout(b):
+        if b.get("layout_of"):
+            payload = f"as [`{b['layout_of']}`](#{b['layout_of'].lower()}) (relayed copy)"
+        elif has_layout(b):
             payload = (f"[header {b['header']['words']} words + {len(b['sections'])} sections, "
                        f"at most {block_payload_words(b)} words](#{b['id'].lower()})")
         else:
             payload = b.get("payload")
-        w(f"| `{b['id']}` | {b['rt']} | {b['desc_sa']} | {b['seg_sa']} | {b['rate']} | "
+        w(f"| `{b['id']}` | {b['rt']} | {b.get('dir', 'T')} | {b['desc_sa']} | {b['seg_sa']} | {b['rate']} | "
           f"{md_escape(b.get('title'))} | {payload} |")
     w("")
 
@@ -581,9 +645,17 @@ def render(icd):
       "`to` straight away. This is how a producer's data reaches its consumers and how a display's "
       "command reaches the terminal it is for.")
     w("")
+    w("A relay between two block streams forwards the descriptor and each segment the same way, so "
+      "the consumer reassembles the block as the producer published it.")
+    w("")
     w("| From | To | Words | Rate (Hz) |")
     w("|---|---|---|---|")
     for relay in icd.relays:
+        if is_block_relay(icd, relay):
+            src = icd.block(relay["from"])
+            w(f"| [`{relay['from']}`](#{relay['from'].lower()}) | `{relay['to']}` | "
+              f"block: 4 + 32 per frame | {src.get('rate') if src else '?'} |")
+            continue
         src = icd.message(relay["from"])
         w(f"| [`{relay['from']}`](#{relay['from'].lower()}) | [`{relay['to']}`](#{relay['to'].lower()}) | "
           f"{src.get('words') if src else '?'} | {src.get('rate') if src else '?'} |")
@@ -640,7 +712,7 @@ def render(icd):
     w("## Block payloads")
     w("")
     for b in icd.blocks:
-        if not has_layout(b):
+        if not has_layout(b) or b.get("layout_of"):
             continue
         w(f"### {b['id']}")
         w("")
@@ -1078,9 +1150,9 @@ def gen_messages_hpp(icd):
         "    std::uint8_t rate_hz;",
         "};",
         "",
-        f"inline constexpr std::array<RelayInfo, {len(icd.relays)}> kRelays = {{{{",
+        f"inline constexpr std::array<RelayInfo, {len(message_relays(icd))}> kRelays = {{{{",
     ]
-    for relay in icd.relays:
+    for relay in message_relays(icd):
         src, dst = pascal(relay["from"]), pascal(relay["to"])
         out.append(f"    {{\"{relay['from']}\", \"{relay['to']}\", {src}::kRt, {src}::kSubaddress, "
                    f"{dst}::kRt, {dst}::kSubaddress, {src}::kWords, {src}::kRateHz}},")
@@ -1104,6 +1176,11 @@ def record_name(block, section):
     return pascal(block["id"]) + pascal(section["id"])
 
 
+def block_layout(block):
+    """The id whose record and payload structs a block uses: its own, or its layout_of source's."""
+    return block.get("layout_of") or block["id"]
+
+
 def gen_blocks_hpp(icd):
     blocks = [b for b in icd.blocks if has_layout(b)]
     out = cpp_header(icd, "Block transfer payloads of the FMOFP bus ICD: one struct per block stream, encoding and "
@@ -1119,6 +1196,7 @@ def gen_blocks_hpp(icd):
         "#include <fmofp/bus/status.hpp>",
         "#include <fmofp/bus/word.hpp>",
         "#include <fmofp/icd/enums.hpp>",
+        "#include <fmofp/icd/messages.hpp>",
         "",
         "namespace fmofp::icd {",
         "",
@@ -1138,7 +1216,19 @@ def gen_blocks_hpp(icd):
         sections = block["sections"]
         out.append("")
         out.append(f"// {block['id']} - {block.get('title', '')}: RT {int(block['rt'])}, descriptor SA "
-                   f"{int(block['desc_sa'])}, segment SA {int(block['seg_sa'])}, {int(block['rate'])} Hz")
+                   f"{int(block['desc_sa'])}, segment SA {int(block['seg_sa'])}, {int(block['rate'])} Hz"
+                   + (", receive" if block.get("dir") == "R" else ""))
+        if block.get("layout_of"):
+            # The consumer's copy of a relayed block: the source's payload struct under this block's addresses.
+            source = pascal(block["layout_of"])
+            out.append(f"// The bus controller forwards {block['layout_of']}'s descriptor and segments here; the")
+            out.append(f"// payload is {source}.")
+            out.append(f"struct {name} {{")
+            out += block_constants(block)
+            out.append(f"    static constexpr std::uint16_t kMaxPayloadWords = {source}::kMaxPayloadWords;")
+            out.append(f"    using Layout = {source};")
+            out.append("};")
+            continue
         for sec in sections:
             rname = record_name(block, sec)
             out.append("")
@@ -1177,10 +1267,7 @@ def gen_blocks_hpp(icd):
         if block.get("doc"):
             out.append(f"// {block['doc']}")
         out.append(f"struct {name} {{")
-        out.append(f"    static constexpr std::uint8_t kRt = {int(block['rt'])}U;")
-        out.append(f"    static constexpr std::uint8_t kDescriptorSubaddress = {int(block['desc_sa'])}U;")
-        out.append(f"    static constexpr std::uint8_t kSegmentSubaddress = {int(block['seg_sa'])}U;")
-        out.append(f"    static constexpr std::uint8_t kRateHz = {int(block['rate'])}U;")
+        out += block_constants(block)
         out.append(f"    static constexpr std::uint16_t kHeaderWords = {header['words']}U;")
         out.append(f"    static constexpr std::uint16_t kSections = {len(sections)}U;")
         out.append(f"    static constexpr std::uint16_t kMaxPayloadWords = {block_payload_words(block)}U;")
@@ -1276,14 +1363,18 @@ def gen_blocks_hpp(icd):
         out.append("    return Status::kOk;")
         out.append("}")
 
+    block_relays = [r for r in icd.relays if is_block_relay(icd, r)]
     out += [
         "",
         "// Every block stream whose payload the ICD defines, for schedule building and tests.",
+        "// A receive block is the consumer's end of a block relay: the bus controller",
+        "// delivers it, so it is never polled.",
         "struct BlockInfo {",
         "    const char* id;",
         "    std::uint8_t rt;",
         "    std::uint8_t descriptor_subaddress;",
         "    std::uint8_t segment_subaddress;",
+        "    Direction direction;",
         "    std::uint8_t rate_hz;",
         "    std::uint16_t max_payload_words;",
         "};",
@@ -1293,9 +1384,44 @@ def gen_blocks_hpp(icd):
     for block in blocks:
         name = pascal(block["id"])
         out.append(f"    {{\"{block['id']}\", {name}::kRt, {name}::kDescriptorSubaddress, {name}::kSegmentSubaddress, "
-                   f"{name}::kRateHz, {name}::kMaxPayloadWords}},")
+                   f"{name}::kDirection, {name}::kRateHz, {name}::kMaxPayloadWords}},")
+    out += [
+        "}};",
+        "",
+        "// Block relays: in the frame where the bus controller polls `from`'s descriptor",
+        "// or segment subaddress, it writes the same words into `to`'s.",
+        "struct BlockRelayInfo {",
+        "    const char* from;",
+        "    const char* to;",
+        "    std::uint8_t from_rt;",
+        "    std::uint8_t from_descriptor_subaddress;",
+        "    std::uint8_t from_segment_subaddress;",
+        "    std::uint8_t to_rt;",
+        "    std::uint8_t to_descriptor_subaddress;",
+        "    std::uint8_t to_segment_subaddress;",
+        "    std::uint8_t rate_hz;",
+        "};",
+        "",
+        f"inline constexpr std::array<BlockRelayInfo, {len(block_relays)}> kBlockRelays = {{{{",
+    ]
+    for relay in block_relays:
+        src, dst = pascal(relay["from"]), pascal(relay["to"])
+        out.append(f"    {{\"{relay['from']}\", \"{relay['to']}\", {src}::kRt, {src}::kDescriptorSubaddress, "
+                   f"{src}::kSegmentSubaddress, {dst}::kRt, {dst}::kDescriptorSubaddress, {dst}::kSegmentSubaddress, "
+                   f"{src}::kRateHz}},")
     out += ["}};", "", "}  // namespace fmofp::icd", "", "#endif"]
     return "\n".join(out) + "\n"
+
+
+def block_constants(block, indent="    "):
+    direction = "Direction::kTransmit" if block.get("dir", "T") == "T" else "Direction::kReceive"
+    return [
+        f"{indent}static constexpr std::uint8_t kRt = {int(block['rt'])}U;",
+        f"{indent}static constexpr std::uint8_t kDescriptorSubaddress = {int(block['desc_sa'])}U;",
+        f"{indent}static constexpr std::uint8_t kSegmentSubaddress = {int(block['seg_sa'])}U;",
+        f"{indent}static constexpr Direction kDirection = {direction};",
+        f"{indent}static constexpr std::uint8_t kRateHz = {int(block['rate'])}U;",
+    ]
 
 
 def probe_value(icd, field):
@@ -1431,7 +1557,7 @@ def gen_block_tests(icd):
     """Round trip of a full block, an empty one, and the refusals of a bad length and count."""
     out = []
     for block in icd.blocks:
-        if not has_layout(block):
+        if not has_layout(block) or block.get("layout_of"):
             continue
         name = pascal(block["id"])
         sections = block["sections"]
@@ -1777,7 +1903,7 @@ def gen_py_messages(icd):
         "# same words into `to` in the same minor frame.",
         "RELAYS = (",
     ]
-    for relay in icd.relays:
+    for relay in message_relays(icd):
         src, dst = pascal(relay["from"]), pascal(relay["to"])
         out.append(f"    RelayInfo(\"{relay['from']}\", \"{relay['to']}\", {src}.RT, {src}.SUBADDRESS, "
                    f"{dst}.RT, {dst}.SUBADDRESS, {src}.WORDS, {src}.RATE_HZ),")
@@ -1821,6 +1947,19 @@ def gen_py_blocks(icd):
         name = pascal(block["id"])
         header = block["header"]
         sections = block["sections"]
+        if block.get("layout_of"):
+            source = pascal(block["layout_of"])
+            out += ["", "", f"class {name}:"]
+            out.append(f'    """{block["id"]} - {block.get("title", "")}. RT {int(block["rt"])} · descriptor SA '
+                       f'{int(block["desc_sa"])} · segment SA {int(block["seg_sa"])} · {int(block["rate"])} Hz, receive.')
+            out.append("")
+            out.append(f"    The bus controller forwards {block['layout_of']}'s descriptor and segments here; "
+                       f"the payload is {source}.")
+            out.append('    """')
+            out += py_block_constants(block)
+            out.append(f"    MAX_PAYLOAD_WORDS: ClassVar[int] = {source}.MAX_PAYLOAD_WORDS")
+            out.append(f"    LAYOUT = {source}")
+            continue
         for sec in sections:
             rname = record_name(block, sec)
             out += ["", "", "@dataclass", f"class {rname}:"]
@@ -1852,10 +1991,7 @@ def gen_py_blocks(icd):
             out.append("")
             out.append(f"    {block['doc']}")
         out.append('    """')
-        out.append(f"    RT: ClassVar[int] = {int(block['rt'])}")
-        out.append(f"    DESCRIPTOR_SUBADDRESS: ClassVar[int] = {int(block['desc_sa'])}")
-        out.append(f"    SEGMENT_SUBADDRESS: ClassVar[int] = {int(block['seg_sa'])}")
-        out.append(f"    RATE_HZ: ClassVar[int] = {int(block['rate'])}")
+        out += py_block_constants(block)
         out.append(f"    HEADER_WORDS: ClassVar[int] = {header['words']}")
         out.append(f"    SECTIONS: ClassVar[Tuple[str, ...]] = ({''.join(repr(sec['id']) + ', ' for sec in sections)})")
         out.append(f"    MAX_PAYLOAD_WORDS: ClassVar[int] = {block_payload_words(block)}")
@@ -1911,20 +2047,51 @@ def gen_py_blocks(icd):
             out.append(f"            pos += {rname}.WORDS")
         out.append("        return Status.OK, m")
 
+    block_relays = [r for r in icd.relays if is_block_relay(icd, r)]
     out += [
         "",
         "",
-        'BlockInfo = namedtuple("BlockInfo", "id rt descriptor_subaddress segment_subaddress rate_hz max_payload_words cls")',
+        'BlockInfo = namedtuple("BlockInfo", "id rt descriptor_subaddress segment_subaddress direction rate_hz '
+        'max_payload_words cls")',
         "",
-        "# Every block stream whose payload the ICD defines, in ICD order.",
+        "# Every block stream whose payload the ICD defines, in ICD order. A receive",
+        "# block is the consumer's end of a block relay; its cls is the layout's class.",
         "BLOCKS = (",
     ]
     for block in blocks:
         name = pascal(block["id"])
+        cls = pascal(block_layout(block))
         out.append(f"    BlockInfo(\"{block['id']}\", {name}.RT, {name}.DESCRIPTOR_SUBADDRESS, {name}.SEGMENT_SUBADDRESS, "
-                   f"{name}.RATE_HZ, {name}.MAX_PAYLOAD_WORDS, {name}),")
-    out += [")", "", "BLOCK_CLASSES = {info.id: info.cls for info in BLOCKS}"]
+                   f"{name}.DIRECTION, {name}.RATE_HZ, {name}.MAX_PAYLOAD_WORDS, {cls}),")
+    out += [
+        ")",
+        "",
+        "BLOCK_CLASSES = {info.id: info.cls for info in BLOCKS}",
+        "",
+        'BlockRelayInfo = namedtuple("BlockRelayInfo", "from_id to_id from_rt from_descriptor_subaddress '
+        'from_segment_subaddress to_rt to_descriptor_subaddress to_segment_subaddress rate_hz")',
+        "",
+        "# Block relays: in the frame where the bus controller polls `from`'s descriptor",
+        "# or segment subaddress, it writes the same words into `to`'s.",
+        "BLOCK_RELAYS = (",
+    ]
+    for relay in block_relays:
+        src, dst = pascal(relay["from"]), pascal(relay["to"])
+        out.append(f"    BlockRelayInfo(\"{relay['from']}\", \"{relay['to']}\", {src}.RT, {src}.DESCRIPTOR_SUBADDRESS, "
+                   f"{src}.SEGMENT_SUBADDRESS, {dst}.RT, {dst}.DESCRIPTOR_SUBADDRESS, {dst}.SEGMENT_SUBADDRESS, "
+                   f"{src}.RATE_HZ),")
+    out += [")"]
     return "\n".join(out) + "\n"
+
+
+def py_block_constants(block, indent="    "):
+    return [
+        f"{indent}RT: ClassVar[int] = {int(block['rt'])}",
+        f"{indent}DESCRIPTOR_SUBADDRESS: ClassVar[int] = {int(block['desc_sa'])}",
+        f"{indent}SEGMENT_SUBADDRESS: ClassVar[int] = {int(block['seg_sa'])}",
+        f"{indent}DIRECTION: ClassVar[str] = \"{block.get('dir', 'T')}\"",
+        f"{indent}RATE_HZ: ClassVar[int] = {int(block['rate'])}",
+    ]
 
 
 def gen_py(icd, out_dir):
@@ -1966,7 +2133,8 @@ def main(argv=None):
     expanded = sum(len(message_rts(icd, m)) for m in icd.messages)
     print(f"{args.icd.name}: OK - {len(icd.terminals)} terminals, {len(icd.messages)} message definitions "
           f"({expanded} after expanding per-terminal ones), {len(icd.blocks)} block streams "
-          f"({sum(1 for b in icd.blocks if has_layout(b))} with payload layouts), "
+          f"({sum(1 for b in icd.blocks if has_layout(b) and not b.get('layout_of'))} with payload layouts, "
+          f"{sum(1 for b in icd.blocks if b.get('layout_of'))} relayed copies), "
           f"{len(icd.mode_codes)} mode codes, {icd.legacy_count} legacy types all mapped")
 
     if args.command == "render":

@@ -26,6 +26,16 @@ bool is_relay_target(std::uint8_t rt, std::uint8_t sa) noexcept {
     });
 }
 
+Status add_relay(ScheduledMessage& m, std::uint8_t rt, std::uint8_t sa) noexcept {
+    if (m.relay_count >= kMaxRelaysPerMessage) {
+        return Status::kBadLength;
+    }
+    m.relays[m.relay_count].rt = rt;
+    m.relays[m.relay_count].subaddress = sa;
+    ++m.relay_count;
+    return Status::kOk;
+}
+
 Status add_one(Schedule& schedule, const icd::MessageInfo& info, std::uint8_t rt,
                const std::uint8_t* terminals, std::size_t count) noexcept {
     ScheduledMessage m;
@@ -42,15 +52,45 @@ Status add_one(Schedule& schedule, const icd::MessageInfo& info, std::uint8_t rt
                 !listed(terminals, count, relay.to_rt)) {
                 continue;
             }
-            if (m.relay_count >= kMaxRelaysPerMessage) {
-                return Status::kBadLength;
+            const Status s = add_relay(m, relay.to_rt, relay.to_subaddress);
+            if (s != Status::kOk) {
+                return s;
             }
-            m.relays[m.relay_count].rt = relay.to_rt;
-            m.relays[m.relay_count].subaddress = relay.to_subaddress;
-            ++m.relay_count;
         }
     }
     return schedule.add(m);
+}
+
+// Block streams (ICD README section 8): the descriptor and the segment
+// subaddress are polled like any periodic transmit message, and a block relay
+// forwards both to each consumer that is present.
+Status add_block(Schedule& schedule, const icd::BlockInfo& block, const std::uint8_t* terminals,
+                 std::size_t count) noexcept {
+    ScheduledMessage descriptor;
+    descriptor.rt = block.rt;
+    descriptor.subaddress = block.descriptor_subaddress;
+    descriptor.transmit = true;
+    descriptor.words = bus::kBlockDescriptorWords;
+    descriptor.rate_hz = block.rate_hz;
+    ScheduledMessage segment = descriptor;
+    segment.subaddress = block.segment_subaddress;
+    segment.words = bus::kBlockSegmentWords;
+    for (const icd::BlockRelayInfo& relay : icd::kBlockRelays) {
+        if (relay.from_rt != block.rt || relay.from_descriptor_subaddress != block.descriptor_subaddress ||
+            !listed(terminals, count, relay.to_rt)) {
+            continue;
+        }
+        const Status d = add_relay(descriptor, relay.to_rt, relay.to_descriptor_subaddress);
+        const Status s = add_relay(segment, relay.to_rt, relay.to_segment_subaddress);
+        if (d != Status::kOk || s != Status::kOk) {
+            return Status::kBadLength;
+        }
+    }
+    const Status d = schedule.add(descriptor);
+    if (d != Status::kOk) {
+        return d;
+    }
+    return schedule.add(segment);
 }
 
 }  // namespace
@@ -81,26 +121,12 @@ Status add_icd_messages(Schedule& schedule, const std::uint8_t* terminals, std::
             }
         }
     }
-    // Block streams (ICD README section 8): the descriptor and the segment
-    // subaddress are polled like any periodic transmit message.
+    // A receive block is the far end of a block relay: delivered, never polled.
     for (const icd::BlockInfo& block : icd::kBlocks) {
-        if (!listed(terminals, count, block.rt)) {
+        if (block.direction != icd::Direction::kTransmit || !listed(terminals, count, block.rt)) {
             continue;
         }
-        ScheduledMessage descriptor;
-        descriptor.rt = block.rt;
-        descriptor.subaddress = block.descriptor_subaddress;
-        descriptor.transmit = true;
-        descriptor.words = bus::kBlockDescriptorWords;
-        descriptor.rate_hz = block.rate_hz;
-        const Status d = schedule.add(descriptor);
-        if (d != Status::kOk) {
-            return d;
-        }
-        ScheduledMessage segment = descriptor;
-        segment.subaddress = block.segment_subaddress;
-        segment.words = bus::kBlockSegmentWords;
-        const Status s = schedule.add(segment);
+        const Status s = add_block(schedule, block, terminals, count);
         if (s != Status::kOk) {
             return s;
         }

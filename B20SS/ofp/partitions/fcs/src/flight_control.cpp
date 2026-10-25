@@ -76,6 +76,9 @@ Status FlightControl::init() noexcept {
     last_sensors_ = icd::PlantSensors{};
     have_sensors_ = false;
     last_sensor_frame_ = 0;
+    last_terrain_ = icd::RdrTfrGuidance{};
+    have_terrain_ = false;
+    last_terrain_frame_ = 0;
     self_test_running_ = false;
     self_test_started_ = 0;
     bit_ = bus::BitWord{};
@@ -91,13 +94,20 @@ void FlightControl::start_self_test() noexcept {
     bit_.in_progress = true;
 }
 
-void FlightControl::step(const icd::FcsSensors* sensors, std::uint32_t frame) noexcept {
+void FlightControl::step(const icd::FcsSensors* sensors, const icd::FcsTerrain* terrain,
+                         std::uint32_t frame) noexcept {
     if (sensors != nullptr) {
         last_sensors_ = sensors->payload;
         have_sensors_ = true;
         last_sensor_frame_ = frame;
     }
+    if (terrain != nullptr) {
+        last_terrain_ = terrain->payload;
+        have_terrain_ = true;
+        last_terrain_frame_ = frame;
+    }
     const bool fresh = have_sensors_ && frame - last_sensor_frame_ < kSensorStaleFrames;
+    const bool terrain_fresh = have_terrain_ && frame - last_terrain_frame_ < kTerrainStaleFrames;
 
     if (self_test_running_) {
         if (self_test_started_ == 0) {
@@ -123,18 +133,21 @@ void FlightControl::step(const icd::FcsSensors* sensors, std::uint32_t frame) no
     status_.healthy = !bit_.failed;
     status_.mode_transition = false;
     if (status_.state == TerminalState::NORMAL || status_.state == TerminalState::DEGRADED) {
-        produce_outputs(fresh);
+        produce_outputs(fresh, terrain_fresh);
     } else {
         invalidate_outputs();
     }
 }
 
-void FlightControl::produce_outputs(bool sensors_valid) noexcept {
+void FlightControl::produce_outputs(bool sensors_valid, bool terrain_valid) noexcept {
     if (!sensors_valid) {
         invalidate_outputs();
         return;
     }
     const icd::PlantSensors& s = last_sensors_;
+    TerrainClearance clearance{};
+    clearance.valid = terrain_valid && usable(last_terrain_.clearance_ssm);
+    clearance.feet = last_terrain_.min_clearance;
 
     attitude_.roll_ssm = s.roll_ssm;
     attitude_.pitch_ssm = s.pitch_ssm;
@@ -144,7 +157,7 @@ void FlightControl::produce_outputs(bool sensors_valid) noexcept {
     // FCS_ATTITUDE carries yaw as -180..+180; the plant publishes heading 0..360.
     attitude_.yaw = s.heading > 180.0 ? s.heading - 360.0 : s.heading;
 
-    gcas_ = evaluate_gcas(s, gcas_thresholds_);
+    gcas_ = evaluate_gcas(s, clearance, gcas_thresholds_);
     perf_ = evaluate_envelope(s, limits_);
 }
 
@@ -162,11 +175,12 @@ void FlightControl::invalidate_outputs() noexcept {
     perf_.fuel_ssm = Ssm::NO_COMPUTED_DATA;
 }
 
-icd::FcsGcasAlerts FlightControl::evaluate_gcas(const icd::PlantSensors& s, const GcasThresholds& t) noexcept {
+icd::FcsGcasAlerts FlightControl::evaluate_gcas(const icd::PlantSensors& s, const TerrainClearance& clearance,
+                                                const GcasThresholds& t) noexcept {
     icd::FcsGcasAlerts a{};
     const bool alt_ok = usable(s.altitude_ssm);
     const bool vs_ok = usable(s.vertical_speed_ssm);
-    const bool clearance_ok = usable(s.clearance_ssm);
+    const bool clearance_ok = clearance.valid && std::isfinite(clearance.feet);
     const double alt = alt_ok ? s.altitude : kDefaultAltitudeFt;
     const double vs = vs_ok ? s.vertical_speed : kDefaultVsFpm;
 
@@ -176,7 +190,7 @@ icd::FcsGcasAlerts FlightControl::evaluate_gcas(const icd::PlantSensors& s, cons
     } else if (vs <= t.sink_vs_fpm) {
         a.sink_rate = true;
     }
-    if (clearance_ok && s.terrain_clearance < t.terrain_ft) {
+    if (clearance_ok && clearance.feet < t.terrain_ft) {
         a.terrain = true;
     }
     if (alt < t.alt_low_ft && !a.terrain) {
@@ -191,7 +205,7 @@ icd::FcsGcasAlerts FlightControl::evaluate_gcas(const icd::PlantSensors& s, cons
     a.clearance_ssm = clearance_ok ? Ssm::NORMAL : Ssm::NO_COMPUTED_DATA;
     a.vertical_speed = vs_ok ? s.vertical_speed : 0.0;
     a.altitude = alt_ok ? s.altitude : 0.0;
-    a.terrain_clearance = clearance_ok ? s.terrain_clearance : 0.0;
+    a.terrain_clearance = clearance_ok ? clearance.feet : 0.0;
     return a;
 }
 

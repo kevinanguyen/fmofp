@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 
+#include <fmofp/bus/remote_terminal.hpp>
 #include <fmofp/bus/status.hpp>
 #include <fmofp/bus/word.hpp>
 
@@ -11,7 +12,8 @@
 // travels as a 4-word descriptor and 32-word segments on two transmit
 // subaddresses. BlockTransmitter is the producer's side, BlockReceiver the
 // consumer's. Neither owns memory: the partition hands each a buffer it
-// allocated statically.
+// allocated statically. BlockPublisher and BlockCollector put them on a
+// RemoteTerminal's subaddresses, which is all a partition process has to do.
 
 namespace fmofp::bus {
 
@@ -103,6 +105,43 @@ private:
     std::array<std::uint32_t, kMaxBlockSegments / 32U> received_{};
     bool complete_{false};
     std::uint32_t completed_blocks_{0};
+};
+
+// A producer's block on its two transmit subaddresses: publish() a payload,
+// then serve() it every frame. The segment on offer moves on each time the
+// terminal's transmit count for the segment subaddress shows the bus took it.
+class BlockPublisher {
+public:
+    [[nodiscard]] Status init(Word* storage, std::uint16_t capacity) noexcept;
+
+    // A new payload, served from its first segment.
+    [[nodiscard]] Status publish(const RemoteTerminal& terminal, std::uint8_t segment_sa, const Word* payload,
+                                 std::uint16_t count) noexcept;
+
+    // Every frame after the terminal has handled the bus: advance past a segment
+    // the bus took, then load the descriptor and the segment to offer next.
+    [[nodiscard]] Status serve(RemoteTerminal& terminal, std::uint8_t descriptor_sa, std::uint8_t segment_sa) noexcept;
+
+    [[nodiscard]] std::uint8_t version() const noexcept { return tx_.version(); }
+    [[nodiscard]] const BlockTransmitter& transmitter() const noexcept { return tx_; }
+
+private:
+    BlockTransmitter tx_{};
+    std::uint32_t segment_reads_{0};
+    bool published_{false};
+};
+
+// A consumer's block on its two receive subaddresses (the far end of a block
+// relay): collect() feeds whatever arrived since the last call to the receiver
+// and is true when a block has just completed.
+class BlockCollector {
+public:
+    [[nodiscard]] Status init(Word* storage, std::uint16_t capacity) noexcept;
+    [[nodiscard]] bool collect(RemoteTerminal& terminal, std::uint8_t descriptor_sa, std::uint8_t segment_sa) noexcept;
+    [[nodiscard]] const BlockReceiver& receiver() const noexcept { return rx_; }
+
+private:
+    BlockReceiver rx_{};
 };
 
 }  // namespace fmofp::bus

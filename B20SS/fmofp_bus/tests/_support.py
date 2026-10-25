@@ -11,6 +11,7 @@ The binaries are named by environment variables (CI sets them):
 """
 
 import os
+import subprocess
 import sys
 import unittest
 
@@ -27,3 +28,35 @@ def needs(*names):
     """Skip the test class unless every named binary is configured."""
     missing = [n for n in names if not os.environ.get(n)]
     return unittest.skipIf(missing, f"set {', '.join(missing)} to the binaries to run")
+
+
+class RadarTool:
+    """One fmofp_radar_tool run; answers are read back command by command."""
+
+    def __init__(self):
+        self.lines = []
+        self.out = []
+        self.pos = 0
+
+    def send(self, *commands):
+        self.lines += commands
+
+    def run(self):
+        result = subprocess.run([os.environ["FMOFP_RADAR_TOOL"]], input="\n".join(self.lines) + "\n",
+                                capture_output=True, text=True, timeout=600, env=binary_env())
+        assert result.returncode == 0, result.stderr
+        self.out = result.stdout.splitlines()
+        self.pos = 0
+        return self
+
+    def line(self):
+        self.pos += 1
+        return self.out[self.pos - 1].split()
+
+    def block(self):
+        rows = []
+        while True:
+            row = self.line()
+            if row == ["end"]:
+                return rows
+            rows.append(row)
