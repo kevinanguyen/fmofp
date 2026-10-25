@@ -357,12 +357,14 @@ TEST_F(Rt, CarriesAGeneratedMessageEndToEnd) {
 
 TEST(CommandSequenceRule, ActsOnlyOnAChangedNumber) {
     CommandSequence seq;
-    EXPECT_TRUE(seq.accept(0));
-    EXPECT_FALSE(seq.accept(0));
+    EXPECT_FALSE(seq.accept(0)) << "0 is no command: an unloaded subaddress reads as zeros";
     EXPECT_TRUE(seq.accept(1));
     EXPECT_FALSE(seq.accept(1));
+    EXPECT_TRUE(seq.accept(2));
+    EXPECT_FALSE(seq.accept(0)) << "still no command, and it does not disturb the sequence";
+    EXPECT_FALSE(seq.accept(2));
     EXPECT_TRUE(seq.accept(255));
-    EXPECT_TRUE(seq.accept(0)) << "wrap-around is just another change";
+    EXPECT_TRUE(seq.accept(1)) << "wrap-around is just another change";
 }
 
 TEST(BitWordCodec, RoundTrips) {

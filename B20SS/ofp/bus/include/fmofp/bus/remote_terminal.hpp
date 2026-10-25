@@ -46,14 +46,16 @@ Word encode_bit_word(const BitWord& bit) noexcept;
 BitWord decode_bit_word(Word w) noexcept;
 
 // ICD README section 5: a receiver acts on a command only when its cmd_seq
-// differs from the last one it processed, so resending is harmless.
+// differs from the last one it processed, so resending is harmless. cmd_seq 0
+// is no command at all: a command subaddress nobody has loaded reads as zeros,
+// and the bus controller relays those like anything else.
 struct CommandSequence {
     bool have_last{false};
     std::uint8_t last{0};
 
-    // True if `seq` is new; records it either way.
+    // True if `seq` is a new command; records it then.
     bool accept(std::uint8_t seq) noexcept {
-        if (have_last && seq == last) {
+        if (seq == 0U || (have_last && seq == last)) {
             return false;
         }
         have_last = true;

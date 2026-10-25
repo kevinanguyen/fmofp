@@ -147,11 +147,14 @@ class RemoteTerminalTest(unittest.TestCase):
 class HelpersTest(unittest.TestCase):
     def test_command_sequence(self):
         seq = CommandSequence()
-        self.assertTrue(seq.accept(0))
-        self.assertFalse(seq.accept(0))
+        self.assertFalse(seq.accept(0), "0 is no command: an unloaded subaddress reads as zeros")
         self.assertTrue(seq.accept(1))
+        self.assertFalse(seq.accept(1))
+        self.assertTrue(seq.accept(2))
+        self.assertFalse(seq.accept(0))
+        self.assertFalse(seq.accept(2))
         self.assertTrue(seq.accept(255))
-        self.assertTrue(seq.accept(0))
+        self.assertTrue(seq.accept(1), "wrap-around is just another change")
 
     def test_bit_word(self):
         self.assertEqual(0x80FF, encode_bit_word(BitWord(True, False, 255)))

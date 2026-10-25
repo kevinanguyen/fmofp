@@ -62,14 +62,14 @@ def decode_bit_word(word):
 
 
 class CommandSequence:
-    """ICD README section 5: act only when cmd_seq differs from the last one processed."""
+    """ICD README section 5: act only when cmd_seq differs from the last one processed; 0 is no command."""
 
     def __init__(self):
         self.have_last = False
         self.last = 0
 
     def accept(self, seq):
-        if self.have_last and seq == self.last:
+        if seq == 0 or (self.have_last and seq == self.last):
             return False
         self.have_last = True
         self.last = seq

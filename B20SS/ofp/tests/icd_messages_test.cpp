@@ -16,7 +16,7 @@ using namespace fmofp::icd;  // NOLINT: test
 
 TEST(IcdVersion, MatchesTheDocument) {
     EXPECT_EQ(1, kIcdMajor);
-    EXPECT_EQ(4, kIcdMinor);
+    EXPECT_EQ(5, kIcdMinor);
 }
 
 TEST(FcsAttitude, ConstantsMatchTheIcd) {
@@ -132,22 +132,22 @@ TEST(FmsNavUpdateCmd, PresentBitsAndUnsignedScales) {
 }
 
 TEST(LayoutOf, MfdCommandSharesTheRadarLayoutButNotItsAddress) {
-    EXPECT_EQ(13, MfdRdrWxCmd::kRt);
-    EXPECT_EQ(20, MfdRdrWxCmd::kSubaddress);
-    EXPECT_EQ(Direction::kTransmit, MfdRdrWxCmd::kDirection);
-    EXPECT_EQ(10, MfdRdrWxCmd::kRateHz);
-    EXPECT_EQ(RdrWxModeCmd::kWords, MfdRdrWxCmd::kWords);
+    EXPECT_EQ(15, DspRdrWxCmd::kRt);
+    EXPECT_EQ(20, DspRdrWxCmd::kSubaddress);
+    EXPECT_EQ(Direction::kTransmit, DspRdrWxCmd::kDirection);
+    EXPECT_EQ(10, DspRdrWxCmd::kRateHz);
+    EXPECT_EQ(RdrWxModeCmd::kWords, DspRdrWxCmd::kWords);
     // The radar's own command is receive, aperiodic, at RT 9: nothing leaks across.
     EXPECT_EQ(9, RdrWxModeCmd::kRt);
     EXPECT_EQ(Direction::kReceive, RdrWxModeCmd::kDirection);
 
-    MfdRdrWxCmd m{};
+    DspRdrWxCmd m{};
     m.payload.requested_state = TerminalState::NORMAL;
     m.payload.requested_mode = WeatherMode::PRECIPITATION;
     m.payload.cmd_seq = 9;
     m.payload.range_km = 80.0;
     m.payload.tilt = 2.5;
-    MfdRdrWxCmd::Words w{};
+    DspRdrWxCmd::Words w{};
     ASSERT_EQ(Status::kOk, m.encode(w));
     // The bus controller relays the words untouched into the radar's command.
     RdrWxModeCmd as_radar{};
@@ -156,8 +156,8 @@ TEST(LayoutOf, MfdCommandSharesTheRadarLayoutButNotItsAddress) {
     EXPECT_EQ(9, as_radar.cmd_seq);
     EXPECT_DOUBLE_EQ(80.0, as_radar.range_km);
     EXPECT_NEAR(2.5, as_radar.tilt, 180.0 / 32768.0);
-    MfdRdrWxCmd back{};
-    ASSERT_EQ(Status::kOk, MfdRdrWxCmd::decode(w, back));
+    DspRdrWxCmd back{};
+    ASSERT_EQ(Status::kOk, DspRdrWxCmd::decode(w, back));
     EXPECT_EQ(9, back.payload.cmd_seq);
 }
 
@@ -180,8 +180,8 @@ TEST(MessageTable, NoTwoMessagesShareAnAddress) {
             EXPECT_FALSE(clash) << a.id << " and " << b.id;
         }
     }
-    EXPECT_EQ(66U, kMessages.size());
-    EXPECT_EQ(14U, kRelays.size());
+    EXPECT_EQ(73U, kMessages.size());
+    EXPECT_EQ(21U, kRelays.size());
 }
 
 }  // namespace

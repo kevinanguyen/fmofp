@@ -11,10 +11,10 @@ from fmofp_bus.status import Status
 class GeneratedMessagesTest(unittest.TestCase):
     def test_version_and_table(self):
         self.assertEqual(1, m.ICD_MAJOR)
-        self.assertEqual(4, m.ICD_MINOR)
-        self.assertEqual(14, len(m.RELAYS))
+        self.assertEqual(5, m.ICD_MINOR)
+        self.assertEqual(21, len(m.RELAYS))
         self.assertEqual(("PLANT_SENSORS", "FCS_SENSORS", 27, 1, 5, 13, 11, 50), tuple(m.RELAYS[0]))
-        self.assertEqual(66, len(m.MESSAGES))
+        self.assertEqual(73, len(m.MESSAGES))
         self.assertIs(m.FcsAttitude, m.MESSAGE_CLASSES["FCS_ATTITUDE"])
         self.assertEqual(m.EVERY_TERMINAL, m.TermStatus.RT)
 
@@ -68,15 +68,15 @@ class GeneratedMessagesTest(unittest.TestCase):
         self.assertEqual((Status.OK, [0xA0AB, 35000, 0, 0xC000, 0]), msg.encode())
 
     def test_layout_of_shares_words_not_address(self):
-        cmd = m.MfdRdrWxCmd()
+        cmd = m.DspRdrWxCmd()
         cmd.payload.requested_mode = WeatherMode.PRECIPITATION
         cmd.payload.cmd_seq = 9
         cmd.payload.range_km = 80.0
         cmd.payload.tilt = 2.5
         status, words = cmd.encode()
         self.assertEqual(Status.OK, status)
-        self.assertEqual((13, 20, "T", 10), (m.MfdRdrWxCmd.RT, m.MfdRdrWxCmd.SUBADDRESS, m.MfdRdrWxCmd.DIRECTION,
-                                             m.MfdRdrWxCmd.RATE_HZ))
+        self.assertEqual((15, 20, "T", 10), (m.DspRdrWxCmd.RT, m.DspRdrWxCmd.SUBADDRESS, m.DspRdrWxCmd.DIRECTION,
+                                             m.DspRdrWxCmd.RATE_HZ))
         self.assertEqual((9, "R"), (m.RdrWxModeCmd.RT, m.RdrWxModeCmd.DIRECTION))
         status, as_radar = m.RdrWxModeCmd.decode(words)
         self.assertEqual(9, as_radar.cmd_seq)

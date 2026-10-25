@@ -198,8 +198,8 @@ void print_stats(const fmofp::bc::BusController& bc) {
     for (std::uint8_t i = 0; i < c.terminal_count; ++i) {
         const std::uint8_t rt = c.terminals[i];
         const fmofp::bc::TerminalStats& t = bc.terminal(rt);
-        std::printf("  rt %2u: transactions=%u no_response=%u message_errors=%u malformed=%u busy=%u %s\n", rt,
-                    t.transactions, t.no_response, t.message_errors, t.malformed, t.busy,
+        std::printf("  rt %2u: transactions=%u retries=%u no_response=%u message_errors=%u malformed=%u busy=%u %s\n",
+                    rt, t.transactions, t.retries, t.no_response, t.message_errors, t.malformed, t.busy,
                     t.responded ? "responding" : "NEVER ANSWERED");
     }
 }

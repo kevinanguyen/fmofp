@@ -42,7 +42,8 @@ struct BcConfig {
 
 struct TerminalStats {
     std::uint32_t transactions{0};
-    std::uint32_t no_response{0};
+    std::uint32_t retries{0};      // transactions sent a second time because the first drew no reply
+    std::uint32_t no_response{0};  // transactions that drew no reply even after the retry
     std::uint32_t message_errors{0};  // the terminal's status word said so
     std::uint32_t malformed{0};       // a reply that did not fit the command
     std::uint32_t busy{0};

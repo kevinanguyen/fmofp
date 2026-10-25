@@ -85,6 +85,26 @@ frame 40:
 ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --port-base 53000 --script commands.txt
 ```
 
+**The displays.** Two of the PyQt6 displays run as their own bus terminals
+(`B20SS/fmofp_display`): the radar display, RT 15, which shows the weather and
+terrain-following radars' pictures and commands both radars, and the primary
+flight display, RT 11, which reads the FMS's flight data. List them for the
+controller and give it a reply timeout a Python process beside a Qt paint loop
+can meet, without `--strict`:
+
+```bash
+py -m fmofp_display radar --port-base 53000
+py -m fmofp_display pfd --port-base 53000
+ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 11 --rt 15 --port-base 53000 --timeout-ms 20 --report
+```
+
+The controller relays the radars' status, scan summary and guidance into the
+radar display and their products blocks segment by segment; the display's mode
+buttons load `DSP_RDR_WX_CMD` / `DSP_RDR_TFR_CMD` on its own subaddresses,
+which the controller relays into the radar every 100 ms. The display classes
+under `FMOFP/Interfaces/userInterface/displays` are unchanged: a feed turns the
+bus words into the dictionaries they always drew.
+
 The Python message classes encode the words (`FmsManeuverCmd(...).encode()`),
 which is how the tests write their scripts. `test_fcs_e2e.py`, `test_nav_e2e.py`,
 `test_fms_e2e.py`, `test_radar_e2e.py` and `test_tfr_e2e.py` run exactly these
@@ -102,6 +122,11 @@ follows the radar. `test_nav_oracle.py`, `test_weather_oracle.py` and
 rain-rate fields, the point selection, the storm cell detection, the
 precipitation areas, the wind shear events and the turbulence cells; the
 clearance levels and their latch, the path commands and the terrain warnings.
+`test_display_e2e.py` runs the display terminals headless beside the whole set
+of partitions and checks that the radars' products and the FMS's flight data
+arrive at the displays and that the displays' commands reach the radars;
+`test_display_feeds.py` checks the feeds and `test_display_render.py` paints
+the windows offscreen from sample bus data (skipped without PyQt6).
 
 ## Building on Windows
 

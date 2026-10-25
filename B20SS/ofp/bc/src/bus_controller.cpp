@@ -246,7 +246,21 @@ Status BusController::transact(std::uint8_t rt, bool transmit, std::uint8_t sa, 
         return Status::kOk;
     }
 
-    const Status got = await_reply(command.transaction, reply);
+    Status got = await_reply(command.transaction, reply);
+    if (got != Status::kOk) {
+        // MIL-STD-1553 practice: a transaction that drew no reply is sent once
+        // more before it counts as a no-response. A Python terminal beside a
+        // paint loop misses the odd deadline; a terminal that is gone misses
+        // both, and the controller moves on after two timeouts.
+        ++term.retries;
+        transaction_ = static_cast<bus::Word>(transaction_ + 1U);
+        command.transaction = transaction_;
+        length = 0;
+        if (bus::encode_frame(command, bytes.data(), bytes.size(), length) == Status::kOk &&
+            socket_.send_to(terminal_port(config_, rt), bytes.data(), length) == Status::kOk) {
+            got = await_reply(command.transaction, reply);
+        }
+    }
     if (got != Status::kOk) {
         ++term.no_response;
         monitor(command, nullptr);
