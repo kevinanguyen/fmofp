@@ -237,6 +237,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("display", choices=["radar", "pfd"])
     parser.add_argument("--port-base", type=int, default=51000)
+    parser.add_argument("--seconds", type=float, default=0.0, help="close after this long (0 = until the window is closed)")
     args = parser.parse_args(argv)
     bootstrap()
     app = QApplication(sys.argv[:1])
@@ -248,6 +249,8 @@ def main(argv=None):
         return 1
     window = RadarWindow(terminal) if args.display == "radar" else PfdWindow(terminal)
     window.show()
+    if args.seconds > 0.0:
+        QTimer.singleShot(int(args.seconds * 1000.0), app.quit)
     started = time.time()
     try:
         code = app.exec()
