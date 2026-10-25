@@ -31,6 +31,7 @@ from PyQt6.QtCore import Qt, QPointF, QRectF, QTimer
 from PyQt6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 
 from .base_display import BaseDisplay, DisplayType
+from FMOFP.Utils.common.optional_reads import UNKNOWN, optional_float
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()
@@ -70,6 +71,12 @@ class TacticalSituationDisplay(BaseDisplay):
 
         # ── cached state ───────────────────────────────────────────────────
         self._mode      = "NORMAL"
+        # False until a navigation fix has actually been read. The
+        # order-of-battle overlay is positioned entirely from ownship, so this
+        # decides whether that overlay can be drawn at all -- and the display
+        # says which of the two it is, because an empty tactical picture and
+        # an unplottable one look identical otherwise.
+        self._ownship_position_known = False
         self._heading   = 0.0
         self._airspeed  = 0.0
         self._altitude  = 0.0
@@ -202,17 +209,40 @@ class TacticalSituationDisplay(BaseDisplay):
 
                 # Merge OOB unit positions from MissionService into threat layer.
                 # Enemy units appear as hostile contacts; friendly as non-hostile.
-                if self._mission is not None:
+                # The order-of-battle overlay is positioned ENTIRELY from
+                # ownship: _oob_to_threat_vectors turns each unit's lat/lon
+                # into a bearing and range relative to us, and even the 120 nm
+                # inclusion filter is measured from there. These two reads used
+                # to default to (35.4147, -97.3866) -- Tinker AFB -- so with no
+                # navigation fix the whole overlay was drawn relative to a
+                # position nobody had measured, in the same symbology as real
+                # fused tracks. Rendered and looked at: a hostile SAM at
+                # 017/30nm, a hostile FIGHTER at 233/31nm and a friendly
+                # TANKER at 065/26nm, none of which meant anything.
+                #
+                # This is the defect _get_fused_threats() was already fixed for
+                # -- invented contacts indistinguishable from measured ones --
+                # reaching the same layer by another route.
+                own_lat = optional_float(nav, "latitude", minimum=-90.0, maximum=90.0)
+                own_lon = optional_float(nav, "longitude", minimum=-180.0, maximum=180.0)
+                self._ownship_position_known = (
+                    own_lat is not UNKNOWN and own_lon is not UNKNOWN)
+
+                if self._mission is not None and self._ownship_position_known:
                     try:
-                        own_lat = nav.get("latitude",  35.4147)
-                        own_lon = nav.get("longitude", -97.3866)
-                        own_hdg = self._heading
                         oob_contacts = self._oob_to_threat_vectors(
-                            self._mission.get_oob(), own_lat, own_lon, own_hdg)
+                            self._mission.get_oob(), own_lat, own_lon)
                         # Append OOB contacts; fused radar tracks take precedence
                         self._threats = self._threats + oob_contacts
                     except Exception as exc:
                         logger.debug(f"[TSD] OOB merge error: {exc}")
+                elif self._mission is not None:
+                    # Say so on the display rather than quietly drawing nothing:
+                    # an empty tactical picture and an unplottable one look the
+                    # same, and only one of them means "no contacts".
+                    logger.debug(
+                        "[TSD] Ownship position unknown; order-of-battle "
+                        "overlay withheld rather than projected from a guess")
 
                 # RWR contacts from DefensiveService
                 try:
@@ -252,10 +282,20 @@ class TacticalSituationDisplay(BaseDisplay):
         return []
 
     def _oob_to_threat_vectors(
-        self, oob_data: dict, own_lat: float, own_lon: float, own_hdg: float
+        self, oob_data: dict, own_lat: Optional[float], own_lon: Optional[float]
     ) -> List[Dict]:
         """
         Convert OOB unit positions into TSD threat-vector dicts.
+
+        Returns an EMPTY list when ownship position is unknown. Every value
+        this produces -- bearing, range, and whether a unit is inside the
+        120 nm cut at all -- is measured FROM ownship, so without a fix there
+        is nothing truthful to return. The caller already checks; this is the
+        second gate, so a future caller cannot reintroduce a default.
+
+        `own_hdg` used to be a parameter and was never read in the body. It is
+        gone: bearings here are true, and taking a heading argument implied
+        they were relative to it.
 
         Each returned dict contains:
             bearing  — degrees true from own ship
@@ -267,6 +307,9 @@ class TacticalSituationDisplay(BaseDisplay):
         import math as _math
         contacts = []
         NM_PER_DEG_LAT = 60.0
+
+        if own_lat is UNKNOWN or own_lon is UNKNOWN:
+            return contacts
 
         for affil_key in ("enemy", "friendly", "neutral"):
             units = oob_data.get(affil_key, [])
@@ -528,6 +571,15 @@ class TacticalSituationDisplay(BaseDisplay):
         hdg_r = QRectF(r.left() + 4, r.bottom() - 20, 80, 18)
         painter.drawText(hdg_r, Qt.AlignmentFlag.AlignVCenter,
                          f"HDG {self._heading:05.1f}°")
+
+        # Ownship position unknown: the OOB overlay is withheld, and that is
+        # said out loud. Without this the crew cannot tell "no units within
+        # 120 nm" from "we cannot work out where anything is relative to us".
+        if not self._ownship_position_known:
+            painter.setPen(QPen(_AMBER))
+            warn_r = QRectF(r.left() + 4, r.bottom() - 36, r.width() - 8, 16)
+            painter.drawText(warn_r, Qt.AlignmentFlag.AlignVCenter,
+                             "OWN POS UNKN \u2014 OOB OVERLAY WITHHELD")
 
     # ── metrics panel ────────────────────────────────────────────────────────
 

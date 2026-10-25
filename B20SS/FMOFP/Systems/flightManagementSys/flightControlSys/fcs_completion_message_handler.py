@@ -348,16 +348,10 @@ class FCSCompletionMessageHandler:
 
             # Determine mode value if not provided
             if mode_value is None and new_mode:
-                # Map mode name to value
-                mode_map = {
-                    "NORMAL": 0,
-                    "COMBAT": 1,
-                    "PRECISION": 2,
-                    "AUTOPILOT": 3,
-                    "TERRAIN": 4,
-                    "EMERGENCY": 5
-                }
-                mode_value = mode_map.get(new_mode, 0)
+                # Map mode name to value, from the shared FCS vocabulary
+                # rather than another literal copy of it.
+                from FMOFP.local_messaging.fcs_wire_format import MODE_NAME_TO_VALUE
+                mode_value = MODE_NAME_TO_VALUE.get(new_mode, 0)
 
             # Create metadata
             metadata = {

@@ -441,25 +441,80 @@ MODE_REQUEST_MAP = {
     for radar_type in RADAR_TYPES
 }
 
-# Add Flight Control System to the mode request map
-for fcs_type in FCS_TYPES:
-    # Use string lookup instead of direct variable reference
-    MODE_REQUEST_MAP[fcs_type] = FCS_COMMAND_WORDS.get(FCS_MODE_CHANGE_REQUEST, {}).value
+# Add Flight Control System to the mode request map.
+#
+# Two things changed here (story C25.1):
+#
+# 1. The value is now a 16-bit binary string, like every radar and FMS entry
+#    in these maps. It used to be a bare int, so these four keys held a
+#    different TYPE from every other entry in the same dict. Nothing caught
+#    it because BusControllerModule.commandCheck() quietly accepts an int
+#    and formats it, which is also why the wrong address below travelled
+#    instead of raising.
+#
+# 2. `.get(name, {}).value` would raise AttributeError on the empty-dict
+#    default -- at import, taking the whole application down -- for the one
+#    case the default exists to cover. _fcs_map_entry() returns None instead
+#    and the entry is simply left unregistered, which every consumer already
+#    handles as "no command word, do not send".
+def _fcs_map_entry(command_name):
+    """The FCS command word for `command_name` as a 16-bit binary string."""
+    cmd = FCS_COMMAND_WORDS.get(command_name)
+    if cmd is None:
+        logger.error(
+            f"[CMD] No FCS command word for {command_name}; FCS entries will "
+            f"be left out of the request maps, so FCS requests of that kind "
+            f"are refused rather than sent to an unknown address."
+        )
+        return None
+    return format(cmd.value, '016b')
+
+
+_FCS_MODE_WORD = _fcs_map_entry(FCS_MODE_CHANGE_REQUEST)
+if _FCS_MODE_WORD is not None:
+    for fcs_type in FCS_TYPES:
+        MODE_REQUEST_MAP[fcs_type] = _FCS_MODE_WORD
 
 STATUS_REQUEST_MAP = {
     radar_type: globals()[f"{radar_type.upper()}_STATUS_REQUEST"]
     for radar_type in RADAR_TYPES
 }
 
-# Add Flight Control System to the status request map
-for fcs_type in FCS_TYPES:
-    # Use string lookup instead of direct variable reference
-    STATUS_REQUEST_MAP[fcs_type] = FCS_COMMAND_WORDS.get(FCS_STATUS_REQUEST, {}).value
+# Add Flight Control System to the status request map (see the note above
+# the mode map for why this is a binary string and why the guard is here).
+_FCS_STATUS_WORD = _fcs_map_entry(FCS_STATUS_REQUEST)
+if _FCS_STATUS_WORD is not None:
+    for fcs_type in FCS_TYPES:
+        STATUS_REQUEST_MAP[fcs_type] = _FCS_STATUS_WORD
 
 DATA_REQUEST_MAP = {
     radar_type: globals()[f"{radar_type.upper()}_DATA_REQUEST"]
     for radar_type in RADAR_TYPES
 }
+
+# Add Flight Control System to the data request map (story C25.1, now done).
+#
+# This registration was deliberately withheld before, and the reason was
+# sound at the time: the FCS message classes defined no to_data_words(), and
+# RadarMessageHandler._pack_data() starts from RADAR_MODE_MAP and handles
+# radars only, so registering the command word here made the control surface
+# request travel EMPTY -- measured: Data words: ['0000000000000000'].
+# Handing a caller a request ID for a payload-less command is worse than
+# refusing it, because it looks like the command was sent.
+#
+# What was missing was an encoding, and the note here said it was a
+# wire-format decision nobody should invent. That turned out to be wrong:
+# the encoding already existed and was already in use, in
+# FCSMessageHandler's packers and in the matching decoders inside
+# _handle_control_input_request() / _handle_mode_change_request(). It is now
+# lifted into FMOFP/local_messaging/fcs_wire_format.py, and the message
+# classes' to_data_words() produce exactly the words those decoders read.
+# See that module's docstring for the second encoding that existed in
+# encode_1553b() and disagreed with the live one on every field.
+_FCS_DATA_WORD = _fcs_map_entry(FCS_CONTROL_INPUT_REQUEST)
+if _FCS_DATA_WORD is not None:
+    for fcs_type in FCS_TYPES:
+        DATA_REQUEST_MAP[fcs_type] = _FCS_DATA_WORD
 
 # Create display request maps
 DISPLAY_MODE_REQUEST_MAP = {

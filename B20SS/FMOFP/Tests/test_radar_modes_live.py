@@ -31,22 +31,22 @@ That asymmetry is the thing most likely to surprise someone, so it is asserted
 directly rather than left to be rediscovered. If a mission-phase policy is added for
 any of these radars later, these assertions fail and say exactly what changed.
 
-KNOWN DEFECT, DELIBERATELY NOT ASSERTED HERE
---------------------------------------------
-Three of the five radars (weather, TFR, SAR) silently reinterpret an enum member from
-a DIFFERENT enum class by its numeric value:
+FOREIGN-ENUM COERCION -- FIXED BY C23.1, NOW ASSERTED
+-----------------------------------------------------
+Three of the five radars (weather, TFR, SAR) used to silently reinterpret an enum
+member from a DIFFERENT enum class by its numeric value:
 
     elif hasattr(mode, '_value_'):
         mode = tfr_radarMode(mode._value_)
 
-Every enum member has `_value_`, so `RadarMode.SEARCH` (value 3) becomes
-`tfr_radarMode(3)` -- which is TEST. A command meaning "search" puts the radar into
-built-in-test mode. Targeting and AEWC reject the same input and leave the mode alone.
+Every enum member has `_value_`, so `RadarMode.SEARCH` (value 3) became
+`tfr_radarMode(3)` -- which is TEST. A command meaning "search" put the radar into
+built-in test. Measured while fixing it: value 3 is TEST in ALL FIVE radar enums, so
+the collision was universal and only the three radars with that branch were exposed.
 
-This suite asserts only what is true of all five and should stay true after the fix:
-set_mode never raises out, and `radar.mode` is always an instance of that radar's own
-enum. The coercion itself is written up as a finding with its own story rather than
-frozen into an assertion that the fix would have to break.
+All five now refuse a foreign enum, report the refusal through set_mode's return
+value, and leave the mode untouched. All five also still accept a plain int, which
+is a legitimate shape off the 1553B path. Those are the assertions below.
 
 Standalone-safe: run from B20SS/ as
 `python -m FMOFP.Tests.test_radar_modes_live`.
@@ -192,19 +192,37 @@ async def body(sm):
         finally:
             rm.update_mission_phase(original_phase)
 
-        # ── a foreign enum must not escape as an exception or a foreign type ──
-        # See the module docstring: three radars coerce, two reject. What must
-        # hold everywhere is that nothing raises out and the stored mode stays
-        # this radar's own type.
+        # ── a foreign enum is refused, reported, and changes nothing ──────
+        # C23.1. RadarMode.SEARCH has value 3, and 3 is TEST in every one of
+        # the five radar enums, so a radar that coerces by value puts itself
+        # into built-in test on a command meaning "search".
+        before_foreign = radar.mode
         try:
-            radar.set_mode(RadarMode.SEARCH, send_completion=False)
+            accepted = radar.set_mode(RadarMode.SEARCH, send_completion=False)
             raised = None
         except Exception as exc:  # noqa: BLE001 - the point is that this cannot happen
-            raised = f"{type(exc).__name__}: {exc}"
+            accepted, raised = None, f"{type(exc).__name__}: {exc}"
         check("set_mode with a foreign enum does not raise out of the radar",
               raised is None, str(raised))
+        check("...it reports the refusal rather than returning nothing",
+              accepted is False, repr(accepted))
+        check("...the mode is left exactly as it was",
+              radar.mode is before_foreign,
+              f"{mode_name(radar)} (was {before_foreign.name})")
+        check("...and in particular it is not coerced into TEST",
+              radar.mode.name != 'TEST' or before_foreign.name == 'TEST',
+              mode_name(radar))
         check("...and the stored mode is still this radar's own enum type",
               isinstance(radar.mode, enum), type(radar.mode).__name__)
+
+        # An int is a legitimate shape off the 1553B path, on every radar.
+        before_int = radar.mode
+        int_target = next(m for m in enum if m is not before_int)
+        accepted_int = radar.set_mode(int_target.value, send_completion=False)
+        check("a mode delivered as a plain int is accepted",
+              accepted_int is True, repr(accepted_int))
+        check("...and selects the member with that value",
+              radar.mode is int_target, mode_name(radar))
 
         # ── status surface ───────────────────────────────────────────────
         status = radar.get_status()
@@ -221,29 +239,22 @@ async def body(sm):
             check(f"the handler registers the {kind} request under that exact ID",
                   isinstance(rid, str) and rid in rh.pending_requests)
 
-    # ── KNOWN DEFECT, characterised (story C23.1) ────────────────────────
+    # ── the approach stand-down reaches every radar (story C23.1) ────────
     #
-    # _configure_enroute_surveillance() (CRUISE) names all five radars and uses
-    # each one's own enum. _configure_airport_departure() (TAKEOFF) and
-    # _configure_airport_arrival() (APPROACH) do not -- they handle weather and
-    # TFR explicitly and then fall through to:
+    # Both airport configurations used to handle weather and TFR by name and
+    # then fall through to
+    #     else: radar.set_mode(RadarMode.STANDBY, send_completion=False)
+    # with the GENERIC enum. Targeting and AEWC validate strictly and refused
+    # it, so they kept whatever mode they had -- on approach, a targeting
+    # radar left searching from cruise stayed searching. SAR appeared to work
+    # only by coincidence: RadarMode.STANDBY is 0 and sar_radarMode(0) is also
+    # STANDBY.
     #
-    #     else:
-    #         radar.set_mode(RadarMode.STANDBY, send_completion=False)
-    #
-    # RadarMode is the GENERIC enum. Targeting and AEWC validate strictly and
-    # refuse it, so they keep whatever mode they were in. SAR reaches STANDBY
-    # only because it coerces a foreign enum by numeric value -- RadarMode.STANDBY
-    # is 0 and sar_radarMode(0) happens to be STANDBY too.
-    #
-    # The consequence is not cosmetic: on approach, a targeting radar left
-    # searching from cruise stays searching, when the configuration plainly
-    # intends to stand it down.
-    #
-    # These assertions pin the CURRENT behaviour deliberately. When C23.1 lands
-    # they must fail -- that failure is the signal to update them, not a
-    # regression.
-    print("\nKNOWN DEFECT (C23.1) — the approach stand-down does not reach two radars")
+    # These assertions used to pin that defect, and failed exactly as intended
+    # when the fix landed:
+    #     FAIL  DEFECT: APPROACH does NOT stand targeting_radar down  mode is STANDBY
+    #     FAIL  DEFECT: APPROACH does NOT stand aewc_radar down       mode is STANDBY
+    print("\nC23.1 — the approach stand-down reaches every radar")
 
     rm.update_mission_phase(MissionPhase.CRUISE)
     for rname, target in CRUISE_MODE.items():
@@ -256,16 +267,36 @@ async def body(sm):
     check("APPROACH stands TFR down correctly (its own enum is used)",
           tfr.mode is tfr_radarMode.TERRAIN_FOLLOWING, mode_name(tfr))
 
-    sar = rm.radars['sar_radar']
-    check("APPROACH reaches SAR's STANDBY -- but only via foreign-enum coercion",
-          sar.mode is sar_radarMode.STANDBY, mode_name(sar))
-
-    for rname, enum_cls in (('targeting_radar', targeting_radarMode),
+    for rname, enum_cls in (('sar_radar', sar_radarMode),
+                            ('targeting_radar', targeting_radarMode),
                             ('aewc_radar', aewc_radarMode)):
         r = rm.radars[rname]
-        check(f"DEFECT: APPROACH does NOT stand {rname} down; it holds its cruise mode",
-              r.mode is not enum_cls.STANDBY and r.mode is CRUISE_MODE[rname],
-              f"mode is {mode_name(r)}")
+        check(f"APPROACH stands {rname} down, in its OWN enum",
+              r.mode is enum_cls.STANDBY, f"mode is {mode_name(r)}")
+        check(f"...and {rname} did not simply hold its cruise mode",
+              r.mode is not CRUISE_MODE[rname], f"mode is {mode_name(r)}")
+
+    # AC3: the same for TAKEOFF, which shares the defect and the fix and was
+    # never covered here.
+    print("\nC23.1 — and the takeoff stand-down reaches every radar")
+
+    rm.update_mission_phase(MissionPhase.CRUISE)
+    for rname, target in CRUISE_MODE.items():
+        await await_condition(lambda r=rm.radars[rname], m=target: r.mode is m,
+                              timeout=10.0)
+
+    rm.update_mission_phase(MissionPhase.TAKEOFF)
+    await asyncio.sleep(1.0)
+
+    check("TAKEOFF leaves TFR in TERRAIN_FOLLOWING",
+          rm.radars['tfr_radar'].mode is tfr_radarMode.TERRAIN_FOLLOWING,
+          mode_name(rm.radars['tfr_radar']))
+    for rname, enum_cls in (('sar_radar', sar_radarMode),
+                            ('targeting_radar', targeting_radarMode),
+                            ('aewc_radar', aewc_radarMode)):
+        r = rm.radars[rname]
+        check(f"TAKEOFF stands {rname} down, in its OWN enum",
+              r.mode is enum_cls.STANDBY, f"mode is {mode_name(r)}")
 
     # ── non-tautological guards ──────────────────────────────────────────
     print("\nNON-TAUTOLOGICAL — these must not pass by accident")

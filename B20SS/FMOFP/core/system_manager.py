@@ -48,6 +48,40 @@ logger = get_logger()
 _READINESS_LOG_INTERVAL = 10.0
 
 
+
+# Subsystems whose absence means a function the operator may command is simply
+# not there: flight control, propulsion and the energy that feeds them, terrain
+# protection, and navigation. Each of these is started inside a
+# `try/except ... (non-fatal)` block, and a failure there used to be one log
+# line. Measured before this change, with FCC.start() forced to raise:
+#
+#     is_system_ready():                  True
+#     system state:                       SystemState.NORMAL
+#     flight_control_computer registered: False
+#
+# The names are the labels used in those except blocks, not component keys,
+# because a subsystem that fails to start is never registered as a component
+# at all -- the registration line sits after the call that raised.
+#
+# Deliberately excluded, as degraded capability rather than an unflyable
+# aircraft: PerformanceMonitor, FlightDataMonitoring, FlightManagementFitness,
+# SoftwareConfigManager, ScenarioEngine, MissionService, CommsService,
+# DefensiveService. Genuinely arguable and left out for now, so that adding
+# them is a deliberate act rather than a default: SensorService,
+# AirframeSystemManager, ECSControl.
+SAFETY_CRITICAL_SUBSYSTEMS = frozenset({
+    "FCC",                          # flight control computer
+    "FlightSurfaceService",         # the surfaces it commands
+    "HydraulicSystemController",    # which the surfaces need
+    "ECU",                          # engine control
+    "ThrustManagementSystem",
+    "FuelManagementSystem",
+    "PowerManagementSystem",
+    "GCAS",                         # ground collision avoidance
+    "NavService",
+})
+
+
 class SystemManager:
     def __init__(self):
         self.components = {}
@@ -84,6 +118,11 @@ class SystemManager:
         # is logged when its REASON changes, or every _READINESS_LOG_INTERVAL
         # seconds while unchanged, so the condition stays visible without
         # drowning the log.
+        # Subsystems whose start() raised. Populated by
+        # _record_startup_failure(); the safety-critical ones block
+        # readiness. A set, because a subsystem is started once and the
+        # same failure must not accumulate.
+        self._failed_subsystem_starts = set()
         self._last_readiness_reason = None
         self._last_readiness_log = 0.0
 
@@ -907,7 +946,7 @@ class SystemManager:
                 self.components['flight_control_computer'] = fcc
                 logger.info("Flight Control Computer started")
             except Exception as e:
-                logger.error(f"FCC startup failed (non-fatal): {e}")
+                self._record_startup_failure("FCC", e)
 
             # Navigation Service (GPS + INS + fusion)
             try:
@@ -918,7 +957,7 @@ class SystemManager:
                 self.components['nav_service'] = nav_svc
                 logger.info("Navigation Service started")
             except Exception as e:
-                logger.error(f"NavService startup failed (non-fatal): {e}")
+                self._record_startup_failure("NavService", e)
 
             # Engine Control Unit
             try:
@@ -929,7 +968,7 @@ class SystemManager:
                 self.components['engine_control_unit'] = ecu
                 logger.info("Engine Control Unit started")
             except Exception as e:
-                logger.error(f"ECU startup failed (non-fatal): {e}")
+                self._record_startup_failure("ECU", e)
 
             # Communications Service
             try:
@@ -947,7 +986,7 @@ class SystemManager:
                 except Exception as e:
                     logger.warning(f"CommsService routing registration failed (non-fatal): {e}")
             except Exception as e:
-                logger.error(f"CommsService startup failed (non-fatal): {e}")
+                self._record_startup_failure("CommsService", e)
 
             # Mission Planning Service
             try:
@@ -965,7 +1004,7 @@ class SystemManager:
                 except Exception as e:
                     logger.warning(f"MissionService routing registration failed (non-fatal): {e}")
             except Exception as e:
-                logger.error(f"MissionService startup failed (non-fatal): {e}")
+                self._record_startup_failure("MissionService", e)
 
             # ── end Phase 2 ───────────────────────────────────────────────────
 
@@ -980,7 +1019,7 @@ class SystemManager:
                 self.components['defensive_service'] = dfs
                 logger.info("Defensive Service started")
             except Exception as e:
-                logger.error(f"DefensiveService startup failed (non-fatal): {e}")
+                self._record_startup_failure("DefensiveService", e)
 
             # Flight Surfaces
             try:
@@ -991,7 +1030,7 @@ class SystemManager:
                 self.components['flight_surface_service'] = fss
                 logger.info("Flight Surface Service started")
             except Exception as e:
-                logger.error(f"FlightSurfaceService startup failed (non-fatal): {e}")
+                self._record_startup_failure("FlightSurfaceService", e)
 
             # GCAS
             try:
@@ -1002,7 +1041,7 @@ class SystemManager:
                 self.components['gcas'] = gcas
                 logger.info("GCAS started")
             except Exception as e:
-                logger.error(f"GCAS startup failed (non-fatal): {e}")
+                self._record_startup_failure("GCAS", e)
 
             # Performance Monitor
             try:
@@ -1013,7 +1052,7 @@ class SystemManager:
                 self.components['performance_monitor'] = perf
                 logger.info("Performance Monitor started")
             except Exception as e:
-                logger.error(f"PerformanceMonitor startup failed (non-fatal): {e}")
+                self._record_startup_failure("PerformanceMonitor", e)
 
             # Power Management System (batteries, avionics cooling loop, HVAC)
             try:
@@ -1024,7 +1063,7 @@ class SystemManager:
                 self.components['power_management_system'] = pms
                 logger.info("Power Management System started")
             except Exception as e:
-                logger.error(f"PowerManagementSystem startup failed (non-fatal): {e}")
+                self._record_startup_failure("PowerManagementSystem", e)
 
             # Fuel Management System (tanks, engines, monitor, transfer manager)
             try:
@@ -1035,7 +1074,7 @@ class SystemManager:
                 self.components['fuel_management_system'] = fuel_mgmt
                 logger.info("Fuel Management System started")
             except Exception as e:
-                logger.error(f"FuelManagementSystem startup failed (non-fatal): {e}")
+                self._record_startup_failure("FuelManagementSystem", e)
 
             # Thrust Management System (twin-engine coordination, autothrottle)
             try:
@@ -1046,7 +1085,7 @@ class SystemManager:
                 self.components['thrust_management_system'] = thrust_mgmt
                 logger.info("Thrust Management System started")
             except Exception as e:
-                logger.error(f"ThrustManagementSystem startup failed (non-fatal): {e}")
+                self._record_startup_failure("ThrustManagementSystem", e)
 
             # Hydraulic System Controller (primary/backup pressure monitoring)
             try:
@@ -1057,7 +1096,7 @@ class SystemManager:
                 self.components['hydraulic_system_controller'] = hydraulics
                 logger.info("Hydraulic System Controller started")
             except Exception as e:
-                logger.error(f"HydraulicSystemController startup failed (non-fatal): {e}")
+                self._record_startup_failure("HydraulicSystemController", e)
 
             # Airframe System Manager (structural sensors, landing gear)
             try:
@@ -1068,7 +1107,7 @@ class SystemManager:
                 self.components['airframe_system_manager'] = airframe
                 logger.info("Airframe System Manager started")
             except Exception as e:
-                logger.error(f"AirframeSystemManager startup failed (non-fatal): {e}")
+                self._record_startup_failure("AirframeSystemManager", e)
 
             # Environmental Control System
             try:
@@ -1079,7 +1118,7 @@ class SystemManager:
                 self.components['ecs_control'] = ecs
                 logger.info("Environmental Control System started")
             except Exception as e:
-                logger.error(f"ECSControl startup failed (non-fatal): {e}")
+                self._record_startup_failure("ECSControl", e)
 
             # Flight Data Monitoring (flight data / cockpit voice recorders)
             try:
@@ -1090,7 +1129,7 @@ class SystemManager:
                 self.components['flight_data_monitoring'] = fdm
                 logger.info("Flight Data Monitoring started")
             except Exception as e:
-                logger.error(f"FlightDataMonitoring startup failed (non-fatal): {e}")
+                self._record_startup_failure("FlightDataMonitoring", e)
 
             # Flight Management Fitness (component health / redundancy monitoring)
             try:
@@ -1101,7 +1140,7 @@ class SystemManager:
                 self.components['flight_management_fitness'] = fmf
                 logger.info("Flight Management Fitness started")
             except Exception as e:
-                logger.error(f"FlightManagementFitness startup failed (non-fatal): {e}")
+                self._record_startup_failure("FlightManagementFitness", e)
 
             # Software Configuration Manager (component/data-load inventory;
             # queryable on demand, does not run a background thread -- see
@@ -1113,7 +1152,7 @@ class SystemManager:
                 self.components['software_config_manager'] = swcm
                 logger.info("Software Configuration Manager started")
             except Exception as e:
-                logger.error(f"SoftwareConfigManager startup failed (non-fatal): {e}")
+                self._record_startup_failure("SoftwareConfigManager", e)
 
             # ── Phase 5: scenario engine + sensor service ─────────────────────
             try:
@@ -1122,7 +1161,7 @@ class SystemManager:
                 self.components['scenario_engine'] = scenario_engine
                 logger.info("ScenarioEngine registered (call load() + start() to run a scenario)")
             except Exception as e:
-                logger.error(f"ScenarioEngine startup failed (non-fatal): {e}")
+                self._record_startup_failure("ScenarioEngine", e)
 
             try:
                 from FMOFP.Systems.sensorManagement.sensorService import get_sensor_service
@@ -1131,7 +1170,7 @@ class SystemManager:
                 self.components['sensor_service'] = sensor_service
                 logger.info("SensorService started")
             except Exception as e:
-                logger.error(f"SensorService startup failed (non-fatal): {e}")
+                self._record_startup_failure("SensorService", e)
             # ── end Phase 5 ───────────────────────────────────────────────────
 
             # ── end Phase 3 ───────────────────────────────────────────────────
@@ -1680,6 +1719,36 @@ class SystemManager:
         else:
             logger.error("UserCLI component not found")
 
+
+    def _record_startup_failure(self, label: str, exc: Exception) -> None:
+        """Log a subsystem that failed to start, and remember it if it matters.
+
+        Replaces a bare `logger.error(f"{label} startup failed (non-fatal)")`
+        in twenty places. "Non-fatal" was true of the boot sequence and false
+        of the aircraft: the flight control computer could fail to start and
+        the system would still report ready and transition to NORMAL.
+
+        No health interface is involved. A subsystem that failed to start is
+        not registered as a component, so the health sweep never sees it --
+        and 33 of 51 components expose no health interface anyway, every
+        safety-critical one among them. This uses what the except block
+        already knows, at the moment it knows it.
+        """
+        self._failed_subsystem_starts.add(label)
+        if label in SAFETY_CRITICAL_SUBSYSTEMS:
+            logger.error(
+                f"{label} startup FAILED: {exc}. This is a safety-critical "
+                f"subsystem, so the system will not report ready."
+            )
+        else:
+            logger.error(
+                f"{label} startup failed (non-fatal, capability degraded): {exc}"
+            )
+
+    def failed_safety_critical_starts(self) -> list:
+        """Safety-critical subsystems that did not start, worst-case first."""
+        return sorted(self._failed_subsystem_starts & SAFETY_CRITICAL_SUBSYSTEMS)
+
     def is_system_ready(self):
         """Report whether the system can actually do useful work (story C5.1).
 
@@ -1716,6 +1785,21 @@ class SystemManager:
         """
         state_check = self.state_manager.get_state() in [SystemState.RUNNING, SystemState.NORMAL]
         if not state_check:
+            return False
+
+        # A safety-critical subsystem that failed to start is not coming back
+        # on its own, and is not visible to the health sweep either, because a
+        # failed start never reaches its registration line. Checked first: it
+        # is a cheap, certain answer, and it does not need a sweep.
+        missing = self.failed_safety_critical_starts()
+        if missing:
+            reason = "safety-critical subsystems did not start: " + ", ".join(missing)
+            now = time.time()
+            if (reason != self._last_readiness_reason
+                    or now - self._last_readiness_log > 5.0):
+                logger.error(f"System not ready: {reason}")
+                self._last_readiness_reason = reason
+                self._last_readiness_log = now
             return False
 
         # The health monitor sweeps every `health_check_interval` seconds, but it

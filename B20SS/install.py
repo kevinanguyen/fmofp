@@ -27,6 +27,7 @@ Exit codes: 0 = success, 1 = failure.
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -210,8 +211,110 @@ def check_directories() -> None:
 # Step 3 — Dependencies
 # ---------------------------------------------------------------------------
 
+# A wheel filename is dist-version[-build]-pytag-abitag-plattag.whl (PEP 427),
+# and each tag field may hold dot-separated alternatives.
+_WHEEL_NAME_RE = re.compile(
+    r"^(?P<dist>[^-]+)-(?P<ver>[^-]+)"
+    r"(?:-(?P<build>\d[^-]*))?"
+    r"-(?P<py>[^-]+)-(?P<abi>[^-]+)-(?P<plat>[^-]+)\.whl$",
+    re.IGNORECASE,
+)
+
+
+def _current_interpreter_tag() -> str:
+    """'cp312' for this interpreter."""
+    impl = "cp" if platform.python_implementation() == "CPython" else "py"
+    return f"{impl}{sys.version_info.major}{sys.version_info.minor}"
+
+
+def _wheel_is_compatible(wheel_name: str):
+    """Is this wheel installable on the interpreter running right now?
+
+    Returns (compatible, reason). `reason` is empty when compatible, and
+    otherwise says which dimension does not match, for the error message.
+
+    This exists because _find_wheel() used to match on distribution name
+    ALONE. The bundled sip wheel is PyQt6_sip-13.10.0-cp310-cp310-win_amd64:
+    sip is not abi3, so it is locked to CPython 3.10 exactly. On any other
+    Windows Python, _find_wheel() handed that wheel to pip, pip refused it,
+    and --offline then reported "no bundled wheel was found" -- which was
+    false, and told the operator nothing about the tag they actually needed.
+    Verified with pip's own resolver against the bundled directory: py310
+    win_amd64 resolves, 3.11 / 3.12 / 3.13 / 3.14 do not.
+
+    Deliberately narrow. It covers the three forms that appear in a PyQt6
+    bundle -- version-locked CPython ABI (cpXY), the stable ABI (abi3), and
+    pure Python (none/any) -- and errs toward calling a wheel compatible when
+    it cannot tell, so pip stays the final authority and this never blocks an
+    install pip would have accepted.
+    """
+    m = _WHEEL_NAME_RE.match(wheel_name)
+    if not m:
+        return True, ""          # unparseable: let pip decide
+
+    py_tags = m.group("py").lower().split(".")
+    abi_tags = m.group("abi").lower().split(".")
+    plat_tags = m.group("plat").lower().split(".")
+
+    # --- platform ---
+    if "any" not in plat_tags:
+        machine = platform.machine().lower()
+        if platform.system() == "Windows":
+            want = {"amd64": "win_amd64", "x86_64": "win_amd64",
+                    "arm64": "win_arm64", "x86": "win32"}.get(machine)
+            if want and not any(t == want for t in plat_tags):
+                return False, (f"built for {m.group('plat')}, "
+                               f"this machine is {want}")
+
+    # --- interpreter / ABI ---
+    def _ver(tag):
+        digits = re.sub(r"^[a-z]+", "", tag)
+        if len(digits) >= 2 and digits.isdigit():
+            return (int(digits[0]), int(digits[1:]))
+        return None
+
+    here = sys.version_info[:2]
+    is_cpython = platform.python_implementation() == "CPython"
+
+    if any(t.startswith("abi3") for t in abi_tags):
+        # Stable ABI: usable on CPython at or above the wheel's floor.
+        floors = [v for v in (_ver(t) for t in py_tags) if v]
+        if is_cpython and (not floors or any(here >= f for f in floors)):
+            return True, ""
+        return False, f"stable-ABI wheel needs CPython >= {floors}"
+
+    if all(t in ("none",) for t in abi_tags):
+        # Pure Python.
+        floors = [v for v in (_ver(t) for t in py_tags) if v]
+        if not floors or any(here >= f for f in floors):
+            return True, ""
+        return False, f"needs Python >= {floors}"
+
+    # Version-locked ABI (cp310-cp310 and friends): exact match only.
+    exact = {v for v in (_ver(t) for t in abi_tags) if v}
+    if exact and here not in exact:
+        wanted = ", ".join(f"{a}.{b}" for a, b in sorted(exact))
+        return False, (f"built for Python {wanted}, running "
+                       f"{here[0]}.{here[1]}")
+    return True, ""
+
+
+def _bundled_wheels(package_name: str) -> list:
+    """Every bundled wheel whose distribution name is `package_name`."""
+    wanted = package_name.lower().replace("-", "_")
+    found = []
+    for wheel_dir in WHEEL_DIRS:
+        if not wheel_dir.is_dir():
+            continue
+        for whl in sorted(wheel_dir.glob("*.whl")):
+            dist_name = whl.name.split("-", 1)[0].lower().replace("-", "_")
+            if dist_name == wanted:
+                found.append(whl)
+    return found
+
+
 def _find_wheel(package_name: str) -> Path | None:
-    """Return the matching .whl file in the bundled wheel directories.
+    """Return a bundled .whl for `package_name` that this Python can install.
 
     Matches on the wheel's distribution name -- everything before the first
     '-' -- rather than on a prefix. A prefix match made "PyQt6" match all three
@@ -219,16 +322,25 @@ def _find_wheel(package_name: str) -> Path | None:
     Path.glob order is filesystem-dependent, asking for PyQt6 could hand back
     the Qt6 or sip wheel; the _is_installed("PyQt6") check afterwards then
     failed the install with "installed without error but cannot be imported".
+
+    Compatibility is now checked too, so a wheel that is "found" is one pip
+    can actually use. See _wheel_is_compatible().
     """
-    wanted = package_name.lower().replace("-", "_")
-    for wheel_dir in WHEEL_DIRS:
-        if not wheel_dir.is_dir():
-            continue
-        for whl in wheel_dir.glob("*.whl"):
-            dist_name = whl.name.split("-", 1)[0].lower().replace("-", "_")
-            if dist_name == wanted:
-                return whl
+    for whl in _bundled_wheels(package_name):
+        compatible, _why = _wheel_is_compatible(whl.name)
+        if compatible:
+            return whl
     return None
+
+
+def _unusable_wheel_report(package_name: str) -> str:
+    """Why the bundled wheels for this package cannot be used here."""
+    lines = []
+    for whl in _bundled_wheels(package_name):
+        compatible, why = _wheel_is_compatible(whl.name)
+        if not compatible:
+            lines.append(f"       {whl.name}: {why}")
+    return "\n".join(lines)
 
 
 def _find_links_args() -> list:
@@ -316,6 +428,20 @@ def install_dependencies(offline: bool, force_reinstall: bool) -> None:
 
         if not wheel:
             if offline:
+                unusable = _unusable_wheel_report(pip_name)
+                if unusable:
+                    fail(
+                        f"Cannot install {pip_name}: --offline was specified "
+                        f"and the bundled wheel(s) do not fit this "
+                        f"interpreter ({_current_interpreter_tag()}, "
+                        f"{platform.machine()}).\n"
+                        f"{unusable}\n"
+                        f"     Either run on the Python those wheels were "
+                        f"built for, or drop a matching {pip_name} wheel into "
+                        f"one of: {WHEEL_DIRS}\n"
+                        f"     (Without --offline this would fall back to "
+                        f"PyPI.)"
+                    )
                 fail(
                     f"Cannot install {pip_name}: --offline was specified but no "
                     "bundled wheel was found.\n"

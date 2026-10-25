@@ -195,11 +195,40 @@ class FuelSystem:
             self.transfer_fuel(source_tank, destination_tank, amount)
 
 class FuelManagementSystem:
+    #: Seconds to back off after a failed update pass. Long enough that an
+    #: always-raising call cannot spin the CPU, short enough that a
+    #: transient error costs one pass. Waited on the stop Event, so stop()
+    #: interrupts it.
+    ERROR_BACKOFF_S = 5.0
+
+    #: How long an unbroken failure streak must last before health_report()
+    #: reports UNHEALTHY. This was UNHEALTHY_AFTER_FAILURES = 3, a count,
+    #: which does not survive being applied to the other eight subsystems:
+    #: their loop cadences run from 0.02 s to 1.0 s and only half of them
+    #: back off on error, so three passes means 15 s on the FCC and 0.3 s on
+    #: the nav service. A duration means the same thing everywhere. None
+    #: here defers to health.DEFAULT_FAILURE_GRACE_S.
+    FAILURE_GRACE_S = None
+
     def __init__(self):
         self.fuel_system = FuelSystem()
         self.monitor = FuelMonitor(self.fuel_system)
         self.transfer_manager = FuelTransferManager(self.fuel_system)
-        self.running = False
+        # A stop Event, not a bool -- see health_report(). Cleared by
+        # start(), set by stop(), and waited on for the backoff so stop()
+        # interrupts it.
+        self._running = threading.Event()
+        self._running.set()          # not running until start() clears it
+        # Defined here, not only in start(): get_status() and health_report()
+        # read it, and a constructed-but-not-started instance is a supported
+        # state -- test_power_fuel_thrust calls get_status() on one. Leaving
+        # it to start() raised "'FuelManagementSystem' object has no
+        # attribute '_thread'" from get_status().
+        self._thread = None
+        # The monotonic time of the first failure in the current unbroken
+        # streak, or None when the last pass succeeded.
+        self._failing_since = None
+        self._last_error = ""
         self.update_interval = 0.1  # seconds
         self._start_lock = threading.Lock()
 
@@ -261,22 +290,69 @@ class FuelManagementSystem:
         # run() is invoked as a thread target, so it needs to be the actual
         # blocking update loop, matching the polling-loop pattern used by
         # the other subsystem singletons (e.g. EngineControlUnit._update_loop).
-        self.running = True
-        while self.running:
-            self.update_fuel_system()
-            self.check_fuel_levels()
-            self.perform_fuel_transfer()
-            # FuelMonitor/FuelTransferManager were built against this exact
-            # class's FuelSystem API (tanks/get_fuel_status()/transfer_fuel()
-            # /fuel_lines/engines) but, like every other subsystem built
-            # this session, had no live driver calling poll()/update() on a
-            # schedule. This is that driver.
+        # The loop body is guarded as a WHOLE now. It used to call
+        # update_fuel_system(), check_fuel_levels() and
+        # perform_fuel_transfer() outside the try below, which covered only
+        # the monitor/transfer pair -- so anything the first three raised
+        # killed this daemon thread permanently and silently. Measured: ONE
+        # transient error injected on the second pass, and the worker was
+        # gone, with get_status() still reporting running=True.
+        #
+        # An AST sweep of all nine safety-critical subsystems found this was
+        # the only one with unguarded calls in its worker loop; the other
+        # eight wrap the whole body, log, back off and continue, which is
+        # the shape adopted here.
+        #
+        # The backoff waits on the stop Event rather than sleeping, so
+        # stop() interrupts it. See the note in
+        # FlightControlComputer._update_loop: a plain time.sleep(5) backoff
+        # is not interruptible, so stop()'s join(timeout=2) returns while
+        # the thread is still alive and logs "stopped" up to ~3 s early.
+        # run() is also a supported direct entry point -- the __main__ block
+        # at the foot of this module does threading.Thread(target=fms.run) --
+        # and the loop condition is now an Event that __init__ leaves SET.
+        # The old code set `self.running = True` here for exactly this
+        # reason; clearing the Event is the same thing.
+        #
+        # Only when called directly, though. When run() IS the target that
+        # start() spawned, start() has already cleared the Event, and
+        # clearing it again here would override a stop() that landed in
+        # between -- the race the old bool had. Comparing against the thread
+        # start() recorded distinguishes the two cases, the same way
+        # _start_cleanup_timer's re-arm guard does.
+        if self._thread is not threading.current_thread():
+            self._running.clear()
+
+        while not self._running.is_set():
             try:
+                self.update_fuel_system()
+                self.check_fuel_levels()
+                self.perform_fuel_transfer()
+                # FuelMonitor/FuelTransferManager were built against this
+                # exact class's FuelSystem API (tanks/get_fuel_status()/
+                # transfer_fuel()/fuel_lines/engines) but, like every other
+                # subsystem built this session, had no live driver calling
+                # poll()/update() on a schedule. This is that driver.
                 self.monitor.poll(self.update_interval)
                 self.transfer_manager.update(self.update_interval)
             except Exception as e:
-                logger.error(f"Fuel monitor/transfer update failed: {e}")
-            time.sleep(self.update_interval)
+                # Counted, not just logged. Guarding the loop turns "the
+                # worker died" into "the worker is alive and achieving
+                # nothing", and a liveness-only health check calls that
+                # HEALTHY. health_report() reads these two fields so a
+                # subsystem failing every pass reports UNHEALTHY instead.
+                if self._failing_since is None:
+                    self._failing_since = time.monotonic()
+                self._last_error = f"{type(e).__name__}: {e}"
+                logger.error(
+                    f"[FUEL_MGMT] Update pass failed "
+                    f"(failing for {time.monotonic() - self._failing_since:.1f}s): {e}")
+                self._running.wait(self.ERROR_BACKOFF_S)
+                continue
+            # A pass completed, so the failure streak (if any) is over.
+            self._failing_since = None
+            self._last_error = ""
+            self._running.wait(self.update_interval)
 
     def start(self):
         """
@@ -293,12 +369,13 @@ class FuelManagementSystem:
         with self._start_lock:
             if getattr(self, '_thread', None) is not None and self._thread.is_alive():
                 return
+            self._running.clear()
             self._thread = threading.Thread(target=self.run, daemon=True, name="FMS_Update")
             self._thread.start()
             logger.info("[FUEL_MGMT] Fuel Management System started.")
 
     def stop(self):
-        self.running = False
+        self._running.set()
         thread = getattr(self, '_thread', None)
         if thread is not None:
             thread.join(timeout=2)
@@ -314,13 +391,55 @@ class FuelManagementSystem:
         self.fuel_system.transfer_fuel(source_tank, destination_tank, amount)
 
     def get_status(self):
+        # 'running' reports the WORKER THREAD, as it does in the other eight
+        # subsystems. It used to report self.running, a bool that run() set
+        # True and nothing ever reset -- so when the unguarded loop body
+        # killed the worker, this kept reporting running=True over a dead
+        # thread. Measured directly: worker gone, get_status()['running']
+        # still True.
         return {
-            'running': self.running,
+            'running': (self._thread is not None and self._thread.is_alive()
+                        and not self._running.is_set()),
             'fuel_status': self.fuel_system.get_fuel_status(),
             'engines': {name: eng.current_thrust for name, eng in self.fuel_system.engines.items()},
             'monitor': self.monitor.get_status(),
             'transfers': self.transfer_manager.get_status(),
         }
+
+    # ------------------------------------------------------------------ health
+    def health_report(self):
+        """Report this subsystem's health through the C2.1 contract.
+
+        Story C2.2/C2.3 added this method; it also reports SUSTAINED
+        FAILURE, which all nine subsystems now do.
+
+        Guarding the worker loop (see run()) means a transient error no
+        longer kills the thread -- but it also means a permanently broken
+        subsystem stays alive, and a liveness-only check would call that
+        HEALTHY forever. The failure streak run() maintains is passed
+        through so that failing continuously past the grace period reports
+        UNHEALTHY with the last error attached. All nine subsystems do this
+        now; this one was first.
+
+        This class is no longer the polarity exception among the nine:
+        self.running was a plain bool, set True inside run() rather than by
+        start() and never reset when the worker died, and it is now
+        self._running, a stop Event cleared by start() and set by stop(),
+        exactly as in the other eight.
+        """
+        from FMOFP.Utils.common.health import worker_health
+
+        from FMOFP.Utils.common.health import DEFAULT_FAILURE_GRACE_S
+
+        return worker_health(
+            "FUEL", getattr(self, '_thread', None),
+            stop_requested=self._running.is_set(),
+            failing_since=self._failing_since,
+            failure_grace_s=(self.FAILURE_GRACE_S
+                             if self.FAILURE_GRACE_S is not None
+                             else DEFAULT_FAILURE_GRACE_S),
+            last_error=self._last_error)
+
 
 def get_fuel_management_system() -> "FuelManagementSystem":
     global _fms_instance

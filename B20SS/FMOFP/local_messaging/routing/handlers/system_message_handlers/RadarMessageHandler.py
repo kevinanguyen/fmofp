@@ -10,6 +10,7 @@ import sys
 import time
 import traceback
 import uuid as uuid_lib
+import re
 import threading
 from typing import Dict, Any, Optional, List, Tuple, Union
 import xml.etree.ElementTree as ET
@@ -74,6 +75,33 @@ RADAR_MODE_MAP = {
     'targeting_radar': targeting_radarMode,
     'aewc_radar': aewc_radarMode
 }
+
+def _snake(name: str) -> str:
+    """flightControlSystem -> flight_control_system."""
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
+
+def resolve_command_word(word_map, target):
+    """Find `target`'s command word in `word_map`, tolerating naming style.
+
+    The maps are keyed inconsistently: the radars and the FCS subsystems are
+    registered in snake_case ('flight_control_system'), while the predefined
+    message families address their targets in camelCase
+    ('flightControlSystem'), and the FMS module registers itself under three
+    spellings at once. Rather than add a fourth spelling everywhere, the
+    lookup tries the obvious forms.
+
+    Returns (command_word, matched_key), or (None, None).
+    """
+    if not isinstance(target, str):
+        return None, None
+    for candidate in (target, _snake(target), target.lower(),
+                      target.replace('_', '').lower()):
+        if candidate in word_map:
+            return word_map[candidate], candidate
+    return None, None
+
+
 class PendingRequest:
     def __init__(self, request_type: str, radar_name: str, timestamp: float, data: Any = None):
         self.request_type = request_type
@@ -240,7 +268,14 @@ class RadarMessageHandler:
                 # Check request type
                 logger.info("[SEND] Getting command word...")
                 if request_type == "status":
-                    command_word = STATUS_REQUEST_MAP[radar_name]
+                    command_word, _key = resolve_command_word(
+                        STATUS_REQUEST_MAP, radar_name)
+                    if command_word is None:
+                        logger.error(
+                            f"[SEND] No status command word registered for "
+                            f"{radar_name}"
+                        )
+                        return None
                     logger.info(f"[SEND] Using status command word: {command_word}")
                     data_words = []
                     # Explicitly set message type for status requests
@@ -249,9 +284,31 @@ class RadarMessageHandler:
                 
                 elif request_type == "mode_change" or request_type == "mode":  # Fixed conditional to properly check for "mode"
                     request_type = "mode_change"
-                    command_word = MODE_REQUEST_MAP[radar_name]
+                    command_word, _key = resolve_command_word(
+                        MODE_REQUEST_MAP, radar_name)
+                    if command_word is None:
+                        logger.error(
+                            f"[SEND] No mode command word registered for "
+                            f"{radar_name}"
+                        )
+                        return None
                     logger.info(f"[SEND] Using mode change command word: {command_word}")
-                    data_words = self._pack_data(radar_name, data)
+                    # Prefer the payload's own packing, as the data branch
+                    # below already does. _pack_data() starts with
+                    # RADAR_MODE_MAP[radar_type] and so raises KeyError for
+                    # any target that is not one of the five radars -- which
+                    # is what swallowed the FCS flight-mode request once it
+                    # was routed here as the mode change it actually is
+                    # (story C25.1): "ERROR - Error sending request:
+                    # 'flightControlSystem'".
+                    if hasattr(data, 'to_data_words'):
+                        data_words = data.to_data_words()
+                        logger.info(
+                            f"[SEND] Using the payload's own to_data_words() "
+                            f"for the {radar_name} mode change"
+                        )
+                    else:
+                        data_words = self._pack_data(radar_name, data)
                     msg_type = f"{radar_name}Command"
                     logger.info(f"[SEND] Using mode change message type: {msg_type}")
 
@@ -285,8 +342,45 @@ class RadarMessageHandler:
                         msg_type = "aewc_radarData"
                         logger.info(f"[SEND] Using AEWC radar data command word: {command_word}")
                     else:
-                        logger.error(f"[SEND] Unsupported radar type for data request: {radar_name}")
-                        return None
+                        # Story C25.1. The five radars above are enumerated by
+                        # hand, and this branch used to refuse everything else
+                        # outright -- including targets that DO have a data
+                        # command word registered. DATA_REQUEST_MAP is the
+                        # registry, and it already carries
+                        # 'flightManagementSystem' (command_word_map_fms's
+                        # update_command_maps(), called from
+                        # FMSMessageHandler.__init__).
+                        #
+                        # The consequence was not just the missing request ID
+                        # the story describes: nothing was transmitted at all.
+                        # `return None` here happens BEFORE any send, so four
+                        # predefined message families -- flight mode change,
+                        # control surface change, attitude update and
+                        # navigation update -- were dropped before the bus.
+                        # Measured on a live system: exactly four
+                        # "Unsupported radar type" errors per run, two for
+                        # flightControlSystem and two for
+                        # flightManagementSystem.
+                        command_word, matched = resolve_command_word(
+                            DATA_REQUEST_MAP, radar_name)
+                        if command_word is None:
+                            logger.error(
+                                f"[SEND] No data command word is registered "
+                                f"for {radar_name}, so the request was NOT "
+                                f"sent and no request ID exists for it. For "
+                                f"the FCS this is deliberate (story C25.1): "
+                                f"its message classes define no "
+                                f"to_data_words(), so the command would "
+                                f"travel with an empty payload. See the note "
+                                f"beside DATA_REQUEST_MAP in "
+                                f"command_word_map.py."
+                            )
+                            return None
+                        msg_type = f"{radar_name}Data"
+                        logger.info(
+                            f"[SEND] Using registered data command word for "
+                            f"{radar_name} (matched '{matched}'): {command_word}"
+                        )
 
                     if hasattr(data, 'to_data_words'):
                         logger.info("[SEND] Using object's to_data_words method")

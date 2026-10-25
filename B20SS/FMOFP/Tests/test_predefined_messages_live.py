@@ -162,19 +162,61 @@ async def body(sm):
         issued.append(rid)
         check(f"request for {label} returns a request ID", is_request_id(rid), repr(rid))
 
-    # ── KNOWN DEFECT, characterised (story C25.1) ────────────────────────
-    print("\nKNOWN DEFECT (C25.1) — the FMS and FCS families return no request ID")
+    # ── C25.1, the FMS half: these now send and correlate ────────────────
+    #
+    # All four families used to return None, and the reason was not a missing
+    # return statement -- RadarMessageHandler.send_request's data branch
+    # enumerated the five radars by hand and refused everything else BEFORE
+    # sending, so the command never reached the bus. Measured on a live
+    # system: four "Unsupported radar type for data request" errors per run.
+    # It consults DATA_REQUEST_MAP now, and the FMS entries were already
+    # registered there by command_word_map_fms.update_command_maps().
+    print("\nC25.1 — the FMS families send, and return an ID that correlates")
 
-    FMS_FCS = (
-        ('request_flight_mode_change', messages.request_flight_mode_change("COMBAT")),
-        ('request_control_surface_change', messages.request_control_surface_change("aileron", 0.3)),
+    FMS_FIXED = (
         ('update_attitude', messages.update_attitude({"pitch": 1.0, "roll": 2.0, "yaw": 3.0})),
         ('request_navigation_update', messages.request_navigation_update(latitude=1.0, longitude=2.0)),
     )
-    for label, coro in FMS_FCS:
-        result = await asyncio.wait_for(coro, timeout=30.0)
-        check(f"DEFECT: {label}() returns None despite documenting a request ID",
-              result is None, repr(result))
+    for label, coro in FMS_FIXED:
+        rid = await asyncio.wait_for(coro, timeout=30.0)
+        issued.append(rid)
+        check(f"{label}() returns a request ID", is_request_id(rid), repr(rid))
+
+    # ── C25.1, the FCS half: these now send and carry a payload ──────────
+    #
+    # Both used to return None, because registering the FCS's data command
+    # word made the message travel EMPTY -- fcs_controlSurfaceRequest and
+    # fcs_flightModeRequest had no to_data_words(), and _pack_data() handles
+    # radars only, so the send fell through to the default format. Measured
+    # then: Data words: ['0000000000000000'].
+    #
+    # They have one now (FMOFP/local_messaging/fcs_wire_format.py), and it is
+    # the encoding the FCS's own handler decodes rather than the orphan
+    # layout that used to sit in encode_1553b(). The mode change is also
+    # routed as "mode_change" rather than "data", so it resolves to
+    # FCS_MODE_CHANGE_REQUEST -- the command word the FCS's mode handler is
+    # registered against.
+    #
+    # See FMOFP/Tests/test_fcs_wire_format.py for the wire-level assertions;
+    # what this suite adds is that the live facade returns a correlatable ID.
+    print("\nC25.1 — the FCS families send, and return an ID that correlates")
+
+    FCS_FIXED = (
+        ('request_flight_mode_change', messages.request_flight_mode_change("COMBAT")),
+        ('request_control_surface_change', messages.request_control_surface_change("aileron", 0.3)),
+    )
+    for label, coro in FCS_FIXED:
+        rid = await asyncio.wait_for(coro, timeout=30.0)
+        issued.append(rid)
+        check(f"{label}() returns a request ID", is_request_id(rid), repr(rid))
+
+    # And a mode the FCS does not have is refused rather than being turned
+    # into a command to enter NORMAL, which is what the old packer default
+    # did. No request ID exists for it, so nothing goes in `issued`.
+    refused = await asyncio.wait_for(
+        messages.request_flight_mode_change("CRUISE"), timeout=30.0)
+    check("a mode the FCS does not have is refused, not silently remapped",
+          refused is None, repr(refused))
 
     # ── non-tautological guards ──────────────────────────────────────────
     print("\nNON-TAUTOLOGICAL — these must not pass by accident")

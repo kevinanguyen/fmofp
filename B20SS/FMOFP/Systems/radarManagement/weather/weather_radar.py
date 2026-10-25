@@ -4,6 +4,7 @@ Weather Radar System
 Handles weather radar operations using direct message handling.
 """
 
+from enum import Enum
 import os
 import time
 import traceback
@@ -440,6 +441,15 @@ class weather_radar:
             mode: The new mode to set
             send_completion: Whether to send a mode change completion notification (default: True)
             request_id: The request ID to include in the completion message
+
+        Returns:
+            True when the radar is in `mode` once this returns -- including
+            when it was already there. False when the command was refused.
+
+            Story C23.1 AC3: every exit used to be a bare `return`, so a
+            caller could not tell a refused command from an accepted one. FMS
+            and FCS set_mode() already return booleans and their live suites
+            assert on them; this matches that convention.
         """
         try:
             # Handle different input types
@@ -450,29 +460,54 @@ class weather_radar:
                 elif isinstance(mode, int):
                     # Convert integer to enum value
                     mode = weather_radarMode(mode)
-                elif hasattr(mode, '_value_'):
-                    # Handle case where we receive an enum member
-                    mode = weather_radarMode(mode._value_)
+                elif isinstance(mode, Enum):
+                    # Story C23.1. This used to be
+                    #     elif hasattr(mode, '_value_'):
+                    #         mode = weather_radarMode(mode._value_)
+                    # and EVERY enum member carries _value_, so a member of
+                    # any enum class at all was silently reinterpreted by its
+                    # number. RadarMode.SEARCH is 3 and weather_radarMode(3)
+                    # is TEST -- a command meaning "search" put this radar
+                    # into built-in test. Measured: value 3 maps to TEST in
+                    # all five radar enums, so the collision is universal; it
+                    # only bit on the three radars that had this branch.
+                    #
+                    # A member of a different enum is a programming error, not
+                    # an integer in disguise. The int branch above stays: a
+                    # mode value arriving as a plain int is a legitimate
+                    # shape. (Instrumented over a live boot and the full mode
+                    # sweep, no int was observed reaching set_mode -- every
+                    # call carried an enum -- so that branch is kept for the
+                    # paths this run did not exercise, not because it is known
+                    # to be in use.)
+                    logger.error(
+                        f"[WEATHER] Refusing mode from a foreign enum: "
+                        f"{type(mode).__name__}.{mode.name}. This radar is "
+                        f"commanded with weather_radarMode; coercing by numeric "
+                        f"value would silently select "
+                        f"weather_radarMode({mode.value})."
+                    )
+                    return False
                 elif mode is weather_radarMode:
                     # Handle case where we get the actual enum class itself (not an instance/member)
                     logger.info(f"[WEATHER] Received enum class itself, defaulting to SURVEILLANCE mode")
                     mode = weather_radarMode.SURVEILLANCE
                 else:
                     logger.error(f"[WEATHER] Invalid mode type: {type(mode)}")
-                    return
+                    return False
             except ValueError as e:
                 logger.error(f"[WEATHER] Invalid mode value: {mode}")
-                return
+                return False
             except Exception as e:
                 logger.error(f"[WEATHER] Error converting mode: {str(e)}")
-                return
+                return False
 
 
             # Check if we're already in this mode - no need to change or send completion
             if self.mode == mode:
                 logger.info(f"[WEATHER] Already in mode {mode.name}, no change needed")
                 #self._send_mode_change_completion(self.mode, mode)
-                return
+                return True  # the radar IS in the requested mode
 
             logger.info(f"[WEATHER] Setting mode to: {mode.name}")
 
@@ -489,6 +524,7 @@ class weather_radar:
                 self._send_mode_change_completion(old_mode, mode, request_id)
             else:
                 logger.info(f"[WEATHER] Skipping mode change completion notification (send_completion=False)")
+            return True
         except Exception as e:
             logger.error(f"[WEATHER] Error setting mode for weather radar {self.name}: {str(e)}")
             logger.error(traceback.format_exc())

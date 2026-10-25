@@ -665,6 +665,187 @@ def test_tsd_no_synthetic_threats(r: _Results) -> None:
     disp.stop()
 
 
+def test_theme_colours_are_not_shared_objects(r: _Results) -> None:
+    """get_color() must hand out a copy, not the theme's own QColor.
+
+    QColor is mutable. Returning the dictionary's own object meant a caller
+    that adjusted the alpha for its own drawing rewrote the theme for
+    everyone. Three callers do exactly that -- holographic_display.py's
+    draw_holographic_background() and draw_startup_animation() each take a
+    colour and immediately setAlpha() it.
+
+    Measured against the live theme manager before the fix:
+
+        two calls return the SAME object: True
+        alpha before: 200
+        after one caller setAlpha(30), a later caller sees: 30
+        after a second caller setAlpha(200), the theme reads: 200
+        the first caller's own variable also changed to: 200
+
+    The last line is the sharp one: two routines that each set their own alpha
+    overwrite each other, so what an element renders at depends on the order
+    the drawing code ran in that frame.
+    """
+    print("\n  ── theme: get_color() hands out copies ──")
+    _qt_app()
+    from FMOFP.Interfaces.userInterface.displays.visual.theme_manager import (
+        get_theme_manager)
+    tm = get_theme_manager()
+
+    a = tm.get_color("hud")
+    b = tm.get_color("hud")
+    r.check("two calls return distinct objects", a is not b)
+    r.check("...with equal values", a == b, f"{a.getRgb()} vs {b.getRgb()}")
+
+    original = tm.get_color("hud").alpha()
+    mine = tm.get_color("hud")
+    mine.setAlpha(17)
+    r.check("a caller's setAlpha does not reach the theme",
+            tm.get_color("hud").alpha() == original,
+            f"theme alpha became {tm.get_color('hud').alpha()}, was {original}")
+
+    other = tm.get_color("hud")
+    other.setAlpha(211)
+    r.check("...nor another caller's copy", mine.alpha() == 17,
+            f"the first caller's own colour became {mine.alpha()}")
+
+    # The fallback path must obey the same contract.
+    f1 = tm.get_color("definitely_not_a_theme_colour")
+    f2 = tm.get_color("definitely_not_a_theme_colour")
+    r.check("the unknown-colour fallback also returns distinct objects",
+            f1 is not f2)
+
+    # End to end: the real caller that mutates must leave the theme alone.
+    before = tm.get_color("hud").alpha()
+    try:
+        from PyQt6.QtGui import QPainter, QPixmap
+        from PyQt6.QtCore import QRectF
+        from FMOFP.Interfaces.userInterface.displays.holographic_display import (
+            HolographicDisplay)
+        from FMOFP.Interfaces.userInterface.displays.base_display import DisplayType
+        disp = HolographicDisplay(DisplayType.MFD)
+        pm = QPixmap(400, 300)
+        painter = QPainter(pm)
+        disp.draw_holographic_background(painter, QRectF(0, 0, 400, 300))
+        painter.end()
+        drew = True
+    except Exception as exc:  # noqa: BLE001
+        drew = f"{type(exc).__name__}: {exc}"
+    r.check("draw_holographic_background() runs", drew is True, str(drew))
+    r.check("...and leaves the theme's hud alpha unchanged",
+            tm.get_color("hud").alpha() == before,
+            f"{tm.get_color('hud').alpha()}, was {before}")
+
+    print("\n  ── NON-TAUTOLOGICAL: the pre-fix shape really does alias ──")
+    from PyQt6.QtGui import QColor
+    shared = {"colors": {"hud": QColor(0, 255, 0, 200)}}
+
+    def pre_fix_get_color(name):
+        return shared["colors"][name]          # the old body
+
+    p1 = pre_fix_get_color("hud")
+    p1.setAlpha(30)
+    p2 = pre_fix_get_color("hud")
+    r.check("returning the dict's own object leaks the mutation",
+            p2.alpha() == 30 and p1 is p2,
+            f"alpha={p2.alpha()}, same object={p1 is p2}")
+
+
+def test_tsd_oob_needs_a_real_ownship_position(r: _Results) -> None:
+    """The OOB overlay is positioned entirely from ownship, so no fix means no overlay.
+
+    _oob_to_threat_vectors turns each unit's lat/lon into a bearing and range
+    relative to us, and the 120 nm inclusion cut is measured from there too.
+    The caller used to read ownship as
+        nav.get("latitude", 35.4147) / nav.get("longitude", -97.3866)
+    -- Tinker AFB. With no navigation fix the whole overlay was drawn relative
+    to a position nobody had measured, in the same symbology as real fused
+    tracks. Rendered and looked at before the fix: a hostile SAM at 017/30nm,
+    a hostile FIGHTER at 233/31nm, a friendly TANKER at 065/26nm.
+
+    Same defect as test_tsd_no_synthetic_threats guards against, reaching the
+    same layer by a different route.
+    """
+    print("\n  ── TSD: no nav fix yields NO order-of-battle overlay ──")
+    _qt_app()
+    from FMOFP.Interfaces.userInterface.displays.tsd import TacticalSituationDisplay
+    from FMOFP.Utils.common.optional_reads import UNKNOWN, optional_float
+
+    disp = TacticalSituationDisplay()
+    oob = {
+        "enemy": [
+            {"id": "SAM-1", "type": "SAM_SITE", "position": [35.9, -97.2]},
+            {"id": "FTR-2", "type": "FIGHTER", "position": [35.1, -97.9]},
+        ],
+        "friendly": [{"id": "TKR-9", "type": "TANKER", "position": [35.6, -96.9]}],
+        "neutral": [],
+    }
+
+    r.check("unknown ownship -> no contacts",
+            disp._oob_to_threat_vectors(oob, UNKNOWN, UNKNOWN) == [])
+    r.check("a known latitude alone is not enough",
+            disp._oob_to_threat_vectors(oob, 35.4147, UNKNOWN) == [])
+    r.check("nor a known longitude alone",
+            disp._oob_to_threat_vectors(oob, UNKNOWN, -97.3866) == [])
+
+    with_fix = disp._oob_to_threat_vectors(oob, 35.4147, -97.3866)
+    r.check("a real fix still produces the overlay", len(with_fix) == 3,
+            f"got {len(with_fix)}")
+    r.check("...with the bearings and ranges unchanged by this fix",
+            {c["name"]: (c["bearing"], c["range_nm"]) for c in with_fix} ==
+            {"SAM-1": (17.4, 30.5), "FTR-2": (233.1, 31.4),
+             "TKR-9": (65.0, 26.3)},
+            str({c["name"]: (c["bearing"], c["range_nm"]) for c in with_fix}))
+
+    r.check("the heading argument is gone, since bearings here are true",
+            "own_hdg" not in
+            __import__("inspect").signature(
+                disp._oob_to_threat_vectors).parameters)
+
+    # The reads the caller performs, against a nav dict with no fix in it.
+    nav_no_fix = {"heading": 0.0, "altitude": 0.0}
+    r.check("latitude reads as UNKNOWN rather than Tinker AFB",
+            optional_float(nav_no_fix, "latitude",
+                           minimum=-90.0, maximum=90.0) is UNKNOWN)
+    r.check("longitude too",
+            optional_float(nav_no_fix, "longitude",
+                           minimum=-180.0, maximum=180.0) is UNKNOWN)
+    r.check("an out-of-range latitude is refused, not clamped",
+            optional_float({"latitude": 181.0}, "latitude",
+                           minimum=-90.0, maximum=90.0) is UNKNOWN)
+
+    # NON-TAUTOLOGICAL: the pre-fix read really did invent a position, and it
+    # really did place contacts from it.
+    pre_lat = nav_no_fix.get("latitude", 35.4147)
+    pre_lon = nav_no_fix.get("longitude", -97.3866)
+    r.check("the pre-fix default was a real place, not a sentinel",
+            (pre_lat, pre_lon) == (35.4147, -97.3866))
+    invented = disp._oob_to_threat_vectors(oob, pre_lat, pre_lon)
+    r.check("and projecting from it yields plausible hostile contacts "
+            "(proves this assertion bites)",
+            len(invented) == 3 and any(c["hostile"] for c in invented),
+            f"{[(c['name'], c['bearing'], c['range_nm']) for c in invented]}")
+
+    r.check("the display tracks whether ownship position is known",
+            hasattr(disp, "_ownship_position_known"))
+    r.check("and starts out saying it is not", disp._ownship_position_known is False)
+
+    # The withheld overlay has to be visible, not silent: an empty picture and
+    # an unplottable one look identical otherwise.
+    disp.resize(900, 700)
+    disp._ownship_position_known = False
+    text = _painted_texts(disp)
+    r.check("an unplottable overlay is annunciated on the display",
+            any("OOB" in t and "WITHHELD" in t for t in text),
+            f"drawn text: {text}")
+
+    disp._ownship_position_known = True
+    text_ok = _painted_texts(disp)
+    r.check("and the annunciation is absent once position is known",
+            not any("WITHHELD" in t for t in text_ok))
+    disp.stop()
+
+
 def test_tsd_paint_combat_mode(r: _Results) -> None:
     print("\n  ── TSD: paint in COMBAT mode ──")
     _qt_app()
@@ -799,6 +980,8 @@ def run_all() -> bool:
         test_pfd_flags_invalid_fields,
         test_pfd_secondary_readouts_show_as_unknown,
         test_tsd_no_synthetic_threats,
+        test_tsd_oob_needs_a_real_ownship_position,
+        test_theme_colours_are_not_shared_objects,
         test_tsd_paint_combat_mode,
         # SMS
         test_sms_instantiation,

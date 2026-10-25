@@ -136,6 +136,13 @@ _CONFIG_BASENAME = "busAdapterConfig.xml"
 
 # ── Interface ─────────────────────────────────────────────────────────────────
 
+# How long a single connect or send may take before the transmit is abandoned.
+# Every transport here is loopback between two processes on one host, so this
+# is generous; its purpose is to bound a pathological peer, not to pace normal
+# traffic.
+BUS_SOCKET_TIMEOUT_S = 5.0
+
+
 class BusAdapter(ABC):
     """Transport abstraction for one bus participant (BC or RT)."""
 
@@ -198,6 +205,13 @@ class SocketBusAdapter(BusAdapter):
     def transmit(self, payload: bytes) -> bool:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                # Without this the socket blocks forever. A peer that accepts
+                # the connection and then never reads fills both buffers and
+                # sendall() parks the calling thread for good -- measured
+                # against a deliberately deaf listener, with the caller never
+                # returning. connect() has the same exposure against a host
+                # that drops SYNs.
+                sock.settimeout(BUS_SOCKET_TIMEOUT_S)
                 logger.info(
                     f"{self.role.upper()} bus adapter connecting to "
                     f"{self.peer_host}:{self.peer_port}"
@@ -207,6 +221,13 @@ class SocketBusAdapter(BusAdapter):
                 return True
         except ConnectionRefusedError:
             logger.error(f"Connection refused to {self.peer_host}:{self.peer_port}")
+            return False
+        except socket.timeout:
+            logger.error(
+                f"Timed out after {BUS_SOCKET_TIMEOUT_S}s sending to "
+                f"{self.peer_host}:{self.peer_port}: the peer accepted the "
+                f"connection but is not reading"
+            )
             return False
         except Exception as e:
             logger.error(f"Error sending message: {str(e)}")

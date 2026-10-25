@@ -8,6 +8,7 @@ import json
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 import atexit
 import time
 import select
@@ -22,6 +23,42 @@ logger = get_logger()
 # How long an accepted connection may sit without sending anything before
 # the listener reclaims it. See handle_connection() for why this exists.
 CONNECTION_IDLE_TIMEOUT_S = 30.0
+
+# MIL-STD-1553B: one message carries a command (or status) word plus at most
+# 32 data words.
+# Upper bound on how long a caller will wait for one transmit to finish.
+# Deliberately well above BUS_SOCKET_TIMEOUT_S so that a socket-level failure
+# reports itself rather than being masked by this.
+# Upper bound on a whole block transfer, which is one connect-and-send cycle
+# per chunk and so can be thousands of operations. Below the caller's bound so
+# the worker gives up first and says how far it got.
+BLOCK_TRANSFER_TIMEOUT_S = 20.0
+
+SEND_COMPLETION_TIMEOUT_S = 30.0
+
+MAX_DATA_WORDS_PER_MESSAGE = 32
+MAX_FRAMES_PER_MESSAGE = 1 + MAX_DATA_WORDS_PER_MESSAGE          # 33
+
+# A block-transfer chunk spends two of its data words on the sequence number
+# and the total count, so only 30 are left for payload.
+#
+# This used to be 32, and the chunk was then built as
+#     [command_word] + [sequence_word, total_word] + 32 payload frames
+# which is 35 frames -- above the 33-frame threshold that sends a message down
+# the block-transfer path in the first place. So every chunk of a block
+# transfer was itself "large" and re-entered the split, which produced another
+# 35-frame chunk, forever. Computed over the real arithmetic: 35 frames splits
+# into chunks of 35 and 5, and the 35 splits into 35 and 5 again -- a fixed
+# point, not a reduction.
+#
+# The practical effect was that ANY bus message with more than 33 frames never
+# completed. Reproduced against a peer that accepts and never reads: eleven
+# nested _send_large_message frames on the stack, eleven sockets held open,
+# and the caller never returned.
+BLOCK_TRANSFER_HEADER_WORDS = 2
+MAX_PAYLOAD_FRAMES_PER_CHUNK = (
+    MAX_DATA_WORDS_PER_MESSAGE - BLOCK_TRANSFER_HEADER_WORDS)    # 30
+
 
 # H3: the accept loop used to call handle_connection() inline, so the listener
 # served exactly one connection at a time and nothing else was accepted until
@@ -57,7 +94,22 @@ class BC_sender:
             
         logger.info(f"BC_sender submitting message to executor: {message}")
         future = self.executor.submit(self._send_message, message)
-        result = future.result()
+        try:
+            # Bounded. This used to be a bare future.result(): the worker
+            # blocked in sendall() against a socket with no timeout, so the
+            # caller's thread was parked for the life of the process. The
+            # socket timeout in the bus adapter should fire long before this
+            # does -- this is the backstop for anything on the send path that
+            # blocks for a reason the socket cannot see.
+            result = future.result(timeout=SEND_COMPLETION_TIMEOUT_S)
+        except FuturesTimeoutError:
+            logger.error(
+                f"[BC_SENDER] Send did not complete within "
+                f"{SEND_COMPLETION_TIMEOUT_S}s; abandoning it. The worker may "
+                f"still be running -- the bus adapter's own socket timeout is "
+                f"what stops it."
+            )
+            return False
         logger.info(f"BC_send_message result: {result}")
         return result
 
@@ -69,7 +121,7 @@ class BC_sender:
         # Check if this is a large message that needs to be split
         if isinstance(message, dict) and 'frames' in message and isinstance(message['frames'], list):
             # Check if frames exceed MIL-STD-1553B limit (32 data words per message)
-            if len(message['frames']) > 33:  # Command word + 32 data words
+            if len(message['frames']) > MAX_FRAMES_PER_MESSAGE:
                 logger.info(f"BC_sender detected large message with {len(message['frames'])} frames, using block transfer protocol")
                 return self._send_large_message(message)
 
@@ -190,7 +242,7 @@ class BC_sender:
                     logger.info(f"BC_sender detected VIL data")
             
             # Calculate number of messages needed (max 32 data words per message)
-            max_frames_per_message = 32  # MIL-STD-1553B limit
+            max_frames_per_message = MAX_PAYLOAD_FRAMES_PER_CHUNK
             
             # First frame is always the command word
             command_word = frames[0]
@@ -364,7 +416,24 @@ class BC_sender:
             
             # Send data messages
             success = True
+            # One deadline for the whole transfer. The caller's
+            # future.result(timeout=...) bounds how long IT waits, but not
+            # this worker: a transfer is thousands of sequential connect-send
+            # cycles and the socket timeout bounds each one separately, not
+            # the total. Measured without this -- the caller returned False at
+            # 30 s while the worker ran on, and the process would not exit,
+            # because ThreadPoolExecutor joins its workers at interpreter
+            # shutdown.
+            transfer_deadline = time.monotonic() + BLOCK_TRANSFER_TIMEOUT_S
+
             for i in range(num_messages):
+                if time.monotonic() > transfer_deadline:
+                    logger.error(
+                        f"[BC_SENDER] Abandoning block transfer after "
+                        f"{BLOCK_TRANSFER_TIMEOUT_S}s: sent {i} of "
+                        f"{num_messages} messages"
+                    )
+                    return False
                 # Calculate start and end indices for this chunk
                 start_idx = i * max_frames_per_message
                 end_idx = min((i + 1) * max_frames_per_message, len(data_frames))
@@ -379,6 +448,19 @@ class BC_sender:
                 
                 # Add the properly formatted sequence metadata words to the chunk
                 chunk_with_metadata = [sequence_number_word, total_messages_word] + chunk
+
+                # Defence in depth against the fixed point described at
+                # MAX_PAYLOAD_FRAMES_PER_CHUNK: if a chunk is still "large",
+                # _send_message would hand it straight back here and recurse
+                # without bound. Fail loudly instead of silently looping.
+                if 1 + len(chunk_with_metadata) > MAX_FRAMES_PER_MESSAGE:
+                    logger.error(
+                        f"[BC_SENDER] Refusing to send block-transfer chunk "
+                        f"{i + 1}/{num_messages}: {1 + len(chunk_with_metadata)} "
+                        f"frames exceeds the {MAX_FRAMES_PER_MESSAGE}-frame "
+                        f"message limit, so it would be split again forever"
+                    )
+                    return False
                 
                 # Create data message with binary data preserved
                 data_message = {

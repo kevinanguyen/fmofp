@@ -187,9 +187,11 @@ class FMSMessageProcessor:
             
             # Determine mode value if not provided
             if mode_value is None and new_mode:
-                # Map mode name to value
-                mode_map = {"NORMAL": 0, "COMBAT": 1, "STEALTH": 2, "TRAINING": 3, "EMERGENCY": 4}
-                mode_value = mode_map.get(new_mode, 0)
+                # Map mode name to value, from the shared FMS vocabulary
+                # rather than a fourth literal copy of it.
+                from FMOFP.local_messaging.messageConfigurations.fms_tactical_data import (
+                    FMS_MODE_NAME_TO_VALUE)
+                mode_value = FMS_MODE_NAME_TO_VALUE.get(new_mode, 0)
             
             # Send the mode change completion message
             success = completion_handler.send_mode_change_completion(

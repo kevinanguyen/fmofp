@@ -444,13 +444,28 @@ class RadarManagementSystem:
     def _configure_airport_departure(self):
         for radar in self.radars.values():
             try:
-                # Only pass send_completion=False to weather_radar, as other radar types don't support this parameter YET
+                # Story C23.1. Both airport configurations used to handle
+                # weather and TFR by name and then fall through to
+                #     else: radar.set_mode(RadarMode.STANDBY)
+                # with the GENERIC enum. Targeting and AEWC validate strictly
+                # and refused it, so they kept whatever mode they had -- on
+                # approach, a targeting radar left searching from cruise
+                # stayed searching, when this plainly intends to stand it
+                # down. SAR appeared to work only by coincidence:
+                # RadarMode.STANDBY is 0 and sar_radarMode(0) is also STANDBY.
+                #
+                # Every radar is now named with its own enum, matching
+                # _configure_enroute_surveillance().
                 if isinstance(radar, weather_radar):
                     radar.set_mode(weather_radarMode.SURVEILLANCE, send_completion=False)
                 elif isinstance(radar, tfr_radar):
-                    radar.set_mode(tfr_radarMode.TERRAIN_FOLLOWING)
-                else:
-                    radar.set_mode(RadarMode.STANDBY)
+                    radar.set_mode(tfr_radarMode.TERRAIN_FOLLOWING, send_completion=False)
+                elif isinstance(radar, targeting_radar):
+                    radar.set_mode(targeting_radarMode.STANDBY, send_completion=False)
+                elif isinstance(radar, sar_radar):
+                    radar.set_mode(sar_radarMode.STANDBY, send_completion=False)
+                elif isinstance(radar, aewc_radar):
+                    radar.set_mode(aewc_radarMode.STANDBY, send_completion=False)
             except Exception as e:
                 logger.error(f"Error configuring {radar.name} for airport departure: {str(e)}")
                 logger.error(traceback.format_exc())
@@ -489,13 +504,30 @@ class RadarManagementSystem:
     def _configure_airport_arrival(self):
         for radar in self.radars.values():
             try:
-                # Set send_completion=False for all startup mode changes to prevent unnecessary messages
+                # send_completion=False for all startup mode changes, to
+                # prevent unnecessary messages.
+                # Story C23.1. Both airport configurations used to handle
+                # weather and TFR by name and then fall through to
+                #     else: radar.set_mode(RadarMode.STANDBY)
+                # with the GENERIC enum. Targeting and AEWC validate strictly
+                # and refused it, so they kept whatever mode they had -- on
+                # approach, a targeting radar left searching from cruise
+                # stayed searching, when this plainly intends to stand it
+                # down. SAR appeared to work only by coincidence:
+                # RadarMode.STANDBY is 0 and sar_radarMode(0) is also STANDBY.
+                #
+                # Every radar is now named with its own enum, matching
+                # _configure_enroute_surveillance().
                 if isinstance(radar, weather_radar):
                     radar.set_mode(weather_radarMode.SURVEILLANCE, send_completion=False)
                 elif isinstance(radar, tfr_radar):
                     radar.set_mode(tfr_radarMode.TERRAIN_FOLLOWING, send_completion=False)
-                else:
-                    radar.set_mode(RadarMode.STANDBY, send_completion=False)
+                elif isinstance(radar, targeting_radar):
+                    radar.set_mode(targeting_radarMode.STANDBY, send_completion=False)
+                elif isinstance(radar, sar_radar):
+                    radar.set_mode(sar_radarMode.STANDBY, send_completion=False)
+                elif isinstance(radar, aewc_radar):
+                    radar.set_mode(aewc_radarMode.STANDBY, send_completion=False)
             except Exception as e:
                 logger.error(f"Error configuring {radar.name} for airport arrival: {str(e)}")
                 logger.error(traceback.format_exc())

@@ -54,6 +54,11 @@ class PowerManagementSystem:
         self.db = DatabaseManager('FMOFP/dbConfig.xml').get_system_db('power_management_system')
         self._setup_database()
         self.thread = None
+        # Failure-streak tracking, read by health_report(): the monotonic
+        # time of the first failure in the current unbroken streak, or
+        # None when the last pass succeeded.
+        self._failing_since = None
+        self._last_error = ""
         self._start_lock = threading.Lock()
 
         # Initialize messaging
@@ -167,7 +172,18 @@ class PowerManagementSystem:
                 self.monitor()
                 with self.lock:
                     self.db.insert_into_table('pms_data', {'data': json.dumps(self.pms_data)})
+                    # A pass completed, so the failure streak (if any) is over.
+                    self._failing_since = None
+                    self._last_error = ""
             except Exception as e:
+                # Stamp the START of the streak, once. health_report()
+                # reports UNHEALTHY when a streak outlives the grace
+                # period, so that a worker kept alive by this very
+                # handler cannot go on reporting HEALTHY while every
+                # pass fails.
+                if self._failing_since is None:
+                    self._failing_since = time.monotonic()
+                self._last_error = f"{type(e).__name__}: {e}"
                 logger.error(f"PMS monitoring failed: {e}")
                 # NOTE (production readiness re-analysis, August 2026): this was
                 # `time.sleep(5)`, which is NOT interruptible by stop() setting the
@@ -257,6 +273,34 @@ class PowerManagementSystem:
         logger.info(f"Received message: {message}")
         # Here you would typically parse the message and take appropriate action
         # For example, adjusting power distribution based on commands
+
+
+    # ------------------------------------------------------------------ health
+    def health_report(self):
+        """Report this subsystem's health through the C2.1 contract.
+
+        Story C2.2/C2.3: this subsystem exposed none of health_report(),
+        check_health() or is_healthy(), so the sweep could only answer
+        UNKNOWN for it -- "we never asked", indistinguishable from "we
+        asked and it said yes" for any caller that treated UNKNOWN as
+        benign. Measured before this change: 33 of 51 registered
+        components, this one among them, reported UNKNOWN.
+
+        The fact reported is the one this class already publishes from
+        get_status(): whether its single daemon worker thread is alive.
+        Nothing new is inferred about the aircraft.
+
+        Note the polarity: self.running is a STOP event -- start() clears
+        it and stop() sets it -- so a stop has been requested when it
+        IS set. Reading the name as "is running" would invert this
+        check.
+        """
+        from FMOFP.Utils.common.health import worker_health
+
+        return worker_health("PMS", self.thread,
+                             stop_requested=self.running.is_set(),
+                             failing_since=self._failing_since,
+                             last_error=self._last_error)
 
 
 def get_power_management_system() -> PowerManagementSystem:

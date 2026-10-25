@@ -1789,17 +1789,45 @@ class AsyncMessageHandler:
                     
                     # Execute handler
                     if asyncio.iscoroutinefunction(handler):
+                        # _handle_message is synchronous and runs on a worker
+                        # thread, so there is usually no loop here at all.
+                        #
+                        # This used to answer that by creating a NEW loop,
+                        # setting it, and submitting to it with
+                        # run_coroutine_threadsafe -- onto a loop that nobody
+                        # ever runs. Nothing could execute the coroutine, so
+                        # future.result(timeout=5.0) burned the full five
+                        # seconds and raised TimeoutError, every single time
+                        # that branch was taken. A handler that would have
+                        # finished instantly cost five seconds and then
+                        # reported failure.
                         try:
-                            loop = asyncio.get_event_loop()
+                            running = asyncio.get_running_loop()
                         except RuntimeError:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        
-                        future = asyncio.run_coroutine_threadsafe(
-                            handler(data),
-                            loop
-                        )
-                        result = future.result(timeout=5.0)  # 5 second timeout for handlers
+                            running = None
+
+                        if running is not None:
+                            # Already on a loop thread: submitting to our own
+                            # running loop and then blocking on the result
+                            # would deadlock it, so run it inline.
+                            raise RuntimeError(
+                                "[Async] _handle_message was called from a "
+                                "running event loop; it is a synchronous "
+                                "entry point and must not be"
+                            )
+
+                        loop = getattr(self, "_handler_loop", None)
+                        if loop is not None and loop.is_running():
+                            # A real loop, running on another thread.
+                            future = asyncio.run_coroutine_threadsafe(
+                                handler(data), loop)
+                            result = future.result(timeout=5.0)
+                        else:
+                            # No loop to hand it to. Run it here to
+                            # completion, bounded, instead of submitting it
+                            # somewhere it can never run.
+                            result = asyncio.run(
+                                asyncio.wait_for(handler(data), timeout=5.0))
                         
                         # Update handler state on success
                         system.update_handler_state(validated_command, success=True)

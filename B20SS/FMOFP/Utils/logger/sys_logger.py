@@ -198,7 +198,48 @@ class SysLogger(metaclass=Singleton):
             file_handler = logging.handlers.RotatingFileHandler(
                 log_file, maxBytes=50 * 1024 * 1024, backupCount=5, encoding='utf-8'
             )
-            file_handler.setLevel(logging.DEBUG)  # Capture all messages in file
+            # H21: this was logging.DEBUG, hardcoded, while the console
+            # handler below honours <level>. So the one knob the
+            # configuration offers for how much to log governed the terminal
+            # and not the file -- and the file is the 250MB sink.
+            #
+            # The asymmetry was not even uniform, which is why it reads as
+            # deliberate until measured. self.logger and self.command_logger
+            # ARE set to log_level further down, and a LOGGER level filters
+            # before any handler sees the record, so records sent through
+            # those two were filtered correctly. Records sent through the
+            # ROOT logger were not, because the root logger is pinned to
+            # DEBUG as the floor that lets handlers decide -- and every
+            # SysLogger.debug/info/warning/error/critical call delegates to
+            # the root logger, so essentially all application logging took
+            # the unfiltered path.
+            #
+            # Measured with <level>error</level>, one record emitted at each
+            # of five levels through each of the three loggers (15 total):
+            #
+            #   console: 6 of 15   -- error and critical only, correct
+            #   file:    9 of 15   -- error and critical from system and
+            #                         command, and ALL FIVE levels from the
+            #                         root logger
+            #
+            # The file is named after the configured level
+            # (f'{self.level.upper()}_{timestamp}.log'), so the result was a
+            # file called ERROR_<timestamp>.log containing root-logger DEBUG
+            # records. An operator who sets 'error' to get a quiet, small log
+            # got neither, and the filename told them they had.
+            #
+            # <level> is the logging level: there is one such element, plus a
+            # separate <console_output> boolean for whether the terminal gets
+            # a copy at all. A deliberately verbose file under a quiet console
+            # would need a second configuration element, which this change
+            # does not invent.
+            #
+            # TestLogHandler below stays at DEBUG on purpose. It is a
+            # diagnostic capture, not the operator's log: it writes nothing
+            # until a record matches one of its test-start patterns, so on a
+            # normal run it creates no files at all and costs an operator who
+            # lowers <level> nothing.
+            file_handler.setLevel(self.log_level)
             file_handler.setFormatter(formatter)
             
             # Add file handler to root logger

@@ -35,34 +35,23 @@ from FMOFP.local_messaging.command_word_map import register_command_word, valida
 
 logger = get_logger()
 
-# The FCS mode wire encoding, in one place (B6).
+# The FCS wire encoding, in one place (B6, extended by C25.1).
 #
-# The numeric values are the ones already used by _pack_mode_data, by
-# FMSMessageHandler and by address_book.xml; they were previously written out
-# as a literal dict at each of the three sites that needed them. The names are
-# FlightControlModes constants, which is what FlightControlSystem.set_mode()
-# validates against -- the handler works in numbers, the system works in names,
-# and nothing translated between them until now.
-MODE_NAME_TO_VALUE = {
-    "NORMAL": 0,
-    "COMBAT": 1,
-    "PRECISION": 2,
-    "AUTOPILOT": 3,
-    "TERRAIN": 4,
-    "EMERGENCY": 5,
-    "STANDBY": 0,      # no FCS standby mode; treated as NORMAL
-}
-
-# Reverse direction. STANDBY deliberately does not appear: 0 decodes to NORMAL,
-# which is the mode the FCS is actually placed in.
-MODE_VALUE_TO_NAME = {
-    0: "NORMAL",
-    1: "COMBAT",
-    2: "PRECISION",
-    3: "AUTOPILOT",
-    4: "TERRAIN",
-    5: "EMERGENCY",
-}
+# These were literal dicts here. They are now re-exported from
+# FMOFP/local_messaging/fcs_wire_format.py, because the predefined-message
+# classes need to produce the same words this handler decodes -- and because
+# a second, contradictory FCS encoding existed in those classes'
+# encode_1553b() methods. The names are FlightControlModes constants, which
+# is what FlightControlSystem.set_mode() validates against; the wire works
+# in numbers, the system works in names. See that module's docstring.
+from FMOFP.local_messaging.fcs_wire_format import (
+    MODE_NAME_TO_VALUE,
+    MODE_VALUE_TO_NAME,
+    CODE_TO_CONTROL_SURFACE,
+    control_input_data_words,
+    decode_control_value,
+    mode_data_words,
+)
 
 # Import command word maps from main module
 from FMOFP.local_messaging.command_word_map import (
@@ -71,11 +60,21 @@ from FMOFP.local_messaging.command_word_map import (
 
 class PendingRequest:
     """Class to track pending requests to the FCS"""
-    def __init__(self, request_id: str, command_type: str, timestamp: float, timeout: float = 5.0):
+    def __init__(self, request_id: str, command_type: str, timestamp: float,
+                 timeout: float = 5.0, system_name: str = None, data=None):
         self.request_id = request_id
         self.command_type = command_type
         self.timestamp = timestamp
         self.timeout = timeout
+        # What this request WAS, so an expired one can actually be re-issued.
+        # Neither field was stored before, which is why the retry branch in
+        # _cleanup_pending_requests could only ever be the comment
+        # "Implementation would depend on the specific request type": the
+        # inputs send_request needs had been thrown away by then. It logged
+        # "Retrying request X (retry 1/3)" and retried nothing. Measured: one
+        # retry claim in the log, zero calls to send_request.
+        self.system_name = system_name
+        self.data = data
         self.retry_count = 0
         self.max_retries = 3
         self.response = None
@@ -91,8 +90,15 @@ class PendingRequest:
         return not self.completed and self.retry_count < self.max_retries
         
     def increment_retry(self) -> int:
-        """Increment retry count and return new count"""
+        """Increment retry count, restamp, and return the new count.
+
+        The restamp is what the radar handler's PendingRequest already does
+        and this one did not. Without it a retried request stays expired, so
+        the 1 s cleanup tick burned all three retries within three seconds of
+        the first timeout instead of giving each attempt its own window.
+        """
         self.retry_count += 1
+        self.timestamp = time.time()
         return self.retry_count
         
     def set_error_state(self, error: str) -> None:
@@ -191,7 +197,7 @@ class FCSMessageHandler:
         except Exception as e:
             logger.error(f"Failed to register FCS categories with loop prevention middleware: {e}")
         
-    async def send_request(self, system_name: str, request_type: str, data: Any = None, metadata: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    async def send_request(self, system_name: str, request_type: str, data: Any = None, metadata: Optional[Dict[str, Any]] = None, *, inherited_retries: int = 0) -> Optional[str]:
         """
         Send a request to the FCS system.
         
@@ -222,9 +228,22 @@ class FCSMessageHandler:
         pending_request = PendingRequest(
             request_id=request_id,
             command_type=request_type,
-            timestamp=timestamp
+            timestamp=timestamp,
+            system_name=system_name,
+            data=data,
         )
-        self.pending_requests[request_id] = pending_request
+        # Seeded on a re-issue so max_retries actually binds: send_request
+        # mints a new request_id, so without carrying the count forward every
+        # retry would start the budget again at zero.
+        pending_request.retry_count = inherited_retries
+        # Under the lock: _cleanup_pending_requests iterates this dict on a
+        # threading.Timer thread while this runs on the event loop thread.
+        # Only the cleanup side used to take the lock, which is worse than no
+        # lock at all because it reads as guarded. Reproduced in 4 s:
+        # "RuntimeError: dictionary changed size during iteration".
+        # Narrow by design -- never held across an await (H5).
+        with self.lock:
+            self.pending_requests[request_id] = pending_request
         
         try:
             # Determine appropriate command word and data words based on request type
@@ -309,7 +328,8 @@ class FCSMessageHandler:
             
             if result is None:
                 logger.error("[FCS_MSGR] Failed to send message through 1553B")
-                del self.pending_requests[request_id]
+                with self.lock:
+                    self.pending_requests.pop(request_id, None)
                 return None
                 
             logger.info("[FCS_MSGR] Successfully sent message through 1553B")
@@ -320,86 +340,63 @@ class FCSMessageHandler:
             logger.error(traceback.format_exc())
             
             # Clean up pending request on error
-            if request_id in self.pending_requests:
-                del self.pending_requests[request_id]
+            with self.lock:
+                self.pending_requests.pop(request_id, None)
                 
             return None
             
     def _pack_mode_data(self, data: Any) -> list:
-        """Pack FCS mode data into binary format for message transmission."""
-        mode_value = None
-        mode_name = None
-        
-        # Extract mode name from data based on its type
-        if isinstance(data, dict) and 'mode_name' in data:
-            mode_name = data['mode_name']
-            logger.info(f"[FCS_MSGR] Mode name extracted from dictionary: {mode_name}")
-        elif hasattr(data, 'value'):
-            mode_value = data.value
-            mode_name = data.name if hasattr(data, 'name') else str(data.value)
-            logger.info(f"[FCS_MSGR] Mode value found from enum: {mode_name} {mode_value}")
-        elif isinstance(data, str):
-            mode_name = data
-            logger.info(f"[FCS_MSGR] Mode name as string: {mode_name}")
-        
-            # Map mode name to value - aligned with address_book.xml and FMSMessageHandler
-            if mode_value is None:
-                # Map string mode to value based on standardized mode values
-                mode_map = {
-                    "NORMAL": 0,     # Aligned with FMSMessageHandler
-                    "COMBAT": 1,     # Aligned with FMSMessageHandler
-                    "PRECISION": 2,  # Aligned with FMSMessageHandler
-                    "AUTOPILOT": 3,  # Aligned with FMSMessageHandler
-                    "TERRAIN": 4,    # Aligned with FMSMessageHandler
-                    "EMERGENCY": 5,  # Aligned with FMSMessageHandler
-                    "STANDBY": 0     # Treated as NORMAL
-                }
-                if mode_name:
-                    mode_value = mode_map.get(mode_name.upper(), 0)
-                    logger.info(f"[FCS_MSGR] Mapped mode {mode_name} to value: {mode_value}")
-                else:
-                    # Default to NORMAL mode value as fallback
-                    mode_value = 0  # NORMAL mode
-                    logger.info(f"[FCS_MSGR] Using default mode value: {mode_value}")
-            
-        # Format as 16-bit binary string
-        return [format(mode_value, '016b')]
-        
-    def _pack_control_input_data(self, data: Any) -> list:
-        """Pack control input data into binary format for message transmission."""
-        # Extract control surface and value information
-        control_type = None
-        control_value = 0.0
-        
+        """
+        Pack FCS mode data into data words.
+
+        Delegates to the shared encoding. The inline version here mapped an
+        unrecognised mode name to 0, and 0 is NORMAL -- so a request for a
+        mode the FCS does not have was transmitted as a command to enter
+        NORMAL, and reported as sent. mode_data_words() raises instead; the
+        caller is inside send_request's try/except, which drops the pending
+        request and returns None, so the request is refused rather than
+        silently turned into a different command.
+        """
         if isinstance(data, dict):
-            control_type = data.get('control_type')
-            control_value = data.get('value', 0.0)
-        
-        if not control_type:
-            logger.error("[FCS_MSGR] Missing control_type in control input data")
-            return [format(0, '016b'), format(0, '016b')]
-        
-        # Map control type to code
-        control_map = {
-            "aileron": 1,
-            "elevator": 2,
-            "rudder": 3,
-            "throttle": 4,
-            "flaps": 5,
-            "speedbrake": 6,
-            "gear": 7
-        }
-        
-        control_code = control_map.get(control_type.lower(), 0)
-        
-        # Scale control value from float [-1.0, 1.0] to int [0, 1000]
-        # Center point is 500 (0.0), full negative is 0 (-1.0), full positive is 1000 (1.0)
-        scaled_value = int((control_value + 1.0) * 500)
-        scaled_value = max(0, min(1000, scaled_value))  # Clamp to valid range
-        
-        # Pack into data words
-        return [format(control_code, '016b'), format(scaled_value, '016b')]
-        
+            mode_name = data.get('mode_name', data.get('mode'))
+            extra = data
+        else:
+            mode_name = data
+            extra = None
+
+        words = mode_data_words(mode_name, extra_params=extra)
+        logger.info(f"[FCS_MSGR] Packed mode {mode_name} as {words}")
+        return words
+
+    def _pack_control_input_data(self, data: Any) -> list:
+        """
+        Pack control input data into data words.
+
+        Delegates to the shared encoding. The inline version returned
+        [0, 0] for a missing control type and code 0 for an unrecognised
+        one; code 0 is not a surface, so the receiving end answered "no
+        control surface specified" and ERROR -- after the request had been
+        accepted, sent and given an ID. control_input_data_words() raises,
+        which send_request's try/except turns into a refusal before
+        anything reaches the bus.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"control input data must be a dict with 'control_type' and "
+                f"'value', got {type(data).__name__}"
+            )
+
+        words = control_input_data_words(
+            data.get('control_type'),
+            data.get('value', 0.0),
+            rate=data.get('rate'),
+        )
+        logger.info(
+            f"[FCS_MSGR] Packed control input "
+            f"{data.get('control_type')}={data.get('value', 0.0)} as {words}"
+        )
+        return words
+
     def set_async_handler(self, async_handler):
         """Set the async message handler"""
         self.async_handler = async_handler
@@ -504,17 +501,22 @@ class FCSMessageHandler:
                 elif 'parameters' in message and 'mode_name' in message['parameters']:
                     # Data is in parameters dictionary
                     mode_name = message['parameters']['mode_name']
-                    # Align mode map with the one in _pack_mode_data and in address_book.xml
-                    mode_map = {
-                        "NORMAL": 0,     # Aligned with FMSMessageHandler and address_book.xml
-                        "COMBAT": 1,     # Aligned with FMSMessageHandler and address_book.xml
-                        "PRECISION": 2,  # Aligned with FMSMessageHandler and address_book.xml
-                        "AUTOPILOT": 3,  # Aligned with FMSMessageHandler and address_book.xml
-                        "TERRAIN": 4,    # Aligned with FMSMessageHandler and address_book.xml
-                        "EMERGENCY": 5,  # Aligned with FMSMessageHandler and address_book.xml
-                        "STANDBY": 0     # Treated as NORMAL
-                    }
-                    mode_value = mode_map.get(mode_name.upper(), 0)
+                    # Third inline copy of this table, now the shared one
+                    # (fcs_wire_format.MODE_NAME_TO_VALUE). The `.get(..., 0)`
+                    # default this replaces mapped any unrecognised mode name
+                    # to 0, which is NORMAL -- so a command naming a mode the
+                    # FCS does not have put the aircraft into NORMAL and
+                    # answered SUCCESS. An unknown name is now refused, which
+                    # is what the numeric path a few lines down already does
+                    # for an out-of-range mode value.
+                    mode_value = MODE_NAME_TO_VALUE.get(str(mode_name).upper())
+                    if mode_value is None:
+                        logger.warning(
+                            f"[FCS] '{mode_name}' is not an FCS mode; the FCS "
+                            f"modes are "
+                            f"{sorted(n for n in MODE_NAME_TO_VALUE if n != 'STANDBY')}")
+                        return {"status": "ERROR",
+                                "message": f"Unknown mode: {mode_name}"}
                     logger.info(f"[FCS] Extracted mode value from parameters: {mode_value} ({mode_name})")
                 else:
                     logger.warning("[FCS] No mode value found in message")
@@ -607,8 +609,9 @@ class FCSMessageHandler:
             request_id = message.get('request_id', None)
             
             # Complete pending request if it exists
-            if request_id in self.pending_requests:
-                pending_request = self.pending_requests.pop(request_id)
+            with self.lock:
+                pending_request = self.pending_requests.pop(request_id, None)
+            if pending_request is not None:
                 pending_request.set_response(message)
                 logger.info(f"[FCS] Completed pending request: {request_id}")
                 
@@ -679,23 +682,16 @@ class FCSMessageHandler:
                     try:
                         control_code = int(data_words[0], 2)
                         scaled_value = int(data_words[1], 2)
-                        
-                        # Map control code to control type
-                        control_map = {
-                            1: "aileron",
-                            2: "elevator",
-                            3: "rudder",
-                            4: "throttle",
-                            5: "flaps",
-                            6: "speedbrake",
-                            7: "gear"
-                        }
-                        
-                        control_surface = control_map.get(control_code)
-                        
-                        # Convert scaled value back to float range [-1.0, 1.0]
-                        control_value = (scaled_value / 500.0) - 1.0
-                        control_value = max(-1.0, min(1.0, control_value))  # Ensure valid range
+
+                        # Both the code table and the scaling now come from
+                        # fcs_wire_format, so the encoder on the other end
+                        # cannot drift from this decoder. The dict and the
+                        # /500.0 - 1.0 arithmetic used to be written out
+                        # here, which is how a second encoding in the
+                        # predefined-message classes managed to disagree
+                        # with this one on every field.
+                        control_surface = CODE_TO_CONTROL_SURFACE.get(control_code)
+                        control_value = decode_control_value(scaled_value)
                     except Exception as e:
                         logger.error(f"[FCS] Error parsing control input data words: {e}")
                         return {"status": "ERROR", "message": f"Error parsing control input data: {str(e)}"}
@@ -777,8 +773,9 @@ class FCSMessageHandler:
             request_id = message.get('request_id', None)
             
             # Complete pending request if it exists
-            if request_id in self.pending_requests:
-                pending_request = self.pending_requests.pop(request_id)
+            with self.lock:
+                pending_request = self.pending_requests.pop(request_id, None)
+            if pending_request is not None:
                 pending_request.set_response(message)
                 logger.info(f"[FCS] Completed pending request: {request_id}")
                 
@@ -889,8 +886,9 @@ class FCSMessageHandler:
             request_id = message.get('request_id', None)
             
             # Complete pending request if it exists
-            if request_id in self.pending_requests:
-                pending_request = self.pending_requests.pop(request_id)
+            with self.lock:
+                pending_request = self.pending_requests.pop(request_id, None)
+            if pending_request is not None:
                 pending_request.set_response(message)
                 logger.info(f"[FCS] Completed pending request: {request_id}")
                 
@@ -1001,8 +999,9 @@ class FCSMessageHandler:
             request_id = message.get('request_id', None)
             
             # Complete pending request if it exists
-            if request_id in self.pending_requests:
-                pending_request = self.pending_requests.pop(request_id)
+            with self.lock:
+                pending_request = self.pending_requests.pop(request_id, None)
+            if pending_request is not None:
                 pending_request.set_response(message)
                 logger.info(f"[FCS] Completed pending request: {request_id}")
                 
@@ -1097,13 +1096,55 @@ class FCSMessageHandler:
             return False
 
     def _start_cleanup_timer(self):
-        """Start the cleanup timer for pending requests"""
-        if self.cleanup_timer and self.cleanup_timer.is_alive():
-            return  # Timer already running
-            
-        self.cleanup_timer = threading.Timer(1.0, self._cleanup_pending_requests)
-        self.cleanup_timer.daemon = True
-        self.cleanup_timer.start()
+        """Arm the one-shot timer that expires stale pending requests.
+
+        The guard here used to be `if self.cleanup_timer.is_alive(): return`.
+        This method is re-armed from the `finally` block of
+        _cleanup_pending_requests -- which runs ON THE TIMER'S OWN THREAD, where
+        that Timer's is_alive() is True. So the guard returned early every
+        single time and the timer never re-armed: cleanup ran ONCE, one second
+        after start(), and never again. Measured directly -- one pass, one
+        "Retrying request" line, then `cleanup_timer.is_alive() == False`
+        forever.
+
+        The replacement compares against the thread actually running, so a
+        re-arm from inside the timer proceeds while a duplicate call from
+        elsewhere is still refused.
+        """
+        existing = self.cleanup_timer
+        if (existing is not None and existing.is_alive()
+                and existing is not threading.current_thread()):
+            return  # a different, live timer is already pending
+
+        if not self.started:
+            return  # stopped between the pass finishing and this re-arm
+
+        # Start the timer BEFORE publishing it, not after.
+        #
+        # This was three statements on self.cleanup_timer: construct, set
+        # daemon, start. A freshly constructed Thread is not alive until
+        # start() returns, and start() blocks until the new thread is
+        # actually running -- so for that whole window self.cleanup_timer
+        # held a timer whose is_alive() was False, visible to anything
+        # checking whether a cleanup pass was still pending.
+        #
+        # Measured on the real handler with a tight sampler over six
+        # passes: 43,196 of 27,462,452 samples (0.16% of wall time) saw the
+        # slot holding a not-alive timer, all of it clustered on the
+        # one-second firing boundaries. test_request_expiry samples exactly
+        # there -- it sleeps 4.0s, a whole multiple of the interval -- and
+        # CI caught it: "FAIL and a timer is still pending at the end",
+        # once, with the other two checks in the same test passing.
+        #
+        # Binding locally and publishing last removes the window entirely:
+        # until the assignment an observer sees the OUTGOING timer, whose
+        # thread is still running this very method from its finally block,
+        # so is_alive() is True throughout. There is never an instant where
+        # the slot holds a dead timer while the chain is in fact alive.
+        timer = threading.Timer(1.0, self._cleanup_pending_requests)
+        timer.daemon = True
+        timer.start()
+        self.cleanup_timer = timer
     
     def _cleanup_pending_requests(self):
         """Clean up expired pending requests"""
@@ -1113,26 +1154,56 @@ class FCSMessageHandler:
                 retry_requests = []
                 
                 # Identify expired and retry requests
-                for request_id, request in self.pending_requests.items():
+                for request_id, request in list(self.pending_requests.items()):
                     if request.is_expired():
                         if request.should_retry():
                             retry_requests.append(request_id)
                         else:
                             expired_requests.append(request_id)
                 
-                # Handle retries
+                # Give an expired request another window, and say plainly
+                # that nothing was re-sent.
+                #
+                # This branch used to log "Retrying request X (retry 1/3)" with
+                # no re-issue behind it -- measured: one retry claim in the log,
+                # zero calls to send_request. PendingRequest did not store
+                # system_name or data, so there was nothing to re-send from;
+                # that is what the comment "Implementation would depend on the
+                # specific request type" was really recording. Both fields are
+                # captured now, so a re-issue is finally POSSIBLE.
+                #
+                # It is still not DONE, deliberately. Nothing marks a request
+                # complete when its response arrives -- set_response() and
+                # set_completed() have no callers in this handler -- so every
+                # successfully-sent request sits here until it expires whether
+                # or not it was answered. Measured: a request the bus accepted
+                # was still pending 28 s later with no response recorded.
+                # Re-sending on that basis would put four copies of every
+                # command on a 1553B bus. The missing completion path is the
+                # blocker and is tracked separately; until it exists, this
+                # waits rather than retransmits, and the log says so.
                 for request_id in retry_requests:
                     request = self.pending_requests[request_id]
-                    retry_count = request.increment_retry()
-                    logger.warning(f"Retrying request {request_id} (retry {retry_count}/{request.max_retries})")
-                    
-                    # Re-issue the request
-                    # Implementation would depend on the specific request type
+                    attempt = request.increment_retry()
+                    logger.warning(
+                        f"Request {request_id} ({request.command_type}) timed "
+                        f"out with no response; extending its window "
+                        f"({attempt}/{request.max_retries}). NOT re-sent: this "
+                        f"handler has no response-completion path, so a resend "
+                        f"could duplicate a command that did arrive."
+                    )
                 
                 # Remove expired requests
                 for request_id in expired_requests:
                     request = self.pending_requests.pop(request_id)
-                    logger.warning(f"Request {request_id} expired after {request.max_retries} retries")
+                    # request.max_retries here always printed "3", so a
+                    # request that expired on its first window reported
+                    # "expired after 3 retries". The real count is retry_count.
+                    logger.warning(
+                        f"Request {request_id} ({request.command_type}) "
+                        f"expired after {request.retry_count} of "
+                        f"{request.max_retries} windows with no response"
+                    )
                     
                     # Notify of failure
                     if request.command_type and self.response_service:

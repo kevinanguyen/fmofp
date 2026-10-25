@@ -51,31 +51,34 @@ class fcs_flightModeRequest(BaseMessage):
         if "mode" not in self.mode_data:
             raise ValueError("mode_data must contain a 'mode' key")
             
+    def to_data_words(self):
+        """
+        The data words for this flight mode request, as 16-bit binary
+        strings. See fcs_data.fcs_controlSurfaceRequest.to_data_words() for
+        why this did not exist, and fcs_wire_format's docstring for the
+        encoding that used to live in encode_1553b() below and disagreed
+        with the live one on every mode value.
+
+        The mode branch of RadarMessageHandler.send_request() prefers this
+        over _pack_data(), which starts from RADAR_MODE_MAP and raises
+        KeyError for anything that is not one of the five radars.
+        """
+        from FMOFP.local_messaging.fcs_wire_format import mode_data_words
+
+        return mode_data_words(self.mode_data.get("mode"), extra_params=self.mode_data)
+
     def encode_1553b(self):
-        """Encode message for 1553B transmission"""
+        """
+        Encode message for 1553B transmission: [command_word, *data_words].
+
+        Delegates to to_data_words() so there is one FCS mode encoding.
+        The layout this method used to carry numbered the modes
+        normal 1 .. emergency 7 over a set of names the FCS does not have
+        (approach, takeoff, landing, cruise); the FCS decodes NORMAL 0 ..
+        EMERGENCY 5. Returns ints, as before.
+        """
         command_word = get_fcs_command_word(FCS_MODE_CHANGE_REQUEST).value
-        
-        # Mode mapping
-        mode_map = {
-            "normal": 0x01,
-            "approach": 0x02,
-            "takeoff": 0x03,
-            "landing": 0x04,
-            "cruise": 0x05,
-            "combat": 0x06,
-            "emergency": 0x07
-        }
-        
-        mode_id = mode_map.get(self.mode_data.get("mode", "").lower(), 0x00)
-        
-        # Optional parameters - encode as flags
-        flaps = int(self.mode_data.get("flaps", 0)) & 0xFF
-        gear = 0x01 if self.mode_data.get("gear", "").lower() == "down" else 0x00
-        
-        # Pack flags: [flaps: 8 bits][gear: 1 bit][reserved: 7 bits]
-        flags = (flaps << 8) | (gear << 7)
-        
-        return [command_word, mode_id, flags]
+        return [command_word] + [int(word, 2) for word in self.to_data_words()]
 
 class fcs_flightModeResponse(BaseMessage):
     """Flight mode response message"""

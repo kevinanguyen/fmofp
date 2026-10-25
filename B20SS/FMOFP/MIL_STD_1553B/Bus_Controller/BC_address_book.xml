@@ -34,7 +34,18 @@ Reference: \FMOFP\local_messaging\messageConfigurations\message_definitions.py
         <address>4</address>
         <port>8004</port>
     </system>
-    <system id="unnamed_system">
+    <!-- Story C25.1. This entry's id was "unnamed_system", the same id as
+         the address-0 entry above, so the Flight Control System had no id of
+         its own and get_rt_address() could not resolve it at all. The id
+         below is the one the project's own rtAddressConfig.xml already uses
+         for RT address 5 ("flightcontrolsys"); the two files disagreed only
+         because this one was never filled in. With no resolvable id, the FCS
+         command words were invented from a private FCS_BASE_COMMAND = 0x4000
+         instead of being derived from the address book, and 0x4007 decodes
+         under this codebase's own command word layout (RT 5 bits, T/R 1 bit,
+         subaddress 5 bits, word count 5 bits) as RT address 8, subaddress 0.
+         RT 8 is Power Management. -->
+    <system id="flightcontrolsys">
         <name>Flight Control System</name>
         <address>5</address>
         <port>8005</port>

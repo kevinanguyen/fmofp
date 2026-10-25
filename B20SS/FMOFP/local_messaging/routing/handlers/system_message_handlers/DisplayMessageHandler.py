@@ -2785,14 +2785,35 @@ class DisplayMessageHandler:
         try:
             self.started = False
 
-            # Cancel processing task
+            # Cancel processing task.
+            #
+            # This used to call self._processing_task.result() straight after
+            # cancel(), guarded by `except asyncio.CancelledError`. cancel()
+            # only REQUESTS cancellation -- the task is not done until the
+            # loop next runs it -- and result() on a task that is not done
+            # raises InvalidStateError, which that clause does not catch. It
+            # escaped to this method's own `except Exception`, so every stop
+            # logged
+            #     Error stopping DisplayMessageHandler: Result is not set.
+            # and abandoned the rest of the body: _processing_task was never
+            # cleared and "DisplayMessageHandler stopped" was never logged.
+            # Measured against the real handler, both confirmed.
+            #
+            # stop() is synchronous and cannot await the task, so the result
+            # is read only when the task is already finished -- which is the
+            # only time there is one. A task still running is left to the
+            # cancellation already requested of it.
             if self._processing_task:
-                self._processing_task.cancel()
-                try:
-                    self._processing_task.result()
-                except asyncio.CancelledError:
-                    pass
-                self._processing_task = None
+                task = self._processing_task
+                self._processing_task = None     # cleared first, unconditionally
+                task.cancel()
+                if task.done() and not task.cancelled():
+                    exc = task.exception()
+                    if exc is not None:
+                        logger.error(
+                            f"Display message processing task ended with "
+                            f"{type(exc).__name__}: {exc}"
+                        )
 
             # Don't stop async handler - let system manager handle that
             logger.info("DisplayMessageHandler stopped")

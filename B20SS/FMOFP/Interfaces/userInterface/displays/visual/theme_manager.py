@@ -232,12 +232,38 @@ class VisualThemeManager:
         return False
     
     def get_color(self, color_name: str) -> QColor:
-        """Get color from current theme with improved fallback handling"""
+        """Return a COPY of the named theme colour.
+
+        The copy is the point. This used to return the theme dictionary's own
+        QColor, and QColor is mutable, so a caller that adjusted the alpha for
+        its own drawing rewrote the theme for everyone. Three callers in
+        holographic_display.py do exactly that -- draw_holographic_background()
+        and draw_startup_animation() each take a colour and immediately
+        setAlpha() it.
+
+        Measured against the live theme manager before the change:
+
+            two calls return the SAME object: True
+            alpha before: 200
+            after one caller setAlpha(30), a later caller sees: 30
+            after a second caller setAlpha(200), the theme reads: 200
+            the first caller's own variable also changed to: 200
+
+        That last line is the sharp one: two routines that each set their own
+        alpha silently overwrite each other, and what any element renders at
+        depends on the order the drawing code happened to run in that frame.
+
+        QColor's copy constructor is a cheap value copy, which matters because
+        this is called from paint paths. get_font() is left returning the
+        theme's own QFont: QFont is mutable too, but a scope-aware scan found
+        no caller that mutates one, so copying there would be cost without a
+        reason. If that changes, it needs the same treatment.
+        """
         theme = self.get_current_theme()
         
         # Try to get color from current theme
         if color_name in theme.get("colors", {}):
-            return theme["colors"][color_name]
+            return QColor(theme["colors"][color_name])
         
         # Fallback to standard colors based on color name
         fallback_colors = {
@@ -282,7 +308,9 @@ class VisualThemeManager:
         
         if color_name in fallback_colors:
             logger.warning(f"Color '{color_name}' not found in theme {self._current_theme.value}, using standard fallback")
-            return fallback_colors[color_name]
+            # Already a fresh object -- fallback_colors is rebuilt per call --
+            # but copied anyway so every path out of here has one contract.
+            return QColor(fallback_colors[color_name])
             
         # Default to classic green as final fallback
         logger.warning(f"Color '{color_name}' not found in theme {self._current_theme.value}")

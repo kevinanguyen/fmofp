@@ -358,10 +358,42 @@ class aewc_radar:
             mode: The new mode to set
             send_completion: Whether to send a mode change completion notification (default: True)
             request_id: The request ID to include in the completion message
+
+        Returns:
+            True when the radar is in `mode` once this returns -- including
+            when it was already there. False when the command was refused.
+
+            Story C23.1 AC3: every exit used to be a bare `return`, so a
+            caller could not tell a refused command from an accepted one. FMS
+            and FCS set_mode() already return booleans and their live suites
+            assert on them; this matches that convention.
         """
         try:
+            # Story C23.1 AC5: a mode value delivered as a plain int is a
+            # legitimate shape off the 1553B path, and the other three radars
+            # already accepted it. These two refused it, so the five disagreed
+            # about the same wire format. (Instrumented over a live boot and
+            # the full mode sweep, no int was in fact observed reaching
+            # set_mode -- every call carried an enum. This closes the
+            # inconsistency rather than fixing an observed failure.)
+            if isinstance(mode, int) and not isinstance(mode, aewc_radarMode):
+                try:
+                    mode = aewc_radarMode(mode)
+                except ValueError:
+                    logger.error(
+                        f"[AEWC_RADAR] Refusing mode value {mode}: no "
+                        f"aewc_radarMode member has it"
+                    )
+                    return False
+
             if not isinstance(mode, aewc_radarMode):
-                raise ValueError(f"Invalid mode type for AEWC radar: {type(mode)}")
+                logger.error(
+                    f"[AEWC_RADAR] Refusing mode of type {type(mode).__name__}: "
+                    f"this radar is commanded with its own enum. Coercing a "
+                    f"foreign enum by numeric value is what story C23.1 "
+                    f"removed from the other radars."
+                )
+                return False
 
             with self._lock:
                 old_mode = self.mode
@@ -381,6 +413,7 @@ class aewc_radar:
                     self._send_mode_change_completion(old_mode, mode, request_id)
                 else:
                     logger.info(f"[AEWC_RADAR] Skipping mode change completion notification (send_completion=False)")
+            return True
         except Exception as e:
             logger.error(f"Error setting mode for AEWC radar {self.name}: {str(e)}")
 

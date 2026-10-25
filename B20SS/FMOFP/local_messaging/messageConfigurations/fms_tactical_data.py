@@ -8,6 +8,61 @@ Including g-force, angle of attack, sideslip, energy state, and flight mode.
 from datetime import datetime
 from FMOFP.local_messaging.command_word_map_fms import get_fms_command_word
 
+# The FMS mode vocabulary, in one place.
+#
+# This is NOT the FCS's. The FMS has five modes -- the set
+# FlightManagementSystem.set_mode() validates against -- and the FCS has six,
+# numbered differently: the FMS's STEALTH 2 / TRAINING 3 / EMERGENCY 4 against
+# the FCS's PRECISION 2 / AUTOPILOT 3 / TERRAIN 4 / EMERGENCY 5. The two
+# systems are coupled by name, not by number (an FMS STEALTH drives the FCS
+# into PRECISION), so a value encoded with one table and decoded with the
+# other names a different mode. EMERGENCY is the one that matters most and it
+# is the one that differs: 4 here, 5 there.
+#
+# The encode and decode halves below were written out separately, and
+# FMSMessageHandler and fms_message_processor each held a third and fourth
+# copy. They agreed, but nothing made them agree.
+FMS_MODE_NAME_TO_VALUE = {
+    "NORMAL": 0,
+    "COMBAT": 1,
+    "STEALTH": 2,
+    "TRAINING": 3,
+    "EMERGENCY": 4,
+}
+
+FMS_MODE_VALUE_TO_NAME = {value: name for name, value in FMS_MODE_NAME_TO_VALUE.items()}
+
+
+def fms_mode_data_words(mode_name):
+    """
+    The data words for an FMS mode change: one 16-bit binary string.
+
+    Raises ValueError for anything that is not an FMS mode. The packers this
+    replaces mapped an unrecognised name to 0, which is NORMAL, so a command
+    for a mode that does not exist was transmitted as a command to enter
+    NORMAL and reported as sent.
+    """
+    if mode_name is None:
+        raise ValueError("mode change requires a mode name, got None")
+
+    value = getattr(mode_name, 'value', None)
+    if isinstance(value, int):
+        if value not in FMS_MODE_VALUE_TO_NAME:
+            raise ValueError(
+                f"mode value {value} is not an FMS mode; the FMS modes are "
+                f"{FMS_MODE_VALUE_TO_NAME}")
+        resolved = value
+    else:
+        key = str(getattr(mode_name, 'name', mode_name)).upper()
+        if key not in FMS_MODE_NAME_TO_VALUE:
+            raise ValueError(
+                f"'{mode_name}' is not an FMS mode; the FMS modes are "
+                f"{sorted(FMS_MODE_NAME_TO_VALUE)}")
+        resolved = FMS_MODE_NAME_TO_VALUE[key]
+
+    return [format(resolved, '016b')]
+
+
 def create_fms_tactical_data_message(
     g_force=1.0,
     aoa=0.0,
@@ -82,14 +137,7 @@ def encode_fms_tactical_data(message):
     energy_int = min(100, max(0, int(data["energy_state"]))) & 0xFFFF
     
     # Mode (encoded as integer)
-    mode_map = {
-        "NORMAL": 0,
-        "COMBAT": 1,
-        "STEALTH": 2,
-        "TRAINING": 3,
-        "EMERGENCY": 4
-    }
-    mode_int = mode_map.get(data["mode"], 0) & 0xFFFF
+    mode_int = FMS_MODE_NAME_TO_VALUE.get(data["mode"], 0) & 0xFFFF
     
     # Add data words in a defined order
     data_words.extend([g_force_int, aoa_int, sideslip_int, energy_int, mode_int])
@@ -129,14 +177,7 @@ def decode_fms_tactical_data(data_words):
     
     # Extract mode
     mode_int = data_words[5] & 0xFFFF
-    mode_map = {
-        0: "NORMAL",
-        1: "COMBAT",
-        2: "STEALTH",
-        3: "TRAINING",
-        4: "EMERGENCY"
-    }
-    mode = mode_map.get(mode_int, "NORMAL")
+    mode = FMS_MODE_VALUE_TO_NAME.get(mode_int, "NORMAL")
     
     # Create message
     return create_fms_tactical_data_message(

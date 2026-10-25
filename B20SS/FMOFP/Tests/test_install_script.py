@@ -328,15 +328,28 @@ def test_required_packages(r: _Results) -> None:
 # ubuntu-latest, where WHEEL_DIRS is empty, so the path was never exercised.
 
 
+# The distribution names are the repo's real ones; the TAGS are deliberately
+# py3-none-any. _find_wheel() now also checks tag compatibility, and the real
+# bundled wheels are win_amd64 (one of them cp310-only), so reusing their exact
+# filenames would make these tests exercise the tag logic on whatever
+# interpreter happens to be running. That is test_offline_install_matrix's job.
+# These two tests are about name matching and the pip argv.
+_FAKE_WHEELS = (
+    "PyQt6-6.8.1-py3-none-any.whl",
+    "PyQt6_Qt6-6.8.2-py3-none-any.whl",
+    "PyQt6_sip-13.10.0-py3-none-any.whl",
+)
+
+# One wheel with the real, interpreter-locked tag, for asserting that
+# _find_wheel declines it rather than handing pip something pip will refuse.
+_LOCKED_SIP_WHEEL = "PyQt6_sip-13.10.0-cp310-cp310-win_amd64.whl"
+
+
 def _fake_wheel_dir(tmp: Path) -> Path:
-    """A directory holding wheels named exactly as the repo's bundled ones."""
+    """A directory of wheels with the repo's distribution names."""
     wheel_dir = tmp / "PyQt6"
     wheel_dir.mkdir(parents=True, exist_ok=True)
-    for name in (
-        "PyQt6-6.8.1-cp39-abi3-win_amd64.whl",
-        "PyQt6_Qt6-6.8.2-py3-none-win_amd64.whl",
-        "PyQt6_sip-13.10.0-cp310-cp310-win_amd64.whl",
-    ):
+    for name in _FAKE_WHEELS:
         (wheel_dir / name).write_bytes(b"")
     return wheel_dir
 
@@ -361,6 +374,29 @@ def test_find_wheel_matches_distribution_name(r):
                         f"got {found.name if found else None}")
             r.check("_find_wheel returns None for a package with no bundled wheel",
                     _install._find_wheel("numpy") is None)
+        finally:
+            _install.WHEEL_DIRS = original
+
+    # Name matching is necessary but not sufficient: a wheel this interpreter
+    # cannot install must not be offered to pip at all.
+    with tempfile.TemporaryDirectory() as td:
+        wheel_dir = Path(td) / "PyQt6"
+        wheel_dir.mkdir(parents=True, exist_ok=True)
+        (wheel_dir / _LOCKED_SIP_WHEEL).write_bytes(b"")
+        original = _install.WHEEL_DIRS
+        _install.WHEEL_DIRS = [wheel_dir]
+        try:
+            r.check("the distribution name still matches",
+                    [w.name for w in _install._bundled_wheels("PyQt6-sip")]
+                    == [_LOCKED_SIP_WHEEL])
+            native = _install._wheel_is_compatible(_LOCKED_SIP_WHEEL)[0]
+            r.check("a wheel for another interpreter is not returned",
+                    (_install._find_wheel("PyQt6-sip") is not None) == native,
+                    f"compatible here={native}")
+            if not native:
+                r.check("and the report says why",
+                        "3.10" in _install._unusable_wheel_report("PyQt6-sip"),
+                        _install._unusable_wheel_report("PyQt6-sip"))
         finally:
             _install.WHEEL_DIRS = original
 

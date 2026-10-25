@@ -65,27 +65,47 @@ class fcs_controlSurfaceRequest(BaseMessage):
         if "position" not in self.surface_data:
             raise ValueError("surface_data must contain a 'position' key")
             
+    def to_data_words(self):
+        """
+        The data words for this control surface request, as 16-bit binary
+        strings -- the form RadarMessageHandler.send_request() looks for
+        (`hasattr(data, 'to_data_words')`) and the form the bus controller
+        puts on the wire.
+
+        Story C25.1. This method did not exist, which is why the send path
+        refused the request outright: with no to_data_words() the handler
+        fell through to its default format and produced
+        ['0000000000000000'] -- the surface, position and rate not encoded
+        at all -- so withholding the FCS's data command word was the only
+        thing preventing an empty command from travelling.
+
+        The layout comes from fcs_wire_format, which is the encoding the
+        FCS's own handler decodes in _handle_control_input_request(). The
+        encode_1553b() that used to live here had a different and
+        incompatible layout; see that module's docstring.
+        """
+        from FMOFP.local_messaging.fcs_wire_format import control_input_data_words
+
+        return control_input_data_words(
+            self.surface_data.get("surface"),
+            self.surface_data.get("position", 0.0),
+            rate=self.surface_data.get("rate"),
+        )
+
     def encode_1553b(self):
-        """Encode message for 1553B transmission"""
+        """
+        Encode message for 1553B transmission: [command_word, *data_words].
+
+        Delegates to to_data_words() so there is exactly one FCS control
+        input encoding. This method previously carried its own, which had
+        zero callers and nothing to decode it, and which disagreed with the
+        live encoding on both the surface numbering (its flaps was 4, which
+        the FCS decodes as throttle) and the value scaling (it sent
+        position * 100, which the FCS reads as near-full negative
+        deflection). Returns ints, as before.
+        """
         command_word = get_fcs_command_word(FCS_CONTROL_INPUT_REQUEST).value
-        
-        # Format: [command_word, surface_id, position_value, rate_value, flags]
-        surface_map = {
-            "aileron": 0x01,
-            "elevator": 0x02,
-            "rudder": 0x03,
-            "flaps": 0x04,
-            "spoilers": 0x05,
-            "speedbrake": 0x06,
-            "trim": 0x07
-        }
-        
-        surface_id = surface_map.get(self.surface_data.get("surface", "").lower(), 0x00)
-        position = int(self.surface_data.get("position", 0) * 100) & 0xFFFF  # Scale by 100
-        rate = int(self.surface_data.get("rate", 0) * 100) & 0xFFFF if "rate" in self.surface_data else 0
-        flags = 0x0001 if self.surface_data.get("override", False) else 0x0000
-        
-        return [command_word, surface_id, position, rate, flags]
+        return [command_word] + [int(word, 2) for word in self.to_data_words()]
 
 class fcs_controlSurfaceResponse(BaseMessage):
     """Control surface response message"""

@@ -554,6 +554,115 @@ check("a fire-and-forget stop really is lost when the loop ends "
       "(proves B3 bites)", discarded['ran'] is False)
 
 
+
+# ── DisplayMessageHandler.stop(): result() straight after cancel() ──────────
+#
+# cancel() only REQUESTS cancellation; the task is not done until the loop
+# next runs it, and Task.result() on a task that is not done raises
+# InvalidStateError. The handler guarded that call with
+# `except asyncio.CancelledError`, which does not catch it, so it escaped to
+# stop()'s own `except Exception`. Measured against the real handler before
+# the fix:
+#
+#     errors logged by stop(): ['Error stopping DisplayMessageHandler: Result is not set.']
+#     _processing_task cleared? False
+#
+# Every stop logged an error and abandoned the rest of its body.
+print("\nDisplayMessageHandler.stop() — cancelling a task it cannot await")
+
+import FMOFP.local_messaging.routing.handlers.system_message_handlers.DisplayMessageHandler as _dmh
+
+_logged = []
+_real_err = _dmh.logger.error
+
+
+def _spy_error(msg, *a, **k):
+    _logged.append(str(msg))
+    return _real_err(msg, *a, **k)
+
+
+async def _exercise_stop():
+    _dmh.logger.error = _spy_error
+    try:
+        h = _dmh.get_display_message_handler()
+
+        async def _forever():
+            await asyncio.sleep(3600)
+
+        # (a) the normal case: the task is still running when stop() is called
+        h._processing_task = asyncio.create_task(_forever())
+        await asyncio.sleep(0.05)
+        h.started = True
+        _logged.clear()
+        h.stop()
+        still_running = (list(_logged), h._processing_task is None)
+
+        # (b) the task already died: its exception should be surfaced, which
+        #     is what the original result() call was reaching for and never
+        #     managed, because it always raised InvalidStateError first.
+        async def _boom():
+            raise RuntimeError("the processing loop died")
+
+        t = asyncio.create_task(_boom())
+        await asyncio.sleep(0.05)
+        h._processing_task = t
+        _logged.clear()
+        h.stop()
+        already_dead = (list(_logged), h._processing_task is None)
+
+        # (c) no task at all
+        h._processing_task = None
+        _logged.clear()
+        h.stop()
+        no_task = (list(_logged), h._processing_task is None)
+        return still_running, already_dead, no_task
+    finally:
+        _dmh.logger.error = _real_err
+
+
+_running, _dead, _none = asyncio.run(_exercise_stop())
+
+check("stopping while the task runs logs no error",
+      not [m for m in _running[0] if 'Error stopping' in m], str(_running[0]))
+check("...and clears the task reference", _running[1])
+check("stopping with no task at all is quiet",
+      not _none[0] and _none[1], str(_none))
+check("a task that already failed has its exception surfaced",
+      any('the processing loop died' in m for m in _dead[0]), str(_dead[0]))
+check("...and the reference is cleared then too", _dead[1])
+
+# NON-TAUTOLOGICAL: the pre-fix expression, reproduced.
+_outcome = {}
+
+
+async def _pre_fix_shape():
+    async def _forever():
+        await asyncio.sleep(3600)
+    t = asyncio.create_task(_forever())
+    await asyncio.sleep(0.05)
+    t.cancel()
+    try:
+        t.result()                      # exactly what stop() used to do
+        _outcome['raised'] = None
+    except asyncio.CancelledError:
+        _outcome['raised'] = 'CancelledError'   # the clause that was written
+    except Exception as exc:
+        _outcome['raised'] = type(exc).__name__
+    _outcome['done_at_that_moment'] = t.done()
+    try:
+        await t
+    except asyncio.CancelledError:
+        pass
+
+
+asyncio.run(_pre_fix_shape())
+check("result() right after cancel() raises InvalidStateError, "
+      "not CancelledError (proves this assertion bites)",
+      _outcome.get('raised') == 'InvalidStateError', str(_outcome))
+check("...because the task is not done yet at that moment",
+      _outcome.get('done_at_that_moment') is False, str(_outcome))
+
+
 print(f"\nLifecycle tests: {PASS} passed, {FAIL} failed")
 if FAIL:
     sys.exit(1)

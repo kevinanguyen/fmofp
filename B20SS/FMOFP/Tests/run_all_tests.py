@@ -41,6 +41,7 @@ Suites deliberately NOT run here, with reasons:
   - setup_env: an import helper, not a test.
 """
 import os
+import re
 import subprocess
 import sys
 import time
@@ -120,6 +121,18 @@ SUITES = [
     # bugs had never executed; and FCS/FMS delivered timeout notifications via
     # asyncio.get_event_loop() from a threading.Timer thread, where it raises.
     (True,  "FMOFP.Tests.test_request_expiry", 420),
+    # The interpreters CI covers and the interpreters a shipped offline
+    # install supports were not the same set: PyQt6_sip is not abi3, so the
+    # bundled wheel is locked to CPython 3.10 and --offline has no PyPI
+    # fallback. CI never caught it because it only runs on ubuntu-latest,
+    # where WHEEL_DIRS is empty and that path is never exercised.
+    (True,  "FMOFP.Tests.test_offline_install_matrix", 180),
+    # The bus send path could not finish: the block-transfer split produced
+    # chunks that were themselves "large", so any message over 33 frames
+    # recursed forever; the transport socket had no timeout; the caller's
+    # future.result() had none either; and one dispatch site submitted to an
+    # event loop nobody ran, so it burned its full 5 s timeout every call.
+    (True,  "FMOFP.Tests.test_send_path_bounds", 300),
     # Production blockers B1/B2/B3/B4: a boot failure that hung the process
     # forever and an error shutdown that exited 0; initialization failures
     # swallowed so boot continued on a half-built system; coroutine stops
@@ -135,6 +148,37 @@ SUITES = [
     # Story C14.5: FCS mode vocabulary, control-input saturation and the
     # one-way FMS -> FCS coupling, against a live system.
     (True,  "FMOFP.Tests.test_flight_control_live", 420),
+    # FuelManagementSystem's worker loop called three methods outside its
+    # try, so ONE transient error killed fuel management permanently and
+    # silently -- reproduced with a single injected RuntimeError -- while
+    # get_status() went on reporting running=True over the dead thread. An
+    # AST sweep found it was the only one of the nine safety-critical
+    # subsystems with unguarded calls in its loop; the sweep is kept here as
+    # a regression guard, together with the consecutive-failure reporting
+    # that stops the guard from turning a dead subsystem into a HEALTHY one.
+    (True,  "FMOFP.Tests.test_worker_loop_resilience", 180),
+    # H21: <level> in startupConfiguration.xml reached the console only. The
+    # file handler was setLevel(logging.DEBUG), hardcoded, so the one knob
+    # for how much to log governed the terminal and not the 250MB file --
+    # measured at <level>error</level>: console 6 of 15 records, file 9 of
+    # 15, including all five levels from the root logger, which is the logger
+    # every SysLogger call delegates to. The file was named ERROR_*.log.
+    (True,  "FMOFP.Tests.test_logging_levels", 180),
+    # A failing suite has to be diagnosable from the CI log. The 60-line
+    # tail excerpt could clip the suite's own verdict entirely: on
+    # 2026-10-24 test_weather_radar_live failed, printed 36,130 lines, and
+    # the excerpt was sixty lines of shutdown logging with no failing check
+    # in it. verdict_lines() lifts the suite's markers out by pattern
+    # wherever they sit in the stream.
+    (True,  "FMOFP.Tests.test_runner_reporting", 120),
+    # Story C25.1, the FCS half: the FCS's command words were invented from
+    # a private 0x4000 base rather than derived from the address book, so
+    # 0x4007 decoded to RT address 8 -- Power Management -- and every FCS
+    # mode change and status request went out addressed there. Its data
+    # words had two incompatible encodings, one of them with no callers and
+    # nothing to decode it, and an unrecognised mode or surface was encoded
+    # as a different one rather than refused.
+    (True,  "FMOFP.Tests.test_fcs_wire_format", 180),
     # Story C14.6: the predefined message facade -- initialisation, the three
     # accepted radar-mode input forms, rejection, and request-ID contracts.
     (True,  "FMOFP.Tests.test_predefined_messages_live", 420),
@@ -200,6 +244,48 @@ def run_suite(as_module: bool, name: str, timeout_s: int):
 # too few to reach the suite's own verdict past Qt's startup warnings.
 TAIL_LINES = 60
 
+# How many verdict lines to lift out of the stream, wherever they sit in it.
+VERDICT_LINES = 40
+
+
+def verdict_lines(text, limit=VERDICT_LINES):
+    """The suite's own failure lines and score, wherever they are in `text`.
+
+    WHY A TAIL IS NOT ENOUGH. A suite prints its FAIL lines and its "N/M
+    passed" score, and then its fixtures shut a real application down,
+    which logs. test_weather_radar_live emitted 36,130 lines, and the
+    shutdown logging after the summary was longer than the 60-line tail --
+    so the CI excerpt for a genuine failure was sixty lines of
+    "AEWC radar aewc_radar stopped" and not one word about what failed.
+    Measured on the CI log of 2026-10-24: "[harness] FAILED: body returned
+    1" with no failing check anywhere in the excerpt, and the suite does not
+    reproduce locally, so the information was simply gone.
+
+    Lifting these lines out by pattern makes a failing suite diagnosable
+    from the CI log no matter how much it logs afterwards. The tail is still
+    printed, for context around the end.
+    """
+    wanted = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        # The suites' own markers. "FAIL" is matched at the start of the
+        # stripped line so that a log record merely containing the word --
+        # and there are plenty -- does not qualify.
+        if (stripped.startswith("FAIL")
+                or stripped.startswith("✗")
+                or stripped.startswith("[harness]")
+                or stripped.startswith("Failures:")
+                or _SCORE_RE.match(stripped)):
+            wanted.append(line)
+    if len(wanted) > limit:
+        dropped = len(wanted) - limit
+        # Keep the LAST ones: the score and the Failures: block come last.
+        wanted = [f"... {dropped} earlier verdict line(s) omitted"] + wanted[-limit:]
+    return wanted
+
+
+_SCORE_RE = re.compile(r"^\d+/\d+ passed$")
+
 
 def main() -> int:
     _force_utf8_output()
@@ -229,6 +315,16 @@ def main() -> int:
             # log (Sept 2026).
             print("     ┌─ last output " + "─" * 40)
             shown = False
+
+            # The suite's own verdict first, pulled from anywhere in the
+            # stream, because the tail below can miss it entirely.
+            verdict = verdict_lines(out) or verdict_lines(err)
+            if verdict:
+                print("     │ ── the suite's own verdict lines ──────────")
+                for line in verdict:
+                    print("     │ " + line)
+                shown = True
+
             # A suite can end up emitting every record to both streams (for
             # example by adding a console handler when SysLogger has already
             # attached one), leaving stderr byte-identical to stdout. Printing

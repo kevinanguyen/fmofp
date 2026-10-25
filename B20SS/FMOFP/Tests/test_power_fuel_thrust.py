@@ -253,7 +253,14 @@ def test_fms_group(r: _Results) -> None:
 
     fms.stop()
     time.sleep(0.2)
-    r.check("running is False after stop()", fms.running is False)
+    # Was `fms.running is False`, reaching past the status API for the one
+    # assertion where the raw flag could disagree with reality: self.running
+    # was a bool that run() set True and nothing reset, so it reported True
+    # over a dead worker and this check passed on a lie. It is a stop Event
+    # now, and get_status()['running'] is derived from the worker thread --
+    # which is what the neighbouring checks already used.
+    r.check("running is False after stop()",
+            fms.get_status()['running'] is False)
 
 
 # ──────────────────────────── Thrust Management tests ─────────────────────
