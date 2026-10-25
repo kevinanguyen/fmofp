@@ -25,6 +25,9 @@ PORT_BASE = 56000
 FRAMES = 300  # six seconds of simulated flight: six GPS epochs
 
 
+# The plant answers the bus from a thread of this process, beside the monitor
+# reader, so the controller gives it 20 ms to reply (a real terminal answers
+# from its buffers); --strict then still fails on any reply that never comes.
 class PlantThread(threading.Thread):
     def __init__(self, plant):
         super().__init__(daemon=True)
@@ -79,7 +82,7 @@ class NavigationEndToEndTest(unittest.TestCase):
     def run_bus(self, frames):
         bc = subprocess.Popen(
             [os.environ["FMOFP_BC"], "--rt", "27", "--rt", "7", "--port-base", str(PORT_BASE), "--frames",
-             str(frames), "--free-run", "--strict"],
+             str(frames), "--free-run", "--strict", "--timeout-ms", "20"],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=binary_env())
         records = self.monitor.read_until(lambda: bc.poll() is not None)  # read as it runs: no buffer overflow
         output = bc.stdout.read()

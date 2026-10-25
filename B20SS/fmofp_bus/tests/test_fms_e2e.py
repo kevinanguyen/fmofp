@@ -69,6 +69,9 @@ def write_script(path):
             f.write(f"{frame} {msg.RT} {msg.SUBADDRESS} " + " ".join(f"{w:04X}" for w in words) + "\n")
 
 
+# The plant answers the bus from a thread of this process, beside the monitor
+# reader, so the controller gives it 20 ms to reply (a real terminal answers
+# from its buffers); --strict then still fails on any reply that never comes.
 class PlantThread(threading.Thread):
     def __init__(self, plant):
         super().__init__(daemon=True)
@@ -133,7 +136,8 @@ class FlightManagementEndToEndTest(unittest.TestCase):
         # produces more records than a socket buffer holds.
         bc = subprocess.Popen(
             [os.environ["FMOFP_BC"], "--rt", "27", "--rt", "5", "--rt", "7", "--rt", "12", "--port-base",
-             str(PORT_BASE), "--frames", str(FRAMES), "--free-run", "--strict", "--script", self.script],
+             str(PORT_BASE), "--frames", str(FRAMES), "--free-run", "--strict", "--timeout-ms", "20", "--script",
+             self.script],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=binary_env())
         records = self.monitor.read_until(lambda: bc.poll() is not None)
         output = bc.stdout.read()
