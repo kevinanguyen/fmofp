@@ -1,8 +1,8 @@
 """The displays on the bus, end to end, headless.
 
-The plant, the real fmofp_fcs, fmofp_nav, fmofp_fms and fmofp_radar, and two
-DisplayTerminals in this process (the radar display, RT 15, and the PFD, RT 11)
-under the real fmofp_bc. The radar display commands both radars from its own
+The plant, the real fmofp_fcs, fmofp_nav, fmofp_fms and fmofp_radar, and three
+DisplayTerminals in this process (the radar display, RT 15, the PFD, RT 11, and
+the MFD, RT 13) under the real fmofp_bc. The radar display commands both radars from its own
 transmit subaddresses, exactly as the window's buttons do; the bus controller
 relays the radars' status, scan summary, guidance and product blocks into the
 display's receive subaddresses and blocks, and the FMS's flight data into the
@@ -19,14 +19,15 @@ import unittest
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import FmsFlightMode, Ssm, TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import FmsFlightMode, GcasStatus, Ssm, TerminalState, TfrMode, WeatherMode
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 from fmofp_bus.tests._support import binary_env, needs
 from fmofp_bus.tests.test_display_feeds import FakeCoordinator
-from fmofp_display.app import pfd_terminal, radar_terminal, tfr_command, weather_command
+from fmofp_display.app import mfd_terminal, pfd_terminal, radar_terminal, tfr_command, weather_command
 from fmofp_display.flight_feed import FlightDataFeed
-from fmofp_display.radar_feed import RadarFeed
+from fmofp_display.radar_feed import MFD_SOURCES, RadarFeed
+from fmofp_display.systems_feed import SystemsFeed
 from fmofp_plant.plant import PlantModel, PlantTerminal
 
 PORT_BASE = 61000
@@ -54,6 +55,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
     monitor = None
     radar_display = None
     pfd = None
+    mfd = None
 
     @classmethod
     def setUpClass(cls):
@@ -70,6 +72,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
             assert cls.radar_display.start() == Status.OK, "radar display port in use?"
             cls.pfd = pfd_terminal(PORT_BASE)
             assert cls.pfd.start() == Status.OK, "PFD port in use?"
+            cls.mfd = mfd_terminal(PORT_BASE)
+            assert cls.mfd.start() == Status.OK, "MFD port in use?"
             for binary in BINARIES:
                 cls.processes.append(subprocess.Popen(
                     [os.environ[binary], "--port-base", str(PORT_BASE), "--quiet"], stdout=subprocess.PIPE,
@@ -86,7 +90,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
             p.wait(timeout=10)
             p.stdout.close()
         cls.processes = []
-        for terminal in (cls.radar_display, cls.pfd):
+        for terminal in (cls.radar_display, cls.pfd, cls.mfd):
             if terminal is not None:
                 terminal.stop()
         if cls.plant_thread is not None:
@@ -99,7 +103,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
 
     def run_bus(self):
         terminals = ["27", str(m.FcsStatus.RT), str(m.NavSolution.RT), str(m.FmsStatus.RT), str(m.RdrWxStatus.RT),
-                     str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT)]
+                     str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT)]
         args = [os.environ["FMOFP_BC"]]
         for rt in terminals:
             args += ["--rt", rt]
@@ -215,6 +219,34 @@ class DisplaysEndToEndTest(unittest.TestCase):
         relayed_to_pfd = {r.command.subaddress for _, r in framed
                           if not r.command.transmit and not r.command.is_mode_code and r.command.rt == m.DspPfdStatus.RT}
         self.assertEqual({1, 2, 3}, relayed_to_pfd)
+
+        # The MFD: the radars' pictures from its own copies, the flight computer by relay, the position from the FMS.
+        mfd_feed = RadarFeed(self.mfd, FakeCoordinator(), sources=MFD_SOURCES)
+        mfd_feed.update()
+        self.assertEqual("SURVEILLANCE", mfd_feed.weather_draw_mode)
+        self.assertEqual(1, mfd_feed.blocks_applied, "no complete weather products block at the MFD")
+        self.assertEqual("TRACK", mfd_feed.tfr_data()["mode_name"])
+        self.assertEqual(100, len(mfd_feed.tfr_data()["tfr_data"]))
+        systems = SystemsFeed(self.mfd, stale_after_s=60.0)
+        gcas = self.mfd.fresh(m.MfdGcasAlerts, stale_after_s=60.0).payload
+        alerts = systems.get_alerts()
+        bits = (("pullup", "PULLUP"), ("sink_rate", "SINK RATE"), ("terrain", "TERRAIN"), ("alt_low", "ALT LOW"))
+        self.assertEqual([code for bit, code in bits if getattr(gcas, bit)], [a["code"] for a in alerts])
+        self.assertEqual(gcas.status != GcasStatus.ARMED, bool(alerts))
+        # Level at 5000 ft over hills that reach 1500 m: the radar's clearance ahead is under 500 ft.
+        self.assertIn("TERRAIN", [a["code"] for a in alerts])
+        self.assertTrue(alerts[-1]["message"].startswith("TERRAIN  "), alerts)
+        self.assertIsNotNone(self.mfd.fresh(m.MfdPerfStatus, stale_after_s=60.0))
+        self.assertEqual([], systems.get_exceedances())
+        position = systems.mission_data()["current_position"]
+        self.assertAlmostEqual(5000.0, position["alt_ft"], delta=1.0)
+        self.assertLess(abs(position["lat"]) + abs(position["lon"]), 0.1, "the plant flies from 0 N 0 E")
+        self.assertGreaterEqual(self.mfd.blocks_completed, 4)
+        mfd_status = self.transmitted(framed, m.DspMfdStatus, 100, FRAMES)
+        self.assertEqual(TerminalState.NORMAL, mfd_status[-1][1].state)
+        relayed_to_mfd = {r.command.subaddress for _, r in framed
+                          if not r.command.transmit and not r.command.is_mode_code and r.command.rt == m.DspMfdStatus.RT}
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, relayed_to_mfd)
         self.assertIn("overruns=0", output)
         self.assertGreaterEqual(self.radar_display.syncs, FRAMES - 2)
 

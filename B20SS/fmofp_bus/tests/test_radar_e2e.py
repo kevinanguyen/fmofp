@@ -176,9 +176,14 @@ class WeatherRadarEndToEndTest(unittest.TestCase):
 
         # The scan summary: the first scan completes about 60 frames after the command.
         scans = self.transmitted(framed, m.RdrWxScan, 0, FRAMES)
-        first = next((f, s) for f, s in scans if s.scan_id == 1)
-        self.assertTrue(60 <= first[0] <= 80, f"first scan reported at frame {first[0]}")
-        self.assertEqual(WeatherMode.SURVEILLANCE, first[1].mode)
+        scan_one = next((f, s) for f, s in scans if s.scan_id == 1)
+        self.assertTrue(60 <= scan_one[0] <= 80, f"first scan reported at frame {scan_one[0]}")
+        self.assertEqual(WeatherMode.SURVEILLANCE, scan_one[1].mode)
+        # The plant's weather reaches the radar once a second, in whichever frame the schedule gives that poll; a scan
+        # that started before the first delivery sees only ground clutter (a peak near 15 dBZ, still a few VIL points).
+        # The products are checked on the first scan with weather in it.
+        first = next((f, s) for f, s in scans if s.mode == WeatherMode.SURVEILLANCE and s.max_reflectivity > 30.0)
+        self.assertLessEqual(first[0], 140, "a surveillance scan with weather completes before the wind shear command")
         self.assertEqual(4, first[1].elevations)
         self.assertEqual(200.0, first[1].range_km)
         self.assertGreater(first[1].storm_cells, 0)
@@ -206,7 +211,7 @@ class WeatherRadarEndToEndTest(unittest.TestCase):
         self.assertEqual(sorted(versions), versions)
         surveillance = [p for _, p in decoded if p.mode == WeatherMode.SURVEILLANCE]
         self.assertGreaterEqual(len(surveillance), 2)
-        p = surveillance[0]
+        p = next(p for p in surveillance if p.scan_id == first[1].scan_id)
         self.assertEqual(first[1].scan_id, p.scan_id)
         self.assertEqual(first[1].vil_points, len(p.vil))
         self.assertEqual(first[1].precip_points, len(p.precip))

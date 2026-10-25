@@ -43,7 +43,7 @@ ICD_XML = ICD_DIR / "fmofp_icd.xml"
 TABLES_MD = ICD_DIR / "ICD_TABLES.md"
 LEGACY_SCHEMAS = ICD_DIR.parent / "FMOFP" / "MIL_STD_1553B" / "message_schemas.py"
 
-RATES = {"50", "10", "5", "1", "aperiodic"}
+RATES = {"50", "25", "10", "5", "1", "aperiodic"}
 FIELD_TYPES = {"uint", "sint", "enum", "bool", "ssm", "spare"}
 MIN_SA, MAX_SA = 1, 29          # 0 and 31 are mode codes, 30 is data wraparound
 MAX_RT = 30                     # 31 is broadcast

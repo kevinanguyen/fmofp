@@ -42,7 +42,7 @@ struct ScheduledMessage {
     std::uint8_t subaddress{0};
     bool transmit{false};  // T: the terminal sends; R: the BC sends it data
     std::uint8_t words{0};
-    std::uint8_t rate_hz{0};  // 50, 10, 5 or 1
+    std::uint8_t rate_hz{0};  // 50, 25, 10, 5 or 1
     // For a transmit message that is relayed (ICD relays section): its
     // consumers, relay_count of them.
     std::array<RelayTarget, kMaxRelaysPerMessage> relays{};
@@ -67,12 +67,12 @@ struct FrameSlots {
 
 class Schedule {
 public:
-    // kInvalidArgument for a rate other than 50/10/5/1, a word count outside
+    // kInvalidArgument for a rate other than 50/25/10/5/1, a word count outside
     // 1..32 or an address out of range; kBadLength when the table is full.
     [[nodiscard]] Status add(const ScheduledMessage& message) noexcept;
 
-    // Lays the added messages into the minor frames. Messages of one rate are
-    // spread across the phases of their period so no frame carries them all.
+    // Lays the added messages into the minor frames. Each message takes the
+    // least-loaded phase of its period, so no frame carries more than its share.
     // kBadLength if a frame would exceed kMaxSlotsPerFrame.
     [[nodiscard]] Status build() noexcept;
 

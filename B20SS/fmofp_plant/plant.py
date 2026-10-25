@@ -10,7 +10,7 @@ PlantModel is Systems/flightControlSys/flightControlComputer.FlightControlComput
 random walk, step for step, at the same 10 Hz, plus what the ported navigation needs
 from the simulated world: a position that moves with the (held) speed and heading,
 and a GPS receiver front end that measures pseudoranges to the 12-satellite
-constellation of Systems/nav/gps/globalPositionSystem.py once a second. The
+constellation of Systems/nav/gps/globalPositionSystem.py: a new epoch once a second, its ranges following the aircraft in between. The
 position solver itself lives in the navigation terminal; the plant only produces
 what the receiver would measure, noise included. It also owns the weather
 (fmofp_plant.weather): the storm cells and stratiform area the radar's sensor
@@ -149,6 +149,7 @@ class PlantModel:
         self.gps_outage = bool(gps_outage)
         self.satellites = build_constellation()
         self.gps_epoch = 0
+        self.gps_noise = None  # per satellite, drawn by new_gps_epoch()
         self.hold = {}
 
     def adjust(self):
@@ -226,17 +227,26 @@ class PlantModel:
     def true_position_ecef(self):
         return wgs84_to_ecef(self.value("latitude"), self.value("longitude"), self.value("altitude"))
 
-    def gps(self):
-        """PLANT_GPS for a new epoch: what GPSReceiver measured, noise drawn once per satellite.
+    def new_gps_epoch(self):
+        """Starts a GPS epoch: the epoch count moves on and each satellite's measurement noise is drawn once
+        (GPSReceiver._pseudorange drew it per measurement; the solver sees one consistent set per epoch)."""
+        self.gps_epoch = (self.gps_epoch + 1) % 16
+        self.gps_noise = {sat_id: self.rng.gauss(0.0, self.gps_noise_m) for sat_id, _, _ in self.satellites}
+
+    def gps_message(self):
+        """PLANT_GPS as the receiver's output register reads now: this epoch's noise on the geometric ranges from
+        the present true position, so a fix is current whenever the bus controller polls it, in whatever frame
+        the schedule gives that poll (the navigation solves an epoch once, when its count changes).
 
         A satellite counts as visible at 5 degrees of elevation or more, seen from
         the true position (GPSReceiver._is_visible). The pseudorange is the
         geometric range plus c times (receiver clock bias minus satellite clock
-        bias) plus Gaussian noise (GPSReceiver._pseudorange). During an outage no
-        satellite is visible.
+        bias) plus the epoch's Gaussian noise (GPSReceiver._pseudorange). During
+        an outage no satellite is visible.
         """
+        if self.gps_noise is None:
+            self.new_gps_epoch()
         g = PlantGps()
-        self.gps_epoch = (self.gps_epoch + 1) % 16
         g.epoch = self.gps_epoch
         if self.gps_outage:
             return g
@@ -246,17 +256,22 @@ class PlantModel:
             if elevation_deg(receiver, position) < GPS_MIN_ELEVATION_DEG:
                 continue
             geometric = math.dist(receiver, position)
-            pseudorange = (geometric + SPEED_OF_LIGHT * (self.gps_clock_bias_s - sat_bias)
-                           + self.rng.gauss(0.0, self.gps_noise_m))
+            pseudorange = geometric + SPEED_OF_LIGHT * (self.gps_clock_bias_s - sat_bias) + self.gps_noise[sat_id]
             setattr(g, f"pseudorange_{sat_id}", pseudorange)
             mask |= 1 << (sat_id - 1)
         g.visible_mask = mask
         return g
 
+    def gps(self):
+        """PLANT_GPS for a new epoch, measured now."""
+        self.new_gps_epoch()
+        return self.gps_message()
+
 
 class PlantTerminal:
-    """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame, PLANT_GPS and
-    PLANT_WEATHER once a second, and the PLANT_TERRAIN block ten times a second."""
+    """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame, PLANT_WEATHER once a
+    second, PLANT_GPS with a new epoch once a second and its ranges refreshed at the walk rate, and the
+    PLANT_TERRAIN block ten times a second."""
 
     def __init__(self, model, port_base=51000):
         self.model = model
@@ -287,7 +302,7 @@ class PlantTerminal:
         self._load(self.model.sensors())
 
     def publish_gps(self):
-        self._load(self.model.gps())
+        self._load(self.model.gps_message())
 
     def publish_weather(self):
         self._load(self.model.weather_message())
@@ -318,11 +333,12 @@ class PlantTerminal:
                 self.serve_terrain()
             return False
         self.syncs += 1
+        if self.syncs % SYNCS_PER_GPS == 0:
+            self.model.new_gps_epoch()
         if self.syncs % SYNCS_PER_WALK == 0:
             self.model.adjust()
             self.model.move(1.0 / WALK_HZ)
-        if self.syncs % SYNCS_PER_GPS == 0:
-            self.publish_gps()
+            self.publish_gps()  # the receiver's output follows the aircraft; the epoch count says when a fix is new
         if self.syncs % SYNCS_PER_WEATHER == 0:
             self.publish_weather()
         if self.syncs % SYNCS_PER_TERRAIN == 0:

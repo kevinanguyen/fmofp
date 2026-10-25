@@ -58,7 +58,9 @@ radar (`RDR_TFR_TERRAIN`, the first block relay), relays `FCS_ATTITUDE` and
 `NAV_SOLUTION` to the FMS and the radar's `RDR_TFR_GUIDANCE` to the FCS
 (`FCS_TERRAIN`, where the ground collision avoidance TERRAIN alert now gets its
 clearance), and collects everything the partitions publish, including the
-radar's `RDR_WX_PRODUCTS` and `RDR_TFR_ELEVATION` blocks a segment per frame.
+radar's `RDR_WX_PRODUCTS` and `RDR_TFR_ELEVATION` blocks a segment every other
+frame (25 Hz: a second display's copies had pushed the 50 Hz schedule past the
+controller's bus-load budget).
 Anything listening on the monitor port sees every transaction
 (`fmofp_bus.monitor` reads it from Python; `fmofp_bus.block.blocks_from_records`
 reassembles the blocks). The radars do nothing until they are told a mode: a
@@ -85,25 +87,34 @@ frame 40:
 ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --port-base 53000 --script commands.txt
 ```
 
-**The displays.** Two of the PyQt6 displays run as their own bus terminals
+**The displays.** Three of the PyQt6 displays run as their own bus terminals
 (`B20SS/fmofp_display`): the radar display, RT 15, which shows the weather and
-terrain-following radars' pictures and commands both radars, and the primary
-flight display, RT 11, which reads the FMS's flight data. List them for the
-controller and give it a reply timeout a Python process beside a Qt paint loop
-can meet, without `--strict`:
+terrain-following radars' pictures and commands both radars; the primary
+flight display, RT 11, which reads the FMS's flight data; and the
+multi-function display, RT 13, whose radar page mirrors the radars' pictures
+from its own copies of the same relays and blocks, whose systems page shows
+the flight computer's GCAS alerts and envelope exceedances, and whose mission
+page shows the FMS position (its engine, communications and mission rows wait
+for those terminals). List them for the controller and give it a reply timeout
+a Python process beside a Qt paint loop can meet, without `--strict`:
 
 ```bash
 py -m fmofp_display radar --port-base 53000
 py -m fmofp_display pfd --port-base 53000
-ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 11 --rt 15 --port-base 53000 --timeout-ms 20 --report
+py -m fmofp_display mfd --port-base 53000
+ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 11 --rt 13 --rt 15 --port-base 53000 --timeout-ms 20 --report
 ```
 
 The controller relays the radars' status, scan summary and guidance into the
-radar display and their products blocks segment by segment; the display's mode
-buttons load `DSP_RDR_WX_CMD` / `DSP_RDR_TFR_CMD` on its own subaddresses,
-which the controller relays into the radar every 100 ms. The display classes
-under `FMOFP/Interfaces/userInterface/displays` are unchanged: a feed turns the
-bus words into the dictionaries they always drew.
+radar display and the MFD, and their products blocks segment by segment; the
+radar display's mode buttons load `DSP_RDR_WX_CMD` / `DSP_RDR_TFR_CMD` on its
+own subaddresses, which the controller relays into the radar every 100 ms. The
+display classes under `FMOFP/Interfaces/userInterface/displays` are unchanged:
+a feed turns the bus words into the dictionaries they always drew. The MFD's
+pages import the engine, GCAS, performance, comms and mission services'
+getters when they paint; the MFD process registers stand-ins under those
+module names, so the feed answers the getters and no flight-system code runs
+in a display.
 
 The Python message classes encode the words (`FmsManeuverCmd(...).encode()`),
 which is how the tests write their scripts. `test_fcs_e2e.py`, `test_nav_e2e.py`,
@@ -122,11 +133,14 @@ follows the radar. `test_nav_oracle.py`, `test_weather_oracle.py` and
 rain-rate fields, the point selection, the storm cell detection, the
 precipitation areas, the wind shear events and the turbulence cells; the
 clearance levels and their latch, the path commands and the terrain warnings.
-`test_display_e2e.py` runs the display terminals headless beside the whole set
-of partitions and checks that the radars' products and the FMS's flight data
-arrive at the displays and that the displays' commands reach the radars;
-`test_display_feeds.py` checks the feeds and `test_display_render.py` paints
-the windows offscreen from sample bus data (skipped without PyQt6).
+`test_display_e2e.py` runs the three display terminals headless beside the
+whole set of partitions and checks that the radars' products and the FMS's
+flight data arrive at the displays (the MFD's own copies included), that the
+flight computer's alerts and exceedances reach the MFD, and that the radar
+display's commands reach the radars; `test_display_feeds.py` checks the feeds
+and `test_display_render.py` paints the three windows offscreen from sample
+bus data, the MFD through every page and radar picture (skipped without
+PyQt6).
 
 ## Building on Windows
 

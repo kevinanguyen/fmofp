@@ -6,8 +6,10 @@ the RadarDisplayDataCoordinator's stores: lists of dictionaries with a
 the bridge used to put there. The terrain display draws a dictionary with the
 profile points, the clearance and the altitudes. RadarFeed builds both from
 RDR_WX_PRODUCTS, RDR_WX_SCAN, RDR_WX_STATUS, RDR_TFR_GUIDANCE, RDR_TFR_STATUS
-and RDR_TFR_ELEVATION as the display terminal receives them. It knows nothing
-of Qt or of the display classes: the window applies what it returns.
+and RDR_TFR_ELEVATION as the display terminal receives them, from the radar
+display's copies (DSP_RDR_*, RT 15) or the MFD's (MFD_RDR_*, RT 13; v1.6). It
+knows nothing of Qt or of the display classes: the window applies what it
+returns.
 
 Positions are true: the radar's azimuth and range become east and north in
 nautical miles, and the weather display's range scale follows the radar's range
@@ -16,6 +18,7 @@ every product into a fixed 40 nm picture.
 """
 
 import math
+from collections import namedtuple
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
@@ -48,6 +51,13 @@ TFR_DRAW_MODE = {
     TfrMode.GROUND_MAPPING: "GROUND_MAPPING",
 }
 STORES = ("vil", "precipitation", "cells", "windshear", "turbulence")
+
+# The messages and blocks one display terminal receives the radars' data in.
+RadarSources = namedtuple("RadarSources", "wx_status wx_scan wx_products tfr_status tfr_guidance tfr_elevation")
+RADAR_DISPLAY_SOURCES = RadarSources(m.DspRdrWxStatus, m.DspRdrWxScan, b.DspRdrWxProducts, m.DspRdrTfrStatus,
+                                     m.DspRdrTfrGuidance, b.DspRdrTfrElevation)
+MFD_SOURCES = RadarSources(m.MfdRdrWxStatus, m.MfdRdrWxScan, b.MfdRdrWxProducts, m.MfdRdrTfrStatus, m.MfdRdrTfrGuidance,
+                           b.MfdRdrTfrElevation)
 
 
 def polar_to_nm(azimuth_deg, range_km):
@@ -107,10 +117,11 @@ class RadarFeed:
     the terrain display's dictionary.
     """
 
-    def __init__(self, terminal, coordinator, clock=None):
+    def __init__(self, terminal, coordinator, clock=None, sources=RADAR_DISPLAY_SOURCES):
         self.terminal = terminal
         self.coordinator = coordinator
         self.clock = clock
+        self.sources = sources
         self.weather_draw_mode = "STANDBY"
         self.weather_range_nm = 40.0  # BaseRadarDisplay.range_scale until the radar says
         self.weather_version = None
@@ -123,15 +134,15 @@ class RadarFeed:
 
     def update(self):
         """One pass: the weather display's mode and range, and the products block if a new one arrived."""
-        status = self.terminal.fresh(m.DspRdrWxStatus)
+        status = self.terminal.fresh(self.sources.wx_status)
         if status is None or status.payload.state != TerminalState.NORMAL:
             self.weather_draw_mode = "STANDBY"
         else:
             self.weather_draw_mode = WEATHER_DRAW_MODE.get(status.payload.mode, "STANDBY")
-        scan = self.terminal.fresh(m.DspRdrWxScan)
+        scan = self.terminal.fresh(self.sources.wx_scan)
         if scan is not None and scan.payload.range_km > 0.0:
             self.weather_range_nm = scan.payload.range_km * NM_PER_KM
-        products, version, age = self.terminal.latest_block(b.DspRdrWxProducts)
+        products, version, age = self.terminal.latest_block(self.sources.wx_products)
         if products is not None and version != self.weather_version and age is not None and age <= STALE_AFTER_S:
             self.weather_version = version
             self._apply_products(products, version)
@@ -153,9 +164,15 @@ class RadarFeed:
             self.coordinator.reset_data(store)
         self.stores_cleared = True
 
+    def invalidate(self):
+        """Forgets which block is in the stores, so the next update() stores the current one again (the MFD empties
+        the coordinator when its radar picture is switched)."""
+        self.weather_version = None
+        self.stores_cleared = True
+
     def weather_status_text(self):
-        status = self.terminal.fresh(m.DspRdrWxStatus)
-        scan = self.terminal.fresh(m.DspRdrWxScan)
+        status = self.terminal.fresh(self.sources.wx_status)
+        scan = self.terminal.fresh(self.sources.wx_scan)
         if status is None:
             return "WX: no data"
         text = f"WX {status.payload.state.name} {status.payload.mode.name}"
@@ -165,9 +182,9 @@ class RadarFeed:
 
     def tfr_data(self):
         """The terrain display's dictionary: draw mode name, profile points (metres), clearance and altitudes (metres)."""
-        status = self.terminal.fresh(m.DspRdrTfrStatus)
-        guidance = self.terminal.fresh(m.DspRdrTfrGuidance)
-        elevation, _, age = self.terminal.latest_block(b.DspRdrTfrElevation)
+        status = self.terminal.fresh(self.sources.tfr_status)
+        guidance = self.terminal.fresh(self.sources.tfr_guidance)
+        elevation, _, age = self.terminal.latest_block(self.sources.tfr_elevation)
         data = {"mode_name": "STANDBY", "tfr_data": [], "terrain_clearance": None, "current_altitude": None,
                 "clearance_altitude": None, "system_health": "UNKNOWN", "level": "NONE", "pull_up": False}
         if status is not None:
@@ -191,8 +208,8 @@ class RadarFeed:
         return data
 
     def tfr_status_text(self):
-        status = self.terminal.fresh(m.DspRdrTfrStatus)
-        guidance = self.terminal.fresh(m.DspRdrTfrGuidance)
+        status = self.terminal.fresh(self.sources.tfr_status)
+        guidance = self.terminal.fresh(self.sources.tfr_guidance)
         if status is None:
             return "TFR: no data"
         text = f"TFR {status.payload.state.name} {status.payload.mode.name}"

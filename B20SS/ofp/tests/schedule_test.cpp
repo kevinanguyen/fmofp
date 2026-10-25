@@ -79,9 +79,49 @@ TEST(Schedule, MessagesOfOneRateAreSpreadAcrossPhases) {
     EXPECT_EQ(1U, t.frame(10).count);
 }
 
+TEST(Schedule, EachMessageTakesTheLeastLoadedPhaseOfItsPeriod) {
+    // Two blocks' descriptor and segment slots at 25 Hz (v1.6): the two 32-word
+    // segments must not share a frame, or the frame would carry both copies'
+    // relays as well.
+    Schedule s;
+    ASSERT_EQ(Status::kOk, s.add(msg(9, 6, 25, 1)));
+    ASSERT_EQ(Status::kOk, s.add(msg(9, 7, 25, 32)));
+    ASSERT_EQ(Status::kOk, s.add(msg(9, 14, 25, 1)));
+    ASSERT_EQ(Status::kOk, s.add(msg(9, 15, 25, 32)));
+    ASSERT_EQ(Status::kOk, s.build());
+    EXPECT_EQ(25U, slots_for(s, 9, 7));
+    for (std::uint8_t minor = 0; minor < kMinorFramesPerMajor; ++minor) {
+        unsigned segments = 0;
+        const auto& f = s.frame(minor);
+        for (std::size_t i = 0; i < f.count; ++i) {
+            segments += f.slots[i].words == 32U ? 1U : 0U;
+        }
+        EXPECT_EQ(1U, segments) << "minor " << static_cast<int>(minor);
+    }
+    EXPECT_EQ(s.frame_load_us(1) + 2U * (3U * 20U + 12U), s.frame_load_us(0)) << "both descriptors sit beside the first segment";
+
+    // A 1 Hz poll goes to a frame the 10 Hz traffic left quiet, not to frame 0 by habit.
+    Schedule t;
+    ASSERT_EQ(Status::kOk, t.add(msg(27, 1, 10, 32)));  // frames 0, 5, 10, ...
+    ASSERT_EQ(Status::kOk, t.add(msg(5, 29, 1, 2)));
+    ASSERT_EQ(Status::kOk, t.build());
+    std::uint8_t where = kMinorFramesPerMajor;
+    for (std::uint8_t minor = 0; minor < kMinorFramesPerMajor; ++minor) {
+        const auto& f = t.frame(minor);
+        for (std::size_t i = 0; i < f.count; ++i) {
+            if (f.slots[i].rt == 5U && f.slots[i].subaddress == 29U) {
+                where = minor;
+            }
+        }
+    }
+    ASSERT_LT(where, kMinorFramesPerMajor);
+    EXPECT_NE(0U, where % 5U) << "the 1 Hz poll shares no frame with the 10 Hz block segment";
+}
+
 TEST(Schedule, RejectsWhatTheBusCannotCarry) {
     Schedule s;
     EXPECT_EQ(Status::kInvalidArgument, s.add(msg(5, 12, 20)));       // not a rate group
+    EXPECT_EQ(Status::kInvalidArgument, s.add(msg(5, 12, 40)));       // nor is 40 Hz
     EXPECT_EQ(Status::kInvalidArgument, s.add(msg(5, 12, 50, 0)));    // no words
     EXPECT_EQ(Status::kInvalidArgument, s.add(msg(5, 12, 50, 33)));   // too many
     EXPECT_EQ(Status::kInvalidArgument, s.add(msg(31, 12, 50)));      // broadcast is not a terminal

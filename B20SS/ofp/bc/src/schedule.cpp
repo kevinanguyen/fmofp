@@ -2,6 +2,8 @@
 
 #include <fmofp/bus/command_word.hpp>
 
+#include <limits>
+
 namespace fmofp::bc {
 
 namespace {
@@ -12,7 +14,7 @@ constexpr unsigned kSyncMinorHi = 5U;
 constexpr unsigned kSyncMinorLo = 0U;
 
 bool valid_rate(std::uint8_t rate_hz) noexcept {
-    return rate_hz == 50 || rate_hz == 10 || rate_hz == 5 || rate_hz == 1;
+    return rate_hz == 50 || rate_hz == 25 || rate_hz == 10 || rate_hz == 5 || rate_hz == 1;
 }
 
 std::uint8_t period_frames(std::uint8_t rate_hz) noexcept {
@@ -52,15 +54,29 @@ Status Schedule::add(const ScheduledMessage& message) noexcept {
 
 Status Schedule::build() noexcept {
     frames_ = {};
-    // One rotating phase per period, so consecutive messages of the same rate
-    // land in different minor frames.
-    std::array<std::uint8_t, kMinorFramesPerMajor + 1> next_phase{};
+    // Each message takes the least-loaded phase of its period, so the frames
+    // share the bus time as evenly as the rates allow: two blocks' segments
+    // at 25 Hz land in different frames, and the 1 Hz polls fill the quiet ones.
+    std::array<std::uint32_t, kMinorFramesPerMajor> load{};
+    load.fill(2U * kUsPerWord + kUsPerMessageGap);  // the sync broadcast
 
     for (std::size_t i = 0; i < count_; ++i) {
         const ScheduledMessage& m = messages_[i];
         const std::uint8_t period = period_frames(m.rate_hz);
-        const std::uint8_t phase = next_phase[period];
-        next_phase[period] = static_cast<std::uint8_t>((phase + 1U) % period);
+        const std::uint32_t cost = message_us(m.words) * (1U + static_cast<std::uint32_t>(m.relay_count));
+        std::uint8_t phase = 0;
+        std::uint32_t best = std::numeric_limits<std::uint32_t>::max();
+        for (std::uint8_t candidate = 0; candidate < period; ++candidate) {
+            std::uint32_t heaviest = 0;
+            for (std::uint8_t minor = candidate; minor < kMinorFramesPerMajor;
+                 minor = static_cast<std::uint8_t>(minor + period)) {
+                heaviest = load[minor] > heaviest ? load[minor] : heaviest;
+            }
+            if (heaviest < best) {
+                best = heaviest;
+                phase = candidate;
+            }
+        }
 
         for (std::uint8_t minor = phase; minor < kMinorFramesPerMajor;
              minor = static_cast<std::uint8_t>(minor + period)) {
@@ -77,6 +93,7 @@ Status Schedule::build() noexcept {
             s.relays = m.relays;
             s.relay_count = m.relay_count;
             ++f.count;
+            load[minor] += cost;
         }
     }
     built_ = true;

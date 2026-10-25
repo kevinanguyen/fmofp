@@ -51,7 +51,8 @@ constexpr std::size_t kMaxPathCommands = kMaxProfileSamples + 1;  // one per win
 constexpr std::size_t kMaxReportedCommands = icd::RdrTfrElevation::kMaxCommands;
 constexpr std::uint32_t kSensorStaleFrames = 3;    // RDR_TFR_SENSORS is 50 Hz
 constexpr std::uint32_t kTerrainStaleFrames = 15;  // a profile arrives about every 5 frames
-constexpr std::uint32_t kElevationBlockFrames = 15;  // the block is republished no more often than this
+constexpr std::uint32_t kElevationBlockFrames = 25;  // the block is republished no more often than this: its ten
+                                                      // segments take 20 frames at the block's 25 Hz
 
 struct TerrainProfile {
     std::size_t samples{0};

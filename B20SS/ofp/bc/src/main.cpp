@@ -29,6 +29,7 @@ struct Options {
     fmofp::bc::BcConfig bc{};
     unsigned long frames{0};
     bool report{false};
+    bool print_schedule{false};
     bool strict{false};
     const char* script{nullptr};
 };
@@ -179,6 +180,8 @@ bool parse(int argc, char** argv, Options& o) {
             o.report = true;
         } else if (std::strcmp(a, "--strict") == 0) {
             o.strict = true;
+        } else if (std::strcmp(a, "--schedule") == 0) {
+            o.print_schedule = true;
         } else if (std::strcmp(a, "--script") == 0 && next != nullptr) {
             o.script = next;
             ++i;
@@ -187,6 +190,25 @@ bool parse(int argc, char** argv, Options& o) {
         }
     }
     return true;
+}
+
+// --schedule: one line per minor frame, its bus time and its slots as rt/sa, T or R, the
+// word count, and each relay consumer after a '>'.
+void print_schedule(const fmofp::bc::Schedule& schedule) {
+    for (std::uint8_t minor = 0; minor < fmofp::bc::kMinorFramesPerMajor; ++minor) {
+        const fmofp::bc::FrameSlots& f = schedule.frame(minor);
+        std::printf("bc: frame %2u %5u us:", static_cast<unsigned>(minor), schedule.frame_load_us(minor));
+        for (std::size_t i = 0; i < f.count; ++i) {
+            const fmofp::bc::Slot& slot = f.slots[i];
+            std::printf(" %u/%u%c%u", static_cast<unsigned>(slot.rt), static_cast<unsigned>(slot.subaddress),
+                        slot.transmit ? 'T' : 'R', static_cast<unsigned>(slot.words));
+            for (std::uint8_t r = 0; r < slot.relay_count; ++r) {
+                std::printf(">%u/%u", static_cast<unsigned>(slot.relays[r].rt),
+                            static_cast<unsigned>(slot.relays[r].subaddress));
+            }
+        }
+        std::printf("\n");
+    }
 }
 
 void print_stats(const fmofp::bc::BusController& bc) {
@@ -211,7 +233,7 @@ int main(int argc, char** argv) {
     if (!parse(argc, argv, o)) {
         std::fprintf(stderr,
                      "usage: fmofp_bc --rt N [--rt N ...] [--port-base N] [--frames N] [--free-run] "
-                     "[--no-monitor] [--timeout-ms N] [--report] [--strict] [--script FILE]\n");
+                     "[--no-monitor] [--timeout-ms N] [--report] [--strict] [--script FILE] [--schedule]\n");
         return 2;
     }
     if (o.script != nullptr && !load_script(o.script)) {
@@ -230,9 +252,15 @@ int main(int argc, char** argv) {
     std::printf("bc: %zu scheduled messages for %u terminals; worst minor frame %u us of %u us budget\n",
                 schedule.message_count(), o.bc.terminal_count, schedule.worst_frame_load_us(),
                 fmofp::bc::kMinorFrameBudgetUs);
+    if (o.print_schedule) {
+        print_schedule(schedule);
+    }
     if (schedule.worst_frame_load_us() > fmofp::bc::kMinorFrameBudgetUs) {
         std::fprintf(stderr, "bc: schedule exceeds the 50%% bus load budget\n");
         return 1;
+    }
+    if (o.print_schedule) {
+        return 0;
     }
 
     static fmofp::bc::BusController bc;  // ~80 KB of buffers; not for the stack

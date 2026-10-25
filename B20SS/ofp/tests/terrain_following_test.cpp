@@ -274,7 +274,7 @@ TEST(TerrainFollowing, AssessesEachProfileAndPublishesTheBlockAtItsCadence) {
     EXPECT_EQ(8U, tfr->guidance().profile_seq);
     EXPECT_FALSE(tfr->take_products_update());
     EXPECT_EQ(7U, tfr->products().profile_seq);
-    // Fifteen frames after the last block, the next profile is published.
+    // kElevationBlockFrames frames after the last block, the next profile is published.
     next.terrain_seq = 9;
     tfr->step(&s, &next, 3 + kElevationBlockFrames);
     EXPECT_TRUE(tfr->take_products_update());

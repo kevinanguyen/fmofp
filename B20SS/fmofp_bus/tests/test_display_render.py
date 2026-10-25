@@ -19,10 +19,12 @@ except ImportError:  # pragma: no cover - depends on the machine
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import ClearanceLevel, FmsFlightMode, Ssm, TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, Ssm, TerminalState, TfrMode,
+                                 WeatherMode)
 from fmofp_bus.tests.test_display_feeds import FakeTerminal, sample_elevation, sample_products
 from fmofp_display.flight_feed import FlightDataFeed
-from fmofp_display.radar_feed import RadarFeed
+from fmofp_display.radar_feed import MFD_SOURCES, RadarFeed
+from fmofp_display.systems_feed import SystemsFeed
 
 
 def lit_pixels(image, step=2):
@@ -139,6 +141,120 @@ class DisplayWindowsTest(unittest.TestCase):
         self.assertIn("FMS COMBAT", window.status.text())
         window.timer.stop()
         window.close()
+
+    def test_the_mfd_window_draws_every_page_from_the_bus_data(self):
+        from PyQt6.QtCore import QPoint, Qt
+        from PyQt6.QtTest import QTest
+        terminal = StubTerminal()
+        terminal.rt = 13
+        systems = SystemsFeed(terminal)
+        radar = RadarFeed(terminal, self.coordinator, sources=MFD_SOURCES)
+        window = self.app_module.MfdWindow(terminal, radar, systems)
+        try:
+            window.show()
+            self.app.processEvents()
+            mfd = window.mfd
+            pages = window._pages
+            kinds = window._radar_types
+            # The getters the pages import answer with the feed's stand-ins; the real module is still there for
+            # anything else that asks.
+            from FMOFP.Systems.flightControlSys.groundCollisionAvoidanceSys.groundCollisionAvoidanceSys import (
+                GCAS, get_gcas)
+            self.assertIs(systems.gcas, get_gcas())
+            self.assertTrue(hasattr(GCAS, "_evaluate"))
+            self.assertEqual((0.0, "UNKNOWN"), mfd._read_tfr_clearance())
+
+            terminal.put(m.MfdGcasAlerts(payload=m.FcsGcasAlerts(
+                status=GcasStatus.WARNING, sink_rate=True, vertical_speed=-2500.0, altitude=1800.0,
+                vertical_speed_ssm=Ssm.NORMAL, altitude_ssm=Ssm.NORMAL)))
+            terminal.put(m.MfdPerfStatus(payload=m.FcsPerfStatus(exceed_roll=True, g_ssm=Ssm.NORMAL, aoa_ssm=Ssm.NORMAL)))
+            terminal.put(m.MfdFlightData(payload=m.FmsFlightData(
+                position_ssm=Ssm.NORMAL, roll_ssm=Ssm.NORMAL, altitude_ssm=Ssm.NORMAL, latitude=1.5, longitude=-2.25,
+                altitude=5000.0, roll=-70.0)))
+            for page in (pages.NAV, pages.SYSTEMS, pages.WEAPONS, pages.COMMS, pages.MISSION, pages.SETTINGS):
+                mfd.current_page = page
+                window.tick()
+                mfd.update()
+                self.app.processEvents()
+                self.assertGreater(lit_pixels(mfd.grab().toImage()), 0, page.name)
+                self.assertFalse(mfd._paint_error, page.name)
+            self.assertIn("GCAS WARNING SINK RATE", window.status.text())
+            self.assertIn("exceed roll", window.status.text())
+            self.assertIn("pos 1.5000 -2.2500", window.status.text())
+
+            # The Radar menu item, clicked as the pilot would: the weather picture, standby until the radar reports.
+            title_height = mfd.height() / 12
+            item_height = min((mfd.height() - title_height - 20) / len(mfd.pages), 40)
+            QTest.mouseClick(mfd, Qt.MouseButton.LeftButton,
+                             pos=QPoint(int(mfd.width() / 10), int(title_height + 10 + item_height * 1.5)))
+            self.app.processEvents()
+            self.assertEqual((pages.RADAR, kinds.WEATHER), (mfd.current_page, mfd.current_radar_type))
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            standby = lit_pixels(mfd.grab().toImage())
+            self.assertEqual("STANDBY", mfd.radar_data.mode.name)
+            terminal.put(m.MfdRdrWxStatus(payload=m.RdrWxStatus(state=TerminalState.NORMAL, mode=WeatherMode.SURVEILLANCE)))
+            terminal.put(m.MfdRdrWxScan(payload=m.RdrWxScan(scan_id=3, mode=WeatherMode.SURVEILLANCE, range_km=200.0,
+                                                            max_reflectivity=55.0)))
+            terminal.put_block(b.MfdRdrWxProducts, sample_products(), 1)
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            active = lit_pixels(mfd.grab().toImage())
+            self.assertFalse(mfd._paint_error)
+            self.assertGreater(active, standby, f"standby {standby}, active {active}")
+            self.assertEqual("SURVEILLANCE", mfd.radar_data.mode.name)
+            self.assertAlmostEqual(200.0 / 1.852, mfd._current_radar_display.range_scale)
+            applied = radar.blocks_applied
+
+            # The terrain picture through the sub-menu's switch: the MFD empties the coordinator and builds a new
+            # picture; the profile, mode and clearance come from the bus.
+            terminal.put(m.MfdRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL,
+                                                                  mode=TfrMode.TERRAIN_FOLLOWING)))
+            terminal.put(m.MfdRdrTfrGuidance(payload=m.RdrTfrGuidance(
+                clearance_ssm=Ssm.NORMAL, level=ClearanceLevel.CAUTION, mode=TfrMode.TERRAIN_FOLLOWING,
+                commands_valid=True, min_clearance=600.0, commanded_altitude=4000.0, set_clearance=984.0)))
+            terminal.put_block(b.MfdRdrTfrElevation, sample_elevation(), 2)
+            mfd.current_radar_type = kinds.TFR
+            mfd._update_radar_type()
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertEqual("TFRRadarDisplay", type(mfd._current_radar_display).__name__)
+            self.assertEqual(window._terrain_modes["TRACK"], mfd.radar_data.mode)
+            self.assertEqual(100, len(mfd.radar_data.tfr_data))
+            clearance_m, level = mfd._read_tfr_clearance()
+            self.assertAlmostEqual(600.0 * 0.3048, clearance_m)
+            self.assertEqual("CAUTION", level)
+
+            # The other three radars are not on the bus yet: their standby pictures paint.
+            for kind in (kinds.TARGETING, kinds.SAR, kinds.AEWC):
+                mfd.current_radar_type = kind
+                mfd._update_radar_type()
+                window.tick()
+                mfd.update()
+                self.app.processEvents()
+                self.assertFalse(mfd._paint_error, kind.name)
+                self.assertEqual("STANDBY", mfd.radar_data.mode.name, kind.name)
+
+            # Back to the weather: the picture returns from the bus data at once.
+            mfd.current_radar_type = kinds.WEATHER
+            mfd._update_radar_type()
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertGreater(radar.blocks_applied, applied, "the block was stored again after the coordinator was emptied")
+            self.assertEqual("SURVEILLANCE", mfd.radar_data.mode.name)
+        finally:
+            window.timer.stop()
+            window.close()
+            self.app_module.uninstall_system_sources()
+        from FMOFP.Systems.flightControlSys.groundCollisionAvoidanceSys import groundCollisionAvoidanceSys
+        self.assertFalse(getattr(groundCollisionAvoidanceSys, "_fmofp_stand_in", False),
+                         "after the window the real module is back for everyone else")
 
 
 if __name__ == "__main__":
