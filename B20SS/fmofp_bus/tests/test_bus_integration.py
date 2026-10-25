@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import unittest
 
 from fmofp_bus.icd import messages as m
@@ -59,6 +60,11 @@ class BusIntegrationTest(unittest.TestCase):
                 [os.environ["FMOFP_BC"], "--rt", str(RT), "--port-base", str(PORT_BASE), "--frames", str(FRAMES),
                  "--free-run", "--no-monitor", "--strict"],
                 capture_output=True, text=True, timeout=60, env=env)
+            # The controller exits the moment its last frame is sent; the stub may
+            # still have the last datagrams to read. Let it catch up before stopping it.
+            deadline = time.monotonic() + 2.0
+            while stub.syncs < FRAMES and time.monotonic() < deadline:
+                time.sleep(0.01)
         finally:
             stub.stop.set()
             stub.join(timeout=2)
