@@ -105,8 +105,11 @@ py -m fmofp_display mfd --port-base 53000
 ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 11 --rt 13 --rt 15 --port-base 53000 --timeout-ms 20 --report
 ```
 
-The controller relays the radars' status, scan summary and guidance into the
-radar display and the MFD, and their products blocks segment by segment; the
+The controller broadcasts the radars' status, scan summary and guidance, their
+product blocks segment by segment, the flight computer's alerts and
+exceedances and the FMS's flight data once each, to address 31; every display
+accepts the subaddresses it draws and ignores the rest (ICD README section 8),
+so another display costs the bus nothing for data it already broadcasts. The
 radar display's mode buttons load `DSP_RDR_WX_CMD` / `DSP_RDR_TFR_CMD` on its
 own subaddresses, which the controller relays into the radar every 100 ms. The
 display classes under `FMOFP/Interfaces/userInterface/displays` are unchanged:

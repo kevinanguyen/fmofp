@@ -69,7 +69,8 @@ struct RtCounters {
     std::uint32_t ignored{0};         // addressed to another terminal
     std::uint32_t receives{0};        // data messages accepted
     std::uint32_t transmits{0};       // data messages answered
-    std::uint32_t broadcasts{0};
+    std::uint32_t broadcasts{0};          // broadcast data and mode codes acted on
+    std::uint32_t broadcasts_ignored{0};  // broadcast data on a subaddress not accepted
     std::uint32_t syncs{0};
     std::uint32_t message_errors{0};  // bad commands, answered with silence
 };
@@ -117,6 +118,17 @@ public:
         return sa <= kMaxSubaddress ? tx_count_[sa] : 0U;
     }
 
+    // Broadcast data (a receive command to address 31) is stored only on the
+    // subaddresses the partition accepts here (ICD README section 8: the
+    // broadcast map); on any other it is ignored, so a broadcast can never
+    // land in a buffer meant for this terminal's own commands. Mode codes
+    // such as the sync need no acceptance. Kept across RESET_REMOTE_TERMINAL;
+    // init() clears it.
+    [[nodiscard]] Status accept_broadcast(std::uint8_t sa) noexcept;
+    [[nodiscard]] bool accepts_broadcast(std::uint8_t sa) const noexcept {
+        return sa <= kMaxSubaddress && ((broadcast_accept_ >> sa) & 1U) != 0U;
+    }
+
     // ---- the bus side -----------------------------------------------------
 
     // Processes one datagram from the bus controller. On return `reply_needed`
@@ -147,6 +159,7 @@ private:
     std::array<bool, kMaxSubaddress + 1> rx_valid_{};
     std::array<bool, kMaxSubaddress + 1> rx_fresh_{};
     std::array<std::uint32_t, kMaxSubaddress + 1> tx_count_{};
+    std::uint32_t broadcast_accept_{0};  // bit per subaddress
     Word previous_command_{0};
     Word last_command_{0};
     Word sync_word_{0};

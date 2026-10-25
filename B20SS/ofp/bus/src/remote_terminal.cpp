@@ -67,9 +67,18 @@ Status RemoteTerminal::init(std::uint8_t rt) noexcept {
         return Status::kInvalidArgument;
     }
     rt_ = rt;
+    broadcast_accept_ = 0;
     reset();
     reset_pending_ = false;
     counters_ = RtCounters{};
+    return Status::kOk;
+}
+
+Status RemoteTerminal::accept_broadcast(std::uint8_t sa) noexcept {
+    if (sa < kFirstDataSubaddress || sa > kLastDataSubaddress) {
+        return Status::kInvalidArgument;
+    }
+    broadcast_accept_ |= 1U << sa;
     return Status::kOk;
 }
 
@@ -227,6 +236,10 @@ Status RemoteTerminal::handle(const Frame& in, Frame& reply, bool& reply_needed)
 
 void RemoteTerminal::handle_receive(const CommandWord& cw, const Frame& in, Frame& reply,
                                     bool& reply_needed) noexcept {
+    if (cw.is_broadcast() && !accepts_broadcast(cw.subaddress)) {
+        ++counters_.broadcasts_ignored;  // not in this terminal's broadcast map: not stored, not flagged
+        return;
+    }
     const std::size_t expected = 1U + cw.count_or_mode;
     if (in.word_count != expected) {
         message_error();

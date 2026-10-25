@@ -69,10 +69,31 @@ class RemoteTerminalTest(unittest.TestCase):
         self.assertEqual(1, self.rt.counters.ignored)
 
     def test_broadcast_sets_the_bit_once(self):
+        self.assertEqual(Status.OK, self.rt.accept_broadcast(5))
         self.assertIsNone(self.run_cmd(command(BROADCAST_RT, False, 5, 1, [0xB0])))
         self.assertEqual((Status.OK, [0xB0], True), self.rt.get_received(5))
         self.assertTrue(status_of(self.run_cmd(command(RT, True, 5, 1))).broadcast_received)
         self.assertFalse(status_of(self.run_cmd(command(RT, True, 5, 1))).broadcast_received)
+
+    def test_broadcast_data_on_an_unaccepted_subaddress_is_ignored(self):
+        # ICD v1.7: a terminal stores a broadcast only on a subaddress of its broadcast map.
+        self.assertIsNone(self.run_cmd(command(BROADCAST_RT, False, 5, 1, [0xB0])))
+        self.assertEqual(Status.NOT_READY, self.rt.get_received(5)[0], "nothing stored")
+        self.assertEqual((1, 0, 0), (self.rt.counters.broadcasts_ignored, self.rt.counters.broadcasts,
+                                     self.rt.counters.message_errors))
+        self.assertFalse(status_of(self.run_cmd(command(RT, True, 5, 1))).broadcast_received)
+        self.assertEqual(Status.INVALID_ARGUMENT, self.rt.accept_broadcast(0))
+        self.assertEqual(Status.INVALID_ARGUMENT, self.rt.accept_broadcast(31))
+        self.assertEqual(Status.OK, self.rt.accept_broadcast(6))
+        self.assertTrue(self.rt.accepts_broadcast(6))
+        self.assertFalse(self.rt.accepts_broadcast(5))
+        # The map survives a reset; the sync never needed it.
+        self.assertIsNone(self.run_cmd(mode_code(BROADCAST_RT, True, MODE_CODE_RESET_REMOTE_TERMINAL)))
+        self.assertTrue(self.rt.take_reset_request())
+        self.assertIsNone(self.run_cmd(command(BROADCAST_RT, False, 6, 2, [0xC0, 0xC1])))
+        self.assertEqual((Status.OK, [0xC0, 0xC1], True), self.rt.get_received(6))
+        self.assertIsNone(self.run_cmd(mode_code(BROADCAST_RT, False, MODE_CODE_SYNCHRONIZE_WITH_DATA, [0x0C07])))
+        self.assertEqual(1, self.rt.counters.syncs)
 
     def test_parity_error_means_silence_then_message_error(self):
         self.assertIsNone(self.run_cmd(command(RT, False, 5, 1, [1], flags=FLAG_PARITY_ERROR)))

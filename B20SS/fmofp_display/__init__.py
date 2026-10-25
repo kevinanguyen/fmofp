@@ -5,9 +5,10 @@
     py -m fmofp_display mfd   [--port-base 51000]    the multi-function display, RT 13
 
 Each display is its own process and its own terminal (ICD README section 2, "one
-process per display"). The bus controller relays what the display needs into
-its receive subaddresses and receive blocks; the display's own commands sit on
-its transmit subaddresses for the controller to relay on. The PyQt6 display
+process per display"). The bus controller broadcasts what the displays draw to
+address 31, once; each display accepts the broadcast subaddresses it watches
+(README section 8). The display's own commands sit on its transmit
+subaddresses for the controller to relay on. The PyQt6 display
 classes under FMOFP/Interfaces are unchanged: a feed turns the bus words into
 the dictionaries they always drew.
 

@@ -1,8 +1,9 @@
 """A display's end of the bus: a Python terminal in a thread beside Qt.
 
-The bus controller relays what a display needs into its receive subaddresses
-and receive blocks (ICD v1.5); the display's own commands sit on its transmit
-subaddresses for the controller to relay on. DisplayTerminal runs the socket
+The bus controller broadcasts what the displays draw to address 31 (ICD
+v1.7, README section 8); a display accepts the broadcast subaddresses of the
+messages and blocks it watches and ignores the rest. The display's own
+commands sit on its transmit subaddresses for the controller to relay on. DisplayTerminal runs the socket
 loop in a background thread and keeps the latest decoded copy of every message
 and block it is told to watch, with the time it arrived. It answers the
 display's own status message, its mode command (the lighting mode) and
@@ -18,6 +19,7 @@ import threading
 import time
 
 from fmofp_bus.block import BlockCollector
+from fmofp_bus.command_word import BROADCAST_RT
 from fmofp_bus.icd import messages as m
 from fmofp_bus.icd.enums import DisplayMode, TerminalState
 from fmofp_bus.remote_terminal import CommandSequence
@@ -74,11 +76,23 @@ class DisplayTerminal:
         status = self.process.init(self.rt, self.port_base)
         if status != Status.OK:
             return status
+        self._accept_broadcasts()
         self._load_status()
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name=f"display-rt{self.rt}", daemon=True)
         self._thread.start()
         return Status.OK
+
+    def _accept_broadcasts(self):
+        """The subaddresses this display hears by broadcast: its watched messages and blocks at address 31."""
+        term = self.process.terminal
+        for cls in self.receives:
+            if cls.RT == BROADCAST_RT:
+                term.accept_broadcast(cls.SUBADDRESS)
+        for cls in self.blocks:
+            if cls.RT == BROADCAST_RT:
+                term.accept_broadcast(cls.DESCRIPTOR_SUBADDRESS)
+                term.accept_broadcast(cls.SEGMENT_SUBADDRESS)
 
     def stop(self):
         self._stop.set()

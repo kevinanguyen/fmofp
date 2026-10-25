@@ -83,6 +83,7 @@ class RtCounters:
     receives: int = 0
     transmits: int = 0
     broadcasts: int = 0
+    broadcasts_ignored: int = 0  # broadcast data on a subaddress not accepted
     syncs: int = 0
     message_errors: int = 0
 
@@ -92,6 +93,7 @@ class RemoteTerminal:
         self.rt = 0
         self.counters = RtCounters()
         self._reset_pending = False
+        self._broadcast_accept = set()
         self._reset()
 
     # ---- the partition's side -------------------------------------------
@@ -100,10 +102,23 @@ class RemoteTerminal:
         if not 0 <= rt < BROADCAST_RT:
             return Status.INVALID_ARGUMENT
         self.rt = rt
+        self._broadcast_accept = set()
         self._reset()
         self._reset_pending = False
         self.counters = RtCounters()
         return Status.OK
+
+    def accept_broadcast(self, sa):
+        """Stores broadcast data (a receive command to address 31) on `sa`; on any other subaddress a broadcast is
+        ignored, so it can never land in a buffer meant for this terminal's own commands (ICD README section 8).
+        Mode codes such as the sync need no acceptance. Kept across RESET_REMOTE_TERMINAL; init() clears it."""
+        if not FIRST_DATA_SUBADDRESS <= sa <= LAST_DATA_SUBADDRESS:
+            return Status.INVALID_ARGUMENT
+        self._broadcast_accept.add(sa)
+        return Status.OK
+
+    def accepts_broadcast(self, sa):
+        return sa in self._broadcast_accept
 
     def set_transmit(self, sa, words):
         """Loads what the terminal sends the next time the BC asks for `sa`."""
@@ -225,6 +240,9 @@ class RemoteTerminal:
         return Frame(FrameType.RT_TO_BC, 0, frame.transaction, [self._status_word(clear_latches)])
 
     def _handle_receive(self, cw, frame):
+        if cw.is_broadcast and cw.subaddress not in self._broadcast_accept:
+            self.counters.broadcasts_ignored += 1  # not in this terminal's broadcast map: not stored, not flagged
+            return None
         if frame.word_count != 1 + cw.count_or_mode:
             self._message_error()
             return None

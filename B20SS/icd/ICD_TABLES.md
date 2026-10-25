@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.6 (DRAFT, 2026-10-25). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.7 (DRAFT, 2026-10-25). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -17,11 +17,11 @@
 | 8 | `powermanagement` | Power management | existing | Systems/powerManagement |  |
 | 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19) and the terrain-following radar in v1.4 (SA 2, 14-15, 20-23); SAR, targeting and AEWC are still Python |
 | 10 | `sensormanagement` | Sensor management | existing | Systems/sensorManagement |  |
-| 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it reads the FMS's flight data, status and attitude status by relay (SA 1-3) |
+| 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then) |
 | 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py | Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object |
-| 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py | On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the same relays and blocks the radar display receives (SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (SA 5, 10) and its mission page the FMS flight data (SA 11). Its radar commands moved to the radar display terminal in v1.5; it commands nothing |
+| 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py | On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10) and its mission page the FMS flight data (31/25); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing |
 | 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays |  |
-| 15 | `radar_display` | Radar display - the radars' pictures and their control panel | new | Interfaces/userInterface/displays/radar | On the bus from v1.5 (fmofp_display radar): it receives the weather and terrain-following radars' status, scan summary and guidance by relay (SA 1-4), their products as receive blocks (SA 6-9), and commands the radars (SA 20-24) |
+| 15 | `radar_display` | Radar display - the radars' pictures and their control panel | new | Interfaces/userInterface/displays/radar | On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24) |
 | 16 | `tsd` | Tactical situation display | new | Interfaces/userInterface/displays/tsd.py |  |
 | 17 | `sms` | Stores management display | new | Interfaces/userInterface/displays |  |
 | 18 | `hud` | Head-up display | new | Interfaces/userInterface (HUDContainer) |  |
@@ -31,6 +31,7 @@
 | 22 | `defensive` | Defensive systems - RWR, chaff, flare, ECM | new | Systems/defensiveSys |  |
 | 23 | `flightdatamonitoring` | Flight data monitoring | new | Systems/flightDataMonitoring |  |
 | 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4; engine data goes to the engine terminal). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure |
+| 31 | `broadcast` | Broadcast address - every terminal that accepts a subaddress hears it | reserved |  | Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7 |
 
 RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 
@@ -64,9 +65,6 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`RDR_WX_WEATHER`](#rdr_wx_weather) | 9 | 19 | R | 32 | 1 | Weather truth, for the radar's sensor model | DRAFT |
 | [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | 9 | 20 | T | 8 | 10 | Terrain-following guidance | DRAFT |
 | [`RDR_TFR_SENSORS`](#rdr_tfr_sensors) | 9 | 23 | R | 11 | 50 | Sensed flight state as received by the radar | DRAFT |
-| [`PFD_FLIGHT_DATA`](#pfd_flight_data) | 11 | 1 | R | 21 | 10 | FMS flight data as received by the PFD | DRAFT |
-| [`PFD_FMS_STATUS`](#pfd_fms_status) | 11 | 2 | R | 3 | 5 | FMS status as received by the PFD | DRAFT |
-| [`PFD_ATTITUDE_STATUS`](#pfd_attitude_status) | 11 | 3 | R | 8 | 10 | Attitude command status as received by the PFD | DRAFT |
 | [`DSP_PFD_MODE_CMD`](#dsp_pfd_mode_cmd) | 11 | 11 | R | 1 | aperiodic | Primary flight display mode command | DRAFT |
 | [`DSP_PFD_STATUS`](#dsp_pfd_status) | 11 | 11 | T | 2 | 1 | Primary flight display status | DRAFT |
 | [`FMS_ATTITUDE_IN`](#fms_attitude_in) | 12 | 12 | R | 4 | 50 | Measured attitude, from the FCS | DRAFT |
@@ -85,21 +83,10 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`FMS_CONTROL_CMD`](#fms_control_cmd) | 12 | 21 | R | 2 | aperiodic | Thrust and landing gear command | DRAFT |
 | [`FMS_CONTROL_STATUS`](#fms_control_status) | 12 | 21 | T | 3 | 5 | Thrust and landing gear status | DRAFT |
 | [`FMS_ENERGY`](#fms_energy) | 12 | 22 | T | 6 | 1 | Energy maneuverability | DRAFT |
-| [`MFD_RDR_WX_STATUS`](#mfd_rdr_wx_status) | 13 | 1 | R | 2 | 5 | Weather radar status as received by the MFD | DRAFT |
-| [`MFD_RDR_WX_SCAN`](#mfd_rdr_wx_scan) | 13 | 2 | R | 10 | 5 | Weather radar scan summary as received by the MFD | DRAFT |
-| [`MFD_RDR_TFR_STATUS`](#mfd_rdr_tfr_status) | 13 | 3 | R | 2 | 5 | Terrain-following radar status as received by the MFD | DRAFT |
-| [`MFD_RDR_TFR_GUIDANCE`](#mfd_rdr_tfr_guidance) | 13 | 4 | R | 8 | 10 | Terrain-following guidance as received by the MFD | DRAFT |
-| [`MFD_GCAS_ALERTS`](#mfd_gcas_alerts) | 13 | 5 | R | 4 | 5 | GCAS alerts as received by the MFD | DRAFT |
-| [`MFD_PERF_STATUS`](#mfd_perf_status) | 13 | 10 | R | 4 | 1 | Flight envelope monitoring as received by the MFD | DRAFT |
-| [`MFD_FLIGHT_DATA`](#mfd_flight_data) | 13 | 11 | R | 21 | 10 | FMS flight data as received by the MFD | DRAFT |
 | [`DSP_MFD_MODE_CMD`](#dsp_mfd_mode_cmd) | 13 | 12 | R | 1 | aperiodic | Multi-function display mode command | DRAFT |
 | [`DSP_MFD_STATUS`](#dsp_mfd_status) | 13 | 12 | T | 2 | 1 | Multi-function display status | DRAFT |
 | [`DSP_EICAS_MODE_CMD`](#dsp_eicas_mode_cmd) | 14 | 13 | R | 1 | aperiodic | EICAS mode command | DRAFT |
 | [`DSP_EICAS_STATUS`](#dsp_eicas_status) | 14 | 13 | T | 2 | 1 | EICAS status | DRAFT |
-| [`DSP_RDR_WX_STATUS`](#dsp_rdr_wx_status) | 15 | 1 | R | 2 | 5 | Weather radar status as received by the radar display | DRAFT |
-| [`DSP_RDR_WX_SCAN`](#dsp_rdr_wx_scan) | 15 | 2 | R | 10 | 5 | Weather radar scan summary as received by the radar display | DRAFT |
-| [`DSP_RDR_TFR_STATUS`](#dsp_rdr_tfr_status) | 15 | 3 | R | 2 | 5 | Terrain-following radar status as received by the radar display | DRAFT |
-| [`DSP_RDR_TFR_GUIDANCE`](#dsp_rdr_tfr_guidance) | 15 | 4 | R | 8 | 10 | Terrain-following guidance as received by the radar display | DRAFT |
 | [`DSP_RADAR_MODE_CMD`](#dsp_radar_mode_cmd) | 15 | 14 | R | 1 | aperiodic | Weather radar display mode command | DRAFT |
 | [`DSP_RADAR_STATUS`](#dsp_radar_status) | 15 | 14 | T | 2 | 1 | Weather radar display status | DRAFT |
 | [`DSP_RDR_WX_CMD`](#dsp_rdr_wx_cmd) | 15 | 20 | T | 3 | 10 | Radar display command to the weather radar | DRAFT |
@@ -116,6 +103,15 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`PLANT_SENSORS`](#plant_sensors) | 27 | 1 | T | 11 | 50 | Sensed flight state from the plant | DRAFT |
 | [`PLANT_GPS`](#plant_gps) | 27 | 2 | T | 25 | 1 | GPS pseudoranges from the plant | DRAFT |
 | [`PLANT_WEATHER`](#plant_weather) | 27 | 3 | T | 32 | 1 | Weather truth from the plant | DRAFT |
+| [`BCAST_RDR_WX_STATUS`](#bcast_rdr_wx_status) | 31 | 1 | R | 2 | 5 | Weather radar status, broadcast to the displays | DRAFT |
+| [`BCAST_RDR_WX_SCAN`](#bcast_rdr_wx_scan) | 31 | 2 | R | 10 | 5 | Weather radar scan summary, broadcast to the displays | DRAFT |
+| [`BCAST_RDR_TFR_STATUS`](#bcast_rdr_tfr_status) | 31 | 3 | R | 2 | 5 | Terrain-following radar status, broadcast to the displays | DRAFT |
+| [`BCAST_RDR_TFR_GUIDANCE`](#bcast_rdr_tfr_guidance) | 31 | 4 | R | 8 | 10 | Terrain-following guidance, broadcast to the displays | DRAFT |
+| [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) | 31 | 5 | R | 4 | 5 | GCAS alerts, broadcast to the displays | DRAFT |
+| [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) | 31 | 10 | R | 4 | 1 | Flight envelope monitoring, broadcast to the displays | DRAFT |
+| [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) | 31 | 25 | R | 21 | 10 | FMS flight data, broadcast to the displays | DRAFT |
+| [`BCAST_FMS_STATUS`](#bcast_fms_status) | 31 | 26 | R | 3 | 5 | FMS status, broadcast to the displays | DRAFT |
+| [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) | 31 | 27 | R | 8 | 10 | Attitude command status, broadcast to the displays | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
 | [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
 
@@ -132,10 +128,8 @@ The descriptor and segment framing is in README.md section 8. A block's payload 
 | `RDR_SAR_IMAGE` | 9 | T | 16 | 17 | 1 | SAR image | TBD-v2 |
 | `PLANT_TERRAIN` | 27 | T | 4 | 5 | 50 | Terrain profile ahead, from the plant | [header 2 words + 1 sections, at most 103 words](#plant_terrain) |
 | `RDR_TFR_TERRAIN` | 9 | R | 21 | 22 | 50 | Terrain profile as received by the radar | as [`PLANT_TERRAIN`](#plant_terrain) (relayed copy) |
-| `DSP_RDR_WX_PRODUCTS` | 15 | R | 6 | 7 | 25 | Weather radar products as received by the radar display | as [`RDR_WX_PRODUCTS`](#rdr_wx_products) (relayed copy) |
-| `DSP_RDR_TFR_ELEVATION` | 15 | R | 8 | 9 | 25 | TFR elevation profile as received by the radar display | as [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) (relayed copy) |
-| `MFD_RDR_WX_PRODUCTS` | 13 | R | 6 | 7 | 25 | Weather radar products as received by the MFD | as [`RDR_WX_PRODUCTS`](#rdr_wx_products) (relayed copy) |
-| `MFD_RDR_TFR_ELEVATION` | 13 | R | 8 | 9 | 25 | TFR elevation profile as received by the MFD | as [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) (relayed copy) |
+| `BCAST_RDR_WX_PRODUCTS` | 31 | R | 6 | 7 | 25 | Weather radar products, broadcast to the displays | as [`RDR_WX_PRODUCTS`](#rdr_wx_products) (relayed copy) |
+| `BCAST_RDR_TFR_ELEVATION` | 31 | R | 8 | 9 | 25 | TFR elevation profile, broadcast to the displays | as [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) (relayed copy) |
 
 ## Relays (RT-to-RT transfers)
 
@@ -160,24 +154,17 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`PLANT_SENSORS`](#plant_sensors) | [`RDR_TFR_SENSORS`](#rdr_tfr_sensors) | 11 | 50 |
 | [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | [`FCS_TERRAIN`](#fcs_terrain) | 8 | 10 |
 | [`PLANT_TERRAIN`](#plant_terrain) | `RDR_TFR_TERRAIN` | block: 4 + 32 per frame | 50 |
-| [`RDR_WX_STATUS`](#rdr_wx_status) | [`DSP_RDR_WX_STATUS`](#dsp_rdr_wx_status) | 2 | 5 |
-| [`RDR_WX_SCAN`](#rdr_wx_scan) | [`DSP_RDR_WX_SCAN`](#dsp_rdr_wx_scan) | 10 | 5 |
-| [`RDR_TFR_STATUS`](#rdr_tfr_status) | [`DSP_RDR_TFR_STATUS`](#dsp_rdr_tfr_status) | 2 | 5 |
-| [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | [`DSP_RDR_TFR_GUIDANCE`](#dsp_rdr_tfr_guidance) | 8 | 10 |
-| [`RDR_WX_PRODUCTS`](#rdr_wx_products) | `DSP_RDR_WX_PRODUCTS` | block: 4 + 32 per frame | 25 |
-| [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) | `DSP_RDR_TFR_ELEVATION` | block: 4 + 32 per frame | 25 |
-| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`PFD_FLIGHT_DATA`](#pfd_flight_data) | 21 | 10 |
-| [`FMS_STATUS`](#fms_status) | [`PFD_FMS_STATUS`](#pfd_fms_status) | 3 | 5 |
-| [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | [`PFD_ATTITUDE_STATUS`](#pfd_attitude_status) | 8 | 10 |
-| [`RDR_WX_STATUS`](#rdr_wx_status) | [`MFD_RDR_WX_STATUS`](#mfd_rdr_wx_status) | 2 | 5 |
-| [`RDR_WX_SCAN`](#rdr_wx_scan) | [`MFD_RDR_WX_SCAN`](#mfd_rdr_wx_scan) | 10 | 5 |
-| [`RDR_TFR_STATUS`](#rdr_tfr_status) | [`MFD_RDR_TFR_STATUS`](#mfd_rdr_tfr_status) | 2 | 5 |
-| [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | [`MFD_RDR_TFR_GUIDANCE`](#mfd_rdr_tfr_guidance) | 8 | 10 |
-| [`RDR_WX_PRODUCTS`](#rdr_wx_products) | `MFD_RDR_WX_PRODUCTS` | block: 4 + 32 per frame | 25 |
-| [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) | `MFD_RDR_TFR_ELEVATION` | block: 4 + 32 per frame | 25 |
-| [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | [`MFD_GCAS_ALERTS`](#mfd_gcas_alerts) | 4 | 5 |
-| [`FCS_PERF_STATUS`](#fcs_perf_status) | [`MFD_PERF_STATUS`](#mfd_perf_status) | 4 | 1 |
-| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`MFD_FLIGHT_DATA`](#mfd_flight_data) | 21 | 10 |
+| [`RDR_WX_STATUS`](#rdr_wx_status) | [`BCAST_RDR_WX_STATUS`](#bcast_rdr_wx_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
+| [`RDR_WX_SCAN`](#rdr_wx_scan) | [`BCAST_RDR_WX_SCAN`](#bcast_rdr_wx_scan) (broadcast, heard by RT 13, 15) | 10 | 5 |
+| [`RDR_TFR_STATUS`](#rdr_tfr_status) | [`BCAST_RDR_TFR_STATUS`](#bcast_rdr_tfr_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
+| [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | [`BCAST_RDR_TFR_GUIDANCE`](#bcast_rdr_tfr_guidance) (broadcast, heard by RT 13, 15) | 8 | 10 |
+| [`RDR_WX_PRODUCTS`](#rdr_wx_products) | `BCAST_RDR_WX_PRODUCTS` (broadcast, heard by RT 13, 15) | block: 4 + 32 per frame | 25 |
+| [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) | `BCAST_RDR_TFR_ELEVATION` (broadcast, heard by RT 13, 15) | block: 4 + 32 per frame | 25 |
+| [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) (broadcast, heard by RT 13) | 4 | 5 |
+| [`FCS_PERF_STATUS`](#fcs_perf_status) | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) (broadcast, heard by RT 13) | 4 | 1 |
+| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 11, 13) | 21 | 10 |
+| [`FMS_STATUS`](#fms_status) | [`BCAST_FMS_STATUS`](#bcast_fms_status) (broadcast, heard by RT 11) | 3 | 5 |
+| [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) (broadcast, heard by RT 11) | 8 | 10 |
 
 ## Mode codes
 
@@ -1355,36 +1342,6 @@ Replaces: `displayCommand`, `display_mode_request`, `display_mode_change`
 | 0 | 11-8 | `requested_mode` | enum | enum `display_mode` |  |
 | 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
 
-### DSP_RDR_WX_STATUS
-
-**Weather radar status as received by the radar display** — RT 15 · SA 1 · receive (bus to terminal) · 2 words · 5 Hz
-
-The display draws the mode the radar reports, not the one it asked for.
-
-Same layout as [`RDR_WX_STATUS`](#rdr_wx_status).
-
-### DSP_RDR_WX_SCAN
-
-**Weather radar scan summary as received by the radar display** — RT 15 · SA 2 · receive (bus to terminal) · 10 words · 5 Hz
-
-The range in effect scales the picture; the counts and the block version tell the display what to expect.
-
-Same layout as [`RDR_WX_SCAN`](#rdr_wx_scan).
-
-### DSP_RDR_TFR_STATUS
-
-**Terrain-following radar status as received by the radar display** — RT 15 · SA 3 · receive (bus to terminal) · 2 words · 5 Hz
-
-Same layout as [`RDR_TFR_STATUS`](#rdr_tfr_status).
-
-### DSP_RDR_TFR_GUIDANCE
-
-**Terrain-following guidance as received by the radar display** — RT 15 · SA 4 · receive (bus to terminal) · 8 words · 10 Hz
-
-The clearance readout and the commanded altitude the terrain display draws.
-
-Same layout as [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance).
-
 ### DSP_RDR_WX_CMD
 
 **Radar display command to the weather radar** — RT 15 · SA 20 · transmit (terminal to bus) · 3 words · 10 Hz
@@ -1425,81 +1382,67 @@ Relayed into RT 9 SA 5, when that radar is ported.
 
 Same layout as [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd).
 
-### PFD_FLIGHT_DATA
+### BCAST_RDR_WX_STATUS
 
-**FMS flight data as received by the PFD** — RT 11 · SA 1 · receive (bus to terminal) · 21 words · 10 Hz
+**Weather radar status, broadcast to the displays** — RT 31 · SA 1 · receive (bus to terminal) · 2 words · 5 Hz
 
-What pfd.update_flight_data() read from get_flight_data(): attitude, velocity, navigation, tactical and status. A field whose SSM is not NORMAL is left out of the dictionary the display reads, so its tape draws the amber X (README section 4).
-
-Same layout as [`FMS_FLIGHT_DATA`](#fms_flight_data).
-
-### PFD_FMS_STATUS
-
-**FMS status as received by the PFD** — RT 11 · SA 2 · receive (bus to terminal) · 3 words · 5 Hz
-
-The flight mode's profile limits (maximum g and angle of attack) that the PFD's tactical indicators scale against.
-
-Same layout as [`FMS_STATUS`](#fms_status).
-
-### PFD_ATTITUDE_STATUS
-
-**Attitude command status as received by the PFD** — RT 11 · SA 3 · receive (bus to terminal) · 8 words · 10 Hz
-
-The limited bits are the envelope warnings the PFD lists (BANK ANGLE, PITCH ANGLE, ROLL RATE, PITCH RATE, YAW RATE), as fmsControl.get_tactical_status() gave them.
-
-Same layout as [`FMS_ATTITUDE_STATUS`](#fms_attitude_status).
-
-### MFD_RDR_WX_STATUS
-
-**Weather radar status as received by the MFD** — RT 13 · SA 1 · receive (bus to terminal) · 2 words · 5 Hz
-
-The MFD's radar page mirrors the radar display's pictures (README section 2): the same relays and blocks, on the same subaddresses (1-4, 6-9). It commands nothing; the radar display is the radars' control panel.
+One RT-to-RT transfer heard by every listener (README section 8): the radar display (RT 15) and the MFD (RT 13) draw the mode the radar reports. Until v1.7 each display had a copy of its own (DSP_RDR_*, MFD_RDR_*), which cost the bus a transfer per display. The broadcast map is program-wide: subaddresses 1-10 are the radar and flight-control band, 25-27 the flight-management band, clear of every display's own subaddress (11-17).
 
 Same layout as [`RDR_WX_STATUS`](#rdr_wx_status).
 
-### MFD_RDR_WX_SCAN
+### BCAST_RDR_WX_SCAN
 
-**Weather radar scan summary as received by the MFD** — RT 13 · SA 2 · receive (bus to terminal) · 10 words · 5 Hz
+**Weather radar scan summary, broadcast to the displays** — RT 31 · SA 2 · receive (bus to terminal) · 10 words · 5 Hz
 
 Same layout as [`RDR_WX_SCAN`](#rdr_wx_scan).
 
-### MFD_RDR_TFR_STATUS
+### BCAST_RDR_TFR_STATUS
 
-**Terrain-following radar status as received by the MFD** — RT 13 · SA 3 · receive (bus to terminal) · 2 words · 5 Hz
+**Terrain-following radar status, broadcast to the displays** — RT 31 · SA 3 · receive (bus to terminal) · 2 words · 5 Hz
 
 Same layout as [`RDR_TFR_STATUS`](#rdr_tfr_status).
 
-### MFD_RDR_TFR_GUIDANCE
+### BCAST_RDR_TFR_GUIDANCE
 
-**Terrain-following guidance as received by the MFD** — RT 13 · SA 4 · receive (bus to terminal) · 8 words · 10 Hz
+**Terrain-following guidance, broadcast to the displays** — RT 31 · SA 4 · receive (bus to terminal) · 8 words · 10 Hz
 
-The clearance and its level that mfd._read_tfr_clearance() put on the terrain picture; it read them from the radar object in-process.
+The clearance readout and the commanded altitude the terrain pictures draw. The FCS keeps its own unicast copy (FCS_TERRAIN): flight-critical data is not taken from a transfer nobody acknowledges.
 
 Same layout as [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance).
 
-### MFD_GCAS_ALERTS
+### BCAST_FCS_GCAS_ALERTS
 
-**GCAS alerts as received by the MFD** — RT 13 · SA 5 · receive (bus to terminal) · 4 words · 5 Hz
+**GCAS alerts, broadcast to the displays** — RT 31 · SA 5 · receive (bus to terminal) · 4 words · 5 Hz
 
-The systems page's FCS / GCAS rows: the alert codes, with the texts the Python's GCAS built from the vertical speed, altitude and clearance that ride along (PULL UP  VS -4500 fpm; SINK RATE  -2500 fpm; TERRAIN  300 ft clearance; ALT LOW  150 ft).
+The MFD's systems page rows, and any display that shows the alerts later (EICAS, HUD) by adding itself to the listeners.
 
 Same layout as [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts).
 
-### MFD_PERF_STATUS
+### BCAST_FCS_PERF_STATUS
 
-**Flight envelope monitoring as received by the MFD** — RT 13 · SA 10 · receive (bus to terminal) · 4 words · 1 Hz
-
-The systems page's exceedance rows: parameter, magnitude and limit. g and angle of attack come with the message; roll, pitch and vertical speed are read from MFD_FLIGHT_DATA.
+**Flight envelope monitoring, broadcast to the displays** — RT 31 · SA 10 · receive (bus to terminal) · 4 words · 1 Hz
 
 Same layout as [`FCS_PERF_STATUS`](#fcs_perf_status).
 
-### MFD_FLIGHT_DATA
+### BCAST_FMS_FLIGHT_DATA
 
-**FMS flight data as received by the MFD** — RT 13 · SA 11 · receive (bus to terminal) · 21 words · 10 Hz
+**FMS flight data, broadcast to the displays** — RT 31 · SA 25 · receive (bus to terminal) · 21 words · 10 Hz
 
-The mission page's position rows, and the attitude and vertical speed behind an exceedance row. The engine, communications and mission rows stay what the Python drew with no such service running, until those terminals exist (README section 12).
+What the PFD draws and the MFD's mission page reads; the HUD will listen too.
 
 Same layout as [`FMS_FLIGHT_DATA`](#fms_flight_data).
+
+### BCAST_FMS_STATUS
+
+**FMS status, broadcast to the displays** — RT 31 · SA 26 · receive (bus to terminal) · 3 words · 5 Hz
+
+Same layout as [`FMS_STATUS`](#fms_status).
+
+### BCAST_FMS_ATTITUDE_STATUS
+
+**Attitude command status, broadcast to the displays** — RT 31 · SA 27 · receive (bus to terminal) · 8 words · 10 Hz
+
+Same layout as [`FMS_ATTITUDE_STATUS`](#fms_attitude_status).
 
 ### PLANT_SENSORS
 

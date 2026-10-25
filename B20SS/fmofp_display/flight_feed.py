@@ -2,8 +2,9 @@
 
 PrimaryFlightDisplay.update_flight_data() polls fms.get_flight_data() and
 fms_control.get_tactical_status() sixty times a second. FlightDataFeed answers
-both from PFD_FLIGHT_DATA, PFD_FMS_STATUS and PFD_ATTITUDE_STATUS as the
-display terminal receives them (ICD v1.5). A field whose SSM is not NORMAL is
+both from BCAST_FMS_FLIGHT_DATA, BCAST_FMS_STATUS and BCAST_FMS_ATTITUDE_STATUS,
+the FMS's messages broadcast to the displays (ICD v1.7; the PFD had its own
+copies in v1.5). A field whose SSM is not NORMAL is
 left out of the dictionary, so the display's own validity tracking lets it age
 out and draws the amber X (README section 4, "Python displays"); when nothing
 fresh has arrived the dictionary is empty and every tape goes amber.
@@ -42,7 +43,7 @@ class FlightDataFeed:
 
     def get_flight_data(self):
         """pfd.update_flight_data()'s dictionary, with only the fields the bus vouches for."""
-        message = self.terminal.fresh(m.PfdFlightData, self.stale_after_s)
+        message = self.terminal.fresh(m.BcastFmsFlightData, self.stale_after_s)
         if message is None:
             return {}
         p = message.payload
@@ -84,8 +85,8 @@ class FlightDataFeed:
 
     def get_tactical_status(self):
         """fmsControl.get_tactical_status()'s dictionary, as far as the PFD reads it."""
-        status = self.terminal.fresh(m.PfdFmsStatus, self.stale_after_s)
-        attitude = self.terminal.fresh(m.PfdAttitudeStatus, self.stale_after_s)
+        status = self.terminal.fresh(m.BcastFmsStatus, self.stale_after_s)
+        attitude = self.terminal.fresh(m.BcastFmsAttitudeStatus, self.stale_after_s)
         mode = status.payload.flight_mode if status is not None else None
         max_g, max_aoa = PROFILE_LIMITS.get(mode, DEFAULT_LIMITS)
         warnings = []
@@ -95,7 +96,7 @@ class FlightDataFeed:
                 "profile_limits": {"max_g_force": max_g, "max_aoa": max_aoa}}
 
     def status_text(self):
-        message, age = self.terminal.latest(m.PfdFlightData)
+        message, age = self.terminal.latest(m.BcastFmsFlightData)
         if message is None:
             return "FMS: no data"
         p = message.payload

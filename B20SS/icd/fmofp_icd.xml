@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="6" status="DRAFT" date="2026-10-25">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="7" status="DRAFT" date="2026-10-25">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -19,6 +19,7 @@
   <revision version="1.4-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Terrain-following radar partition: the plant gains the terrain (PLANT_TERRAIN, the elevation profile ahead of the aircraft, a block relayed to the radar as RDR_TFR_TERRAIN - the first block relay and the first receive block); the radar gets the aircraft state as RDR_TFR_SENSORS and publishes RDR_TFR_GUIDANCE and the RDR_TFR_ELEVATION block (the assessed profile and the path commands). The flight control computer takes its terrain clearance from the radar (FCS_TERRAIN) instead of the plant: PLANT_SENSORS loses terrain_clearance. Enums clearance_level, terrain_warning, path_reason.</revision>
   <revision version="1.5-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">The first displays on the bus. The radar display (RT 15) receives the weather and terrain-following radars' status, scan summary and guidance by relay and their products as receive blocks (DSP_RDR_WX_PRODUCTS, DSP_RDR_TFR_ELEVATION), and is the radars' control panel: the radar commands move from the MFD (MFD_RDR_*_CMD, never implemented) to DSP_RDR_*_CMD. The PFD (RT 11) receives FMS_FLIGHT_DATA, FMS_STATUS and FMS_ATTITUDE_STATUS by relay (PFD_FLIGHT_DATA, PFD_FMS_STATUS, PFD_ATTITUDE_STATUS). A command whose cmd_seq is 0 is no command: an unloaded command subaddress reads as zeros.</revision>
   <revision version="1.6-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">The MFD (RT 13) on the bus. Its radar page mirrors the radar display's pictures: the weather and terrain-following radars' status, scan summary and guidance by relay (MFD_RDR_WX_STATUS, MFD_RDR_WX_SCAN, MFD_RDR_TFR_STATUS, MFD_RDR_TFR_GUIDANCE) and their products as receive blocks (MFD_RDR_WX_PRODUCTS, MFD_RDR_TFR_ELEVATION). Its systems page reads the flight computer's GCAS alerts and envelope exceedances (MFD_GCAS_ALERTS, MFD_PERF_STATUS) and its mission page the FMS flight data (MFD_FLIGHT_DATA). It commands nothing.</revision>
+  <revision version="1.7-draft" date="2026-10-25" owner="Kevin Nguyen" author="Claude, for Kevin Nguyen">Display data by broadcast. The radars' status, scan summary, guidance and product blocks, the flight computer's GCAS alerts and exceedances and the FMS's flight data, status and attitude status are relayed once each to address 31 (BCAST_*), and each display accepts the broadcast subaddresses it draws; a terminal stores a broadcast only on an accepted subaddress. The per-display copies of v1.5 and v1.6 (DSP_RDR_*, PFD_*, MFD_*) are removed. The broadcast map: subaddresses 1-10 the radar and flight-control band, 25-27 the flight-management band.</revision>
   <bus word_bits="16" byte_order="big-endian" bit_numbering="15=MSB" bit_rate_mbps="1"
        minor_frame_ms="20" minor_frames_per_major="50" rates_hz="50 10 5 1"
        broadcast_rt="31" status_sa="29" wraparound_sa="30" max_bus_load_percent="50"
@@ -214,11 +215,11 @@
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
     <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19) and the terrain-following radar in v1.4 (SA 2, 14-15, 20-23); SAR, targeting and AEWC are still Python"/>
     <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
-    <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it reads the FMS's flight data, status and attitude status by relay (SA 1-3)"/>
+    <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then)"/>
     <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py" note="Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object"/>
-    <terminal rt="13" id="mfd" name="Multi-function display" status="new" source="Interfaces/userInterface/displays/mfd.py" note="On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the same relays and blocks the radar display receives (SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (SA 5, 10) and its mission page the FMS flight data (SA 11). Its radar commands moved to the radar display terminal in v1.5; it commands nothing"/>
+    <terminal rt="13" id="mfd" name="Multi-function display" status="new" source="Interfaces/userInterface/displays/mfd.py" note="On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10) and its mission page the FMS flight data (31/25); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing"/>
     <terminal rt="14" id="eicas" name="Engine indicating and crew alerting display" status="new" source="Interfaces/userInterface/displays"/>
-    <terminal rt="15" id="radar_display" name="Radar display - the radars' pictures and their control panel" status="new" source="Interfaces/userInterface/displays/radar" note="On the bus from v1.5 (fmofp_display radar): it receives the weather and terrain-following radars' status, scan summary and guidance by relay (SA 1-4), their products as receive blocks (SA 6-9), and commands the radars (SA 20-24)"/>
+    <terminal rt="15" id="radar_display" name="Radar display - the radars' pictures and their control panel" status="new" source="Interfaces/userInterface/displays/radar" note="On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24)"/>
     <terminal rt="16" id="tsd" name="Tactical situation display" status="new" source="Interfaces/userInterface/displays/tsd.py"/>
     <terminal rt="17" id="sms" name="Stores management display" status="new" source="Interfaces/userInterface/displays"/>
     <terminal rt="18" id="hud" name="Head-up display" status="new" source="Interfaces/userInterface (HUDContainer)"/>
@@ -228,6 +229,7 @@
     <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
     <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
     <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4; engine data goes to the engine terminal). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure"/>
+    <terminal rt="31" id="broadcast" name="Broadcast address - every terminal that accepts a subaddress hears it" status="reserved" note="Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7"/>
   </terminals>
 
   <messages>
@@ -739,17 +741,7 @@
 
     <!-- MFD pilot commands to the radars. A terminal cannot start a transfer, so the BC copies
          each of these RT-to-RT into RT 9 every 100 ms; the radar acts only when cmd_seq changes. -->
-    <!-- ===== v1.5: the radar display (RT 15) and the PFD (RT 11) on the bus ===== -->
-    <message id="DSP_RDR_WX_STATUS" rt="15" sa="1" dir="R" words="2" rate="5" title="Weather radar status as received by the radar display" layout_of="RDR_WX_STATUS">
-      <doc>The display draws the mode the radar reports, not the one it asked for.</doc>
-    </message>
-    <message id="DSP_RDR_WX_SCAN" rt="15" sa="2" dir="R" words="10" rate="5" title="Weather radar scan summary as received by the radar display" layout_of="RDR_WX_SCAN">
-      <doc>The range in effect scales the picture; the counts and the block version tell the display what to expect.</doc>
-    </message>
-    <message id="DSP_RDR_TFR_STATUS" rt="15" sa="3" dir="R" words="2" rate="5" title="Terrain-following radar status as received by the radar display" layout_of="RDR_TFR_STATUS"/>
-    <message id="DSP_RDR_TFR_GUIDANCE" rt="15" sa="4" dir="R" words="8" rate="10" title="Terrain-following guidance as received by the radar display" layout_of="RDR_TFR_GUIDANCE">
-      <doc>The clearance readout and the commanded altitude the terrain display draws.</doc>
-    </message>
+    <!-- ===== v1.5: the radar display's commands to the radars (its data arrives by broadcast from v1.7, below) ===== -->
     <message id="DSP_RDR_WX_CMD" rt="15" sa="20" dir="T" words="3" rate="10" title="Radar display command to the weather radar" layout_of="RDR_WX_MODE_CMD">
       <doc>The radar display is the radars' control panel (ICD README section 2). The command sits on this subaddress and is relayed into RT 9 SA 1 every 100 ms; the radar acts on it once, when its cmd_seq is new. Until the display has commanded anything the subaddress reads as zeros, and cmd_seq 0 is no command.</doc>
     </message>
@@ -765,34 +757,26 @@
     <message id="DSP_RDR_AEWC_CMD" rt="15" sa="24" dir="T" words="4" rate="10" title="Radar display command to the AEWC radar" status="PROPOSED" layout_of="RDR_AEWC_MODE_CMD">
       <doc>Relayed into RT 9 SA 5, when that radar is ported.</doc>
     </message>
-    <message id="PFD_FLIGHT_DATA" rt="11" sa="1" dir="R" words="21" rate="10" title="FMS flight data as received by the PFD" layout_of="FMS_FLIGHT_DATA">
-      <doc>What pfd.update_flight_data() read from get_flight_data(): attitude, velocity, navigation, tactical and status. A field whose SSM is not NORMAL is left out of the dictionary the display reads, so its tape draws the amber X (README section 4).</doc>
-    </message>
-    <message id="PFD_FMS_STATUS" rt="11" sa="2" dir="R" words="3" rate="5" title="FMS status as received by the PFD" layout_of="FMS_STATUS">
-      <doc>The flight mode's profile limits (maximum g and angle of attack) that the PFD's tactical indicators scale against.</doc>
-    </message>
-    <message id="PFD_ATTITUDE_STATUS" rt="11" sa="3" dir="R" words="8" rate="10" title="Attitude command status as received by the PFD" layout_of="FMS_ATTITUDE_STATUS">
-      <doc>The limited bits are the envelope warnings the PFD lists (BANK ANGLE, PITCH ANGLE, ROLL RATE, PITCH RATE, YAW RATE), as fmsControl.get_tactical_status() gave them.</doc>
-    </message>
 
-    <!-- ===== v1.6: the MFD (RT 13) on the bus ===== -->
-    <message id="MFD_RDR_WX_STATUS" rt="13" sa="1" dir="R" words="2" rate="5" title="Weather radar status as received by the MFD" layout_of="RDR_WX_STATUS">
-      <doc>The MFD's radar page mirrors the radar display's pictures (README section 2): the same relays and blocks, on the same subaddresses (1-4, 6-9). It commands nothing; the radar display is the radars' control panel.</doc>
+    <!-- ===== v1.7: display data by broadcast. One transfer to address 31; each listener accepts the subaddress; nobody else stores it. ===== -->
+    <message id="BCAST_RDR_WX_STATUS" rt="31" sa="1" dir="R" words="2" rate="5" title="Weather radar status, broadcast to the displays" layout_of="RDR_WX_STATUS" listeners="13 15">
+      <doc>One RT-to-RT transfer heard by every listener (README section 8): the radar display (RT 15) and the MFD (RT 13) draw the mode the radar reports. Until v1.7 each display had a copy of its own (DSP_RDR_*, MFD_RDR_*), which cost the bus a transfer per display. The broadcast map is program-wide: subaddresses 1-10 are the radar and flight-control band, 25-27 the flight-management band, clear of every display's own subaddress (11-17).</doc>
     </message>
-    <message id="MFD_RDR_WX_SCAN" rt="13" sa="2" dir="R" words="10" rate="5" title="Weather radar scan summary as received by the MFD" layout_of="RDR_WX_SCAN"/>
-    <message id="MFD_RDR_TFR_STATUS" rt="13" sa="3" dir="R" words="2" rate="5" title="Terrain-following radar status as received by the MFD" layout_of="RDR_TFR_STATUS"/>
-    <message id="MFD_RDR_TFR_GUIDANCE" rt="13" sa="4" dir="R" words="8" rate="10" title="Terrain-following guidance as received by the MFD" layout_of="RDR_TFR_GUIDANCE">
-      <doc>The clearance and its level that mfd._read_tfr_clearance() put on the terrain picture; it read them from the radar object in-process.</doc>
+    <message id="BCAST_RDR_WX_SCAN" rt="31" sa="2" dir="R" words="10" rate="5" title="Weather radar scan summary, broadcast to the displays" layout_of="RDR_WX_SCAN" listeners="13 15"/>
+    <message id="BCAST_RDR_TFR_STATUS" rt="31" sa="3" dir="R" words="2" rate="5" title="Terrain-following radar status, broadcast to the displays" layout_of="RDR_TFR_STATUS" listeners="13 15"/>
+    <message id="BCAST_RDR_TFR_GUIDANCE" rt="31" sa="4" dir="R" words="8" rate="10" title="Terrain-following guidance, broadcast to the displays" layout_of="RDR_TFR_GUIDANCE" listeners="13 15">
+      <doc>The clearance readout and the commanded altitude the terrain pictures draw. The FCS keeps its own unicast copy (FCS_TERRAIN): flight-critical data is not taken from a transfer nobody acknowledges.</doc>
     </message>
-    <message id="MFD_GCAS_ALERTS" rt="13" sa="5" dir="R" words="4" rate="5" title="GCAS alerts as received by the MFD" layout_of="FCS_GCAS_ALERTS">
-      <doc>The systems page's FCS / GCAS rows: the alert codes, with the texts the Python's GCAS built from the vertical speed, altitude and clearance that ride along (PULL UP  VS -4500 fpm; SINK RATE  -2500 fpm; TERRAIN  300 ft clearance; ALT LOW  150 ft).</doc>
+    <message id="BCAST_FCS_GCAS_ALERTS" rt="31" sa="5" dir="R" words="4" rate="5" title="GCAS alerts, broadcast to the displays" layout_of="FCS_GCAS_ALERTS" listeners="13">
+      <doc>The MFD's systems page rows, and any display that shows the alerts later (EICAS, HUD) by adding itself to the listeners.</doc>
     </message>
-    <message id="MFD_PERF_STATUS" rt="13" sa="10" dir="R" words="4" rate="1" title="Flight envelope monitoring as received by the MFD" layout_of="FCS_PERF_STATUS">
-      <doc>The systems page's exceedance rows: parameter, magnitude and limit. g and angle of attack come with the message; roll, pitch and vertical speed are read from MFD_FLIGHT_DATA.</doc>
+    <message id="BCAST_FCS_PERF_STATUS" rt="31" sa="10" dir="R" words="4" rate="1" title="Flight envelope monitoring, broadcast to the displays" layout_of="FCS_PERF_STATUS" listeners="13"/>
+    <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast to the displays" layout_of="FMS_FLIGHT_DATA" listeners="11 13">
+      <doc>What the PFD draws and the MFD's mission page reads; the HUD will listen too.</doc>
     </message>
-    <message id="MFD_FLIGHT_DATA" rt="13" sa="11" dir="R" words="21" rate="10" title="FMS flight data as received by the MFD" layout_of="FMS_FLIGHT_DATA">
-      <doc>The mission page's position rows, and the attitude and vertical speed behind an exceedance row. The engine, communications and mission rows stay what the Python drew with no such service running, until those terminals exist (README section 12).</doc>
-    </message>
+    <message id="BCAST_FMS_STATUS" rt="31" sa="26" dir="R" words="3" rate="5" title="FMS status, broadcast to the displays" layout_of="FMS_STATUS" listeners="11"/>
+    <message id="BCAST_FMS_ATTITUDE_STATUS" rt="31" sa="27" dir="R" words="8" rate="10" title="Attitude command status, broadcast to the displays" layout_of="FMS_ATTITUDE_STATUS" listeners="11"/>
+
 
     <!-- ===== v1.1: the plant and the flight control partition's inputs and outputs ===== -->
     <message id="PLANT_SENSORS" rt="27" sa="1" dir="T" words="11" rate="50" title="Sensed flight state from the plant">
@@ -950,24 +934,17 @@
     <relay from="PLANT_SENSORS" to="RDR_TFR_SENSORS"/>
     <relay from="RDR_TFR_GUIDANCE" to="FCS_TERRAIN"/>
     <relay from="PLANT_TERRAIN" to="RDR_TFR_TERRAIN"/>
-    <relay from="RDR_WX_STATUS" to="DSP_RDR_WX_STATUS"/>
-    <relay from="RDR_WX_SCAN" to="DSP_RDR_WX_SCAN"/>
-    <relay from="RDR_TFR_STATUS" to="DSP_RDR_TFR_STATUS"/>
-    <relay from="RDR_TFR_GUIDANCE" to="DSP_RDR_TFR_GUIDANCE"/>
-    <relay from="RDR_WX_PRODUCTS" to="DSP_RDR_WX_PRODUCTS"/>
-    <relay from="RDR_TFR_ELEVATION" to="DSP_RDR_TFR_ELEVATION"/>
-    <relay from="FMS_FLIGHT_DATA" to="PFD_FLIGHT_DATA"/>
-    <relay from="FMS_STATUS" to="PFD_FMS_STATUS"/>
-    <relay from="FMS_ATTITUDE_STATUS" to="PFD_ATTITUDE_STATUS"/>
-    <relay from="RDR_WX_STATUS" to="MFD_RDR_WX_STATUS"/>
-    <relay from="RDR_WX_SCAN" to="MFD_RDR_WX_SCAN"/>
-    <relay from="RDR_TFR_STATUS" to="MFD_RDR_TFR_STATUS"/>
-    <relay from="RDR_TFR_GUIDANCE" to="MFD_RDR_TFR_GUIDANCE"/>
-    <relay from="RDR_WX_PRODUCTS" to="MFD_RDR_WX_PRODUCTS"/>
-    <relay from="RDR_TFR_ELEVATION" to="MFD_RDR_TFR_ELEVATION"/>
-    <relay from="FCS_GCAS_ALERTS" to="MFD_GCAS_ALERTS"/>
-    <relay from="FCS_PERF_STATUS" to="MFD_PERF_STATUS"/>
-    <relay from="FMS_FLIGHT_DATA" to="MFD_FLIGHT_DATA"/>
+    <relay from="RDR_WX_STATUS" to="BCAST_RDR_WX_STATUS"/>
+    <relay from="RDR_WX_SCAN" to="BCAST_RDR_WX_SCAN"/>
+    <relay from="RDR_TFR_STATUS" to="BCAST_RDR_TFR_STATUS"/>
+    <relay from="RDR_TFR_GUIDANCE" to="BCAST_RDR_TFR_GUIDANCE"/>
+    <relay from="RDR_WX_PRODUCTS" to="BCAST_RDR_WX_PRODUCTS"/>
+    <relay from="RDR_TFR_ELEVATION" to="BCAST_RDR_TFR_ELEVATION"/>
+    <relay from="FCS_GCAS_ALERTS" to="BCAST_FCS_GCAS_ALERTS"/>
+    <relay from="FCS_PERF_STATUS" to="BCAST_FCS_PERF_STATUS"/>
+    <relay from="FMS_FLIGHT_DATA" to="BCAST_FMS_FLIGHT_DATA"/>
+    <relay from="FMS_STATUS" to="BCAST_FMS_STATUS"/>
+    <relay from="FMS_ATTITUDE_STATUS" to="BCAST_FMS_ATTITUDE_STATUS"/>
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
@@ -1087,17 +1064,11 @@
     <block id="RDR_TFR_TERRAIN" rt="9" dir="R" desc_sa="21" seg_sa="22" rate="50" title="Terrain profile as received by the radar" layout_of="PLANT_TERRAIN">
       <doc>The relayed PLANT_TERRAIN: the bus controller writes the plant's descriptor and segments here in the frames it polls them, and the radar reassembles the profile.</doc>
     </block>
-    <block id="DSP_RDR_WX_PRODUCTS" rt="15" dir="R" desc_sa="6" seg_sa="7" rate="25" title="Weather radar products as received by the radar display" layout_of="RDR_WX_PRODUCTS">
-      <doc>The relayed RDR_WX_PRODUCTS. The display draws a block once it has every segment of a version and the CRC matches, so it always shows one scan's consistent picture; a half-arrived scan is never drawn.</doc>
+    <block id="BCAST_RDR_WX_PRODUCTS" rt="31" dir="R" desc_sa="6" seg_sa="7" rate="25" title="Weather radar products, broadcast to the displays" layout_of="RDR_WX_PRODUCTS" listeners="13 15">
+      <doc>The relayed RDR_WX_PRODUCTS, one transfer per segment for every listener. A listener draws a block once it has every segment of a version and the CRC matches; a segment a listener missed (broadcasts are not retried) costs it that version, and the next arrives whole.</doc>
     </block>
-    <block id="DSP_RDR_TFR_ELEVATION" rt="15" dir="R" desc_sa="8" seg_sa="9" rate="25" title="TFR elevation profile as received by the radar display" layout_of="RDR_TFR_ELEVATION">
-      <doc>The relayed RDR_TFR_ELEVATION: the terrain profile the terrain display draws, with its clearance levels and the path commands.</doc>
-    </block>
-    <block id="MFD_RDR_WX_PRODUCTS" rt="13" dir="R" desc_sa="6" seg_sa="7" rate="25" title="Weather radar products as received by the MFD" layout_of="RDR_WX_PRODUCTS">
-      <doc>The relayed RDR_WX_PRODUCTS, a second copy for the MFD's weather picture.</doc>
-    </block>
-    <block id="MFD_RDR_TFR_ELEVATION" rt="13" dir="R" desc_sa="8" seg_sa="9" rate="25" title="TFR elevation profile as received by the MFD" layout_of="RDR_TFR_ELEVATION">
-      <doc>The relayed RDR_TFR_ELEVATION, a second copy for the MFD's terrain picture.</doc>
+    <block id="BCAST_RDR_TFR_ELEVATION" rt="31" dir="R" desc_sa="8" seg_sa="9" rate="25" title="TFR elevation profile, broadcast to the displays" layout_of="RDR_TFR_ELEVATION" listeners="13 15">
+      <doc>The relayed RDR_TFR_ELEVATION for the terrain pictures.</doc>
     </block>
   </blocks>
 

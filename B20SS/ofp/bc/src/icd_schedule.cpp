@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <fmofp/bus/block.hpp>
+#include <fmofp/bus/command_word.hpp>
 #include <fmofp/icd/blocks.hpp>
 #include <fmofp/icd/messages.hpp>
 
@@ -13,6 +14,21 @@ namespace {
 bool listed(const std::uint8_t* terminals, std::size_t count, std::uint8_t rt) noexcept {
     for (std::size_t i = 0; i < count; ++i) {
         if (terminals[i] == rt) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A relay is made when its consumer is present: the terminal itself, or for a
+// broadcast (address 31) at least one of the terminals that accept it.
+bool wanted(const std::uint8_t* terminals, std::size_t count, std::uint8_t to_rt,
+            std::uint32_t listeners) noexcept {
+    if (to_rt != bus::kBroadcastRt) {
+        return listed(terminals, count, to_rt);
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+        if (((listeners >> terminals[i]) & 1U) != 0U) {
             return true;
         }
     }
@@ -49,7 +65,7 @@ Status add_one(Schedule& schedule, const icd::MessageInfo& info, std::uint8_t rt
         // gets nothing, and the message is still polled.
         for (const icd::RelayInfo& relay : icd::kRelays) {
             if (relay.from_rt != rt || relay.from_subaddress != info.subaddress ||
-                !listed(terminals, count, relay.to_rt)) {
+                !wanted(terminals, count, relay.to_rt, relay.listeners)) {
                 continue;
             }
             const Status s = add_relay(m, relay.to_rt, relay.to_subaddress);
@@ -77,7 +93,7 @@ Status add_block(Schedule& schedule, const icd::BlockInfo& block, const std::uin
     segment.words = bus::kBlockSegmentWords;
     for (const icd::BlockRelayInfo& relay : icd::kBlockRelays) {
         if (relay.from_rt != block.rt || relay.from_descriptor_subaddress != block.descriptor_subaddress ||
-            !listed(terminals, count, relay.to_rt)) {
+            !wanted(terminals, count, relay.to_rt, relay.listeners)) {
             continue;
         }
         const Status d = add_relay(descriptor, relay.to_rt, relay.to_descriptor_subaddress);

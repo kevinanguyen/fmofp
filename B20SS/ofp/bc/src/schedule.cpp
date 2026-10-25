@@ -38,7 +38,7 @@ Status Schedule::add(const ScheduledMessage& message) noexcept {
     }
     for (std::uint8_t i = 0; i < message.relay_count; ++i) {
         const RelayTarget& r = message.relays[i];
-        if (r.rt == 0U || r.rt >= bus::kBroadcastRt || r.rt == message.rt || r.subaddress < 1 ||
+        if (r.rt == 0U || r.rt > bus::kBroadcastRt || r.rt == message.rt || r.subaddress < 1 ||
             r.subaddress > 30) {
             return Status::kInvalidArgument;
         }

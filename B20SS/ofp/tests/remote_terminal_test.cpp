@@ -156,6 +156,7 @@ TEST_F(Rt, IgnoresCommandsForOtherTerminals) {
 }
 
 TEST_F(Rt, BroadcastGetsNoReplyAndSetsTheBitOnce) {
+    ASSERT_EQ(Status::kOk, rt.accept_broadcast(5));
     EXPECT_FALSE(run(command(kBroadcastRt, false, 5, 1, {0xB0})));
     std::array<Word, 32> got{};
     std::uint8_t count = 0;
@@ -168,6 +169,36 @@ TEST_F(Rt, BroadcastGetsNoReplyAndSetsTheBitOnce) {
     EXPECT_TRUE(status_of(reply).broadcast_received);
     ASSERT_TRUE(run(command(kRt, true, 5, 1)));
     EXPECT_FALSE(status_of(reply).broadcast_received);
+}
+
+TEST_F(Rt, BroadcastDataOnAnUnacceptedSubaddressIsIgnored) {
+    // ICD v1.7: a terminal stores a broadcast only on a subaddress of its
+    // broadcast map, so the radar's command buffers are safe from the
+    // displays' data on the same subaddress numbers.
+    EXPECT_FALSE(run(command(kBroadcastRt, false, 5, 1, {0xB0})));
+    std::array<Word, 32> got{};
+    std::uint8_t count = 0;
+    bool fresh = false;
+    EXPECT_EQ(Status::kNotReady, rt.get_received(5, got.data(), 32, count, fresh)) << "nothing stored";
+    EXPECT_EQ(1U, rt.counters().broadcasts_ignored);
+    EXPECT_EQ(0U, rt.counters().broadcasts);
+    EXPECT_EQ(0U, rt.counters().message_errors);
+    ASSERT_TRUE(run(command(kRt, true, 5, 1)));
+    EXPECT_FALSE(status_of(reply).broadcast_received) << "an ignored broadcast is not a received one";
+
+    EXPECT_EQ(Status::kInvalidArgument, rt.accept_broadcast(0));
+    EXPECT_EQ(Status::kInvalidArgument, rt.accept_broadcast(31));
+    ASSERT_EQ(Status::kOk, rt.accept_broadcast(6));
+    EXPECT_TRUE(rt.accepts_broadcast(6));
+    EXPECT_FALSE(rt.accepts_broadcast(5));
+    // The map survives a reset; mode codes such as the sync never needed it.
+    EXPECT_FALSE(run(mode_code(kBroadcastRt, true, kModeCodeResetRemoteTerminal)));
+    EXPECT_TRUE(rt.take_reset_request());
+    EXPECT_FALSE(run(command(kBroadcastRt, false, 6, 2, {0xC0, 0xC1})));
+    ASSERT_EQ(Status::kOk, rt.get_received(6, got.data(), 32, count, fresh));
+    EXPECT_EQ((std::array<Word, 2>{0xC0, 0xC1}), (std::array<Word, 2>{got[0], got[1]}));
+    EXPECT_FALSE(run(mode_code(kBroadcastRt, false, kModeCodeSynchronizeWithData, {0x0C07})));
+    EXPECT_EQ(1U, rt.counters().syncs);
 }
 
 TEST_F(Rt, ParityErrorMeansSilenceThenMessageError) {

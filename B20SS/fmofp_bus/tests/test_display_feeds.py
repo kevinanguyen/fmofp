@@ -8,8 +8,7 @@ from fmofp_bus.icd import messages as m
 from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, PathReason, PrecipType, ShearSeverity, Ssm,
                                  TerminalState, TfrMode, TurbulenceCategory, WeatherMode)
 from fmofp_display.flight_feed import FlightDataFeed
-from fmofp_display.radar_feed import (MFD_SOURCES, RADAR_DISPLAY_SOURCES, RadarFeed, cell_velocity_nm_s, polar_to_nm,
-                                      weather_items)
+from fmofp_display.radar_feed import BROADCAST_SOURCES, RadarFeed, cell_velocity_nm_s, polar_to_nm, weather_items
 from fmofp_display.systems_feed import LIMITS, SystemsFeed, TerrainClearance
 
 
@@ -68,7 +67,7 @@ def sample_products(scan_id=3):
 
 
 def status(state, mode):
-    return m.DspRdrWxStatus(payload=m.RdrWxStatus(state=state, mode=mode))
+    return m.BcastRdrWxStatus(payload=m.RdrWxStatus(state=state, mode=mode))
 
 
 def sample_elevation(samples=100, range_m=10000.0, mode=TfrMode.TERRAIN_FOLLOWING):
@@ -130,7 +129,7 @@ class RadarFeedTest(unittest.TestCase):
         self.assertEqual("STANDBY", self.feed.weather_draw_mode)
         self.assertEqual(40.0, self.feed.weather_range_nm)
         self.terminal.put(status(TerminalState.NORMAL, WeatherMode.SURVEILLANCE))
-        self.terminal.put(m.DspRdrWxScan(payload=m.RdrWxScan(scan_id=1, range_km=100.0)))
+        self.terminal.put(m.BcastRdrWxScan(payload=m.RdrWxScan(scan_id=1, range_km=100.0)))
         self.feed.update()
         self.assertEqual("SURVEILLANCE", self.feed.weather_draw_mode)
         self.assertAlmostEqual(100.0 / 1.852, self.feed.weather_range_nm)
@@ -145,7 +144,7 @@ class RadarFeedTest(unittest.TestCase):
         self.assertEqual("STANDBY", self.feed.weather_draw_mode, "a stale status is no status")
 
     def test_each_new_block_is_stored_once_and_stale_data_is_cleared(self):
-        self.terminal.put_block(b.DspRdrWxProducts, sample_products(), 1)
+        self.terminal.put_block(b.BcastRdrWxProducts, sample_products(), 1)
         self.feed.update()
         self.assertEqual(["vil", "precipitation", "cells", "windshear", "turbulence"],
                          [c[1] for c in self.coordinator.calls])
@@ -154,15 +153,15 @@ class RadarFeedTest(unittest.TestCase):
         self.feed.update()
         self.assertEqual(5, len(self.coordinator.calls), "the same version is not stored again")
         empty = b.RdrWxProducts(scan_id=4, mode=WeatherMode.NONE)
-        self.terminal.put_block(b.DspRdrWxProducts, empty, 2)
+        self.terminal.put_block(b.BcastRdrWxProducts, empty, 2)
         self.feed.update()
         self.assertEqual([("reset", s) for s in ("vil", "precipitation", "cells", "windshear", "turbulence")],
                          self.coordinator.calls[5:])
         self.assertTrue(self.feed.stores_cleared)
-        self.terminal.put_block(b.DspRdrWxProducts, sample_products(scan_id=5), 3)
+        self.terminal.put_block(b.BcastRdrWxProducts, sample_products(scan_id=5), 3)
         self.feed.update()
         self.assertEqual(("store", "vil", 2, "wx5v3"), self.coordinator.calls[10])
-        self.terminal.put_block(b.DspRdrWxProducts, sample_products(scan_id=5), 3, age=5.0)
+        self.terminal.put_block(b.BcastRdrWxProducts, sample_products(scan_id=5), 3, age=5.0)
         self.feed.update()
         self.assertEqual(("reset", "vil"), self.coordinator.calls[15], "a block older than the stale limit is cleared")
         self.assertEqual(3, self.feed.blocks_applied)
@@ -171,12 +170,12 @@ class RadarFeedTest(unittest.TestCase):
         data = self.feed.tfr_data()
         self.assertEqual(("STANDBY", [], None, "UNKNOWN"), (data["mode_name"], data["tfr_data"],
                                                             data["terrain_clearance"], data["system_health"]))
-        self.terminal.put(m.DspRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL,
+        self.terminal.put(m.BcastRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL,
                                                                     mode=TfrMode.TERRAIN_FOLLOWING)))
-        self.terminal.put(m.DspRdrTfrGuidance(payload=m.RdrTfrGuidance(
+        self.terminal.put(m.BcastRdrTfrGuidance(payload=m.RdrTfrGuidance(
             clearance_ssm=Ssm.NORMAL, level=ClearanceLevel.CAUTION, mode=TfrMode.TERRAIN_FOLLOWING, pull_up=False,
             commands_valid=True, min_clearance=600.0, commanded_altitude=4000.0, set_clearance=984.0)))
-        self.terminal.put_block(b.DspRdrTfrElevation, sample_elevation(), 2)
+        self.terminal.put_block(b.BcastRdrTfrElevation, sample_elevation(), 2)
         data = self.feed.tfr_data()
         self.assertEqual("TRACK", data["mode_name"], "terrain following is drawn as the tracked profile")
         self.assertEqual("NORMAL", data["system_health"])
@@ -190,8 +189,8 @@ class RadarFeedTest(unittest.TestCase):
         self.assertAlmostEqual(10000.0 / 99.0, points[1]["distance"])
         self.assertEqual(10000.0, points[-1]["distance"])
         self.assertAlmostEqual(1000.0 + 500.0 * math.sin(0.1), points[1]["elevation"])
-        self.terminal.put(m.DspRdrTfrGuidance(payload=m.RdrTfrGuidance(clearance_ssm=Ssm.NO_COMPUTED_DATA)))
-        self.terminal.put(m.DspRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.STANDBY, mode=TfrMode.NONE)))
+        self.terminal.put(m.BcastRdrTfrGuidance(payload=m.RdrTfrGuidance(clearance_ssm=Ssm.NO_COMPUTED_DATA)))
+        self.terminal.put(m.BcastRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.STANDBY, mode=TfrMode.NONE)))
         data = self.feed.tfr_data()
         self.assertEqual(("STANDBY", None, None), (data["mode_name"], data["terrain_clearance"],
                                                    data["clearance_altitude"]))
@@ -212,7 +211,7 @@ class FlightDataFeedTest(unittest.TestCase):
                             mach=0.71, g_force=1.3, angle_of_attack=4.0, energy_state=61.0)
         for key, value in overrides.items():
             setattr(p, key, value)
-        return m.PfdFlightData(payload=p)
+        return m.BcastFmsFlightData(payload=p)
 
     def test_the_dictionary_the_pfd_reads(self):
         self.assertEqual({}, self.feed.get_flight_data(), "nothing yet: every tape is invalid")
@@ -239,8 +238,8 @@ class FlightDataFeedTest(unittest.TestCase):
         tactical = self.feed.get_tactical_status()
         self.assertEqual(("UNKNOWN", [], {"max_g_force": 9.0, "max_aoa": 25.0}),
                          (tactical["mode"], tactical["envelope_warnings"], tactical["profile_limits"]))
-        self.terminal.put(m.PfdFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL, flight_mode=FmsFlightMode.STEALTH)))
-        self.terminal.put(m.PfdAttitudeStatus(payload=m.FmsAttitudeStatus(bank_limited=True, yaw_rate_limited=True)))
+        self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL, flight_mode=FmsFlightMode.STEALTH)))
+        self.terminal.put(m.BcastFmsAttitudeStatus(payload=m.FmsAttitudeStatus(bank_limited=True, yaw_rate_limited=True)))
         tactical = self.feed.get_tactical_status()
         self.assertEqual("STEALTH", tactical["mode"])
         self.assertEqual(["BANK_ANGLE", "YAW_RATE"], tactical["envelope_warnings"])
@@ -258,15 +257,17 @@ def flight_payload(**overrides):
     return p
 
 
-class MfdRadarFeedTest(unittest.TestCase):
-    def test_the_mfd_copies_feed_the_same_pictures(self):
+class BroadcastSourcesTest(unittest.TestCase):
+    def test_every_display_hears_the_same_broadcasts_and_invalidate_restores(self):
         terminal = FakeTerminal()
         coordinator = FakeCoordinator()
-        feed = RadarFeed(terminal, coordinator, clock=lambda: 1000.0, sources=MFD_SOURCES)
-        self.assertEqual(m.DspRdrWxStatus, RADAR_DISPLAY_SOURCES.wx_status, "the radar display keeps its own copies")
-        terminal.put(m.MfdRdrWxStatus(payload=m.RdrWxStatus(state=TerminalState.NORMAL, mode=WeatherMode.MAPPING)))
-        terminal.put(m.MfdRdrWxScan(payload=m.RdrWxScan(scan_id=2, range_km=50.0)))
-        terminal.put_block(b.MfdRdrWxProducts, sample_products(), 4)
+        feed = RadarFeed(terminal, coordinator, clock=lambda: 1000.0)
+        self.assertIs(BROADCAST_SOURCES, feed.sources)
+        self.assertEqual((31, 1, 31, 7), (m.BcastRdrWxStatus.RT, m.BcastRdrWxStatus.SUBADDRESS, b.BcastRdrWxProducts.RT,
+                                           b.BcastRdrWxProducts.SEGMENT_SUBADDRESS))
+        terminal.put(m.BcastRdrWxStatus(payload=m.RdrWxStatus(state=TerminalState.NORMAL, mode=WeatherMode.MAPPING)))
+        terminal.put(m.BcastRdrWxScan(payload=m.RdrWxScan(scan_id=2, range_km=50.0)))
+        terminal.put_block(b.BcastRdrWxProducts, sample_products(), 4)
         feed.update()
         self.assertEqual("MAPPING", feed.weather_draw_mode)
         self.assertAlmostEqual(50.0 / 1.852, feed.weather_range_nm)
@@ -276,8 +277,8 @@ class MfdRadarFeedTest(unittest.TestCase):
         feed.invalidate()
         feed.update()
         self.assertEqual(2, feed.blocks_applied, "after invalidate() the same block is stored again")
-        terminal.put(m.MfdRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL, mode=TfrMode.TFR_SEARCH)))
-        terminal.put_block(b.MfdRdrTfrElevation, sample_elevation(mode=TfrMode.TFR_SEARCH), 1)
+        terminal.put(m.BcastRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL, mode=TfrMode.TFR_SEARCH)))
+        terminal.put_block(b.BcastRdrTfrElevation, sample_elevation(mode=TfrMode.TFR_SEARCH), 1)
         data = feed.tfr_data()
         self.assertEqual(("SEARCH", 100), (data["mode_name"], len(data["tfr_data"])))
         self.assertIn("WX NORMAL MAPPING", feed.weather_status_text())
@@ -291,7 +292,7 @@ class SystemsFeedTest(unittest.TestCase):
 
     @staticmethod
     def gcas(**fields):
-        return m.MfdGcasAlerts(payload=m.FcsGcasAlerts(**fields))
+        return m.BcastFcsGcasAlerts(payload=m.FcsGcasAlerts(**fields))
 
     def test_alerts_are_the_pythons_dictionaries(self):
         self.assertEqual([], self.feed.get_alerts())
@@ -316,14 +317,14 @@ class SystemsFeedTest(unittest.TestCase):
 
     def test_exceedances_pair_the_bits_with_the_magnitudes(self):
         self.assertEqual([], self.feed.get_exceedances())
-        self.terminal.put(m.MfdPerfStatus(payload=m.FcsPerfStatus(exceed_g=True, exceed_roll=True,
+        self.terminal.put(m.BcastFcsPerfStatus(payload=m.FcsPerfStatus(exceed_g=True, exceed_roll=True,
                                                                   exceed_vertical_speed=True, g_ssm=Ssm.NORMAL,
                                                                   aoa_ssm=Ssm.NORMAL, g_force=-9.5, angle_of_attack=10.0)))
         rows = self.feed.get_exceedances()
         self.assertEqual(["g_force", "roll", "vertical_speed"], [r["parameter"] for r in rows])
         self.assertEqual((9.5, 9.0, 1000.0), (rows[0]["value"], rows[0]["limit"], rows[0]["ts"]))
         self.assertTrue(math.isnan(rows[1]["value"]), "no flight data yet: the roll's magnitude is unknown")
-        self.terminal.put(m.MfdFlightData(payload=flight_payload(roll=-72.456, vertical_speed=-6500.0)))
+        self.terminal.put(m.BcastFmsFlightData(payload=flight_payload(roll=-72.456, vertical_speed=-6500.0)))
         rows = self.feed.get_exceedances()
         self.assertEqual((72.46, 60.0), (rows[1]["value"], rows[1]["limit"]))
         self.assertEqual((6500.0, 6000.0), (rows[2]["value"], rows[2]["limit"]))
@@ -338,11 +339,11 @@ class SystemsFeedTest(unittest.TestCase):
         self.assertEqual({}, self.feed.comms.get_data())
         self.assertEqual({}, self.feed.mission.get_data())
         self.assertEqual({"summary": {}, "friendly": [], "enemy": [], "neutral": []}, self.feed.mission.get_oob())
-        self.terminal.put(m.MfdFlightData(payload=flight_payload()))
+        self.terminal.put(m.BcastFmsFlightData(payload=flight_payload()))
         self.assertEqual({"current_position": {"lat": 1.5, "lon": -2.25, "alt_ft": 5000.0}}, self.feed.mission.get_data())
-        self.terminal.put(m.MfdFlightData(payload=flight_payload(altitude_ssm=Ssm.NO_COMPUTED_DATA)))
+        self.terminal.put(m.BcastFmsFlightData(payload=flight_payload(altitude_ssm=Ssm.NO_COMPUTED_DATA)))
         self.assertEqual({"lat": 1.5, "lon": -2.25}, self.feed.mission.get_data()["current_position"])
-        self.terminal.put(m.MfdFlightData(payload=flight_payload(position_ssm=Ssm.NO_COMPUTED_DATA)))
+        self.terminal.put(m.BcastFmsFlightData(payload=flight_payload(position_ssm=Ssm.NO_COMPUTED_DATA)))
         self.assertEqual({}, self.feed.mission.get_data())
 
     def test_the_terrain_clearance_stand_in(self):

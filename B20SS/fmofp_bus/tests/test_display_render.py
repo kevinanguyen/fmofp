@@ -23,7 +23,7 @@ from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, Ssm,
                                  WeatherMode)
 from fmofp_bus.tests.test_display_feeds import FakeTerminal, sample_elevation, sample_products
 from fmofp_display.flight_feed import FlightDataFeed
-from fmofp_display.radar_feed import MFD_SOURCES, RadarFeed
+from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
 
 
@@ -78,15 +78,15 @@ class DisplayWindowsTest(unittest.TestCase):
         standby = lit_pixels(window.picture.grab().toImage())
         self.assertEqual(0, window.picture.paint_errors)
 
-        terminal.put(m.DspRdrWxStatus(payload=m.RdrWxStatus(state=TerminalState.NORMAL, mode=WeatherMode.SURVEILLANCE)))
-        terminal.put(m.DspRdrWxScan(payload=m.RdrWxScan(scan_id=3, mode=WeatherMode.SURVEILLANCE, range_km=200.0,
+        terminal.put(m.BcastRdrWxStatus(payload=m.RdrWxStatus(state=TerminalState.NORMAL, mode=WeatherMode.SURVEILLANCE)))
+        terminal.put(m.BcastRdrWxScan(payload=m.RdrWxScan(scan_id=3, mode=WeatherMode.SURVEILLANCE, range_km=200.0,
                                                         max_reflectivity=55.0)))
-        terminal.put_block(b.DspRdrWxProducts, sample_products(), 1)
-        terminal.put(m.DspRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL, mode=TfrMode.TERRAIN_FOLLOWING)))
-        terminal.put(m.DspRdrTfrGuidance(payload=m.RdrTfrGuidance(
+        terminal.put_block(b.BcastRdrWxProducts, sample_products(), 1)
+        terminal.put(m.BcastRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL, mode=TfrMode.TERRAIN_FOLLOWING)))
+        terminal.put(m.BcastRdrTfrGuidance(payload=m.RdrTfrGuidance(
             clearance_ssm=Ssm.NORMAL, level=ClearanceLevel.CAUTION, mode=TfrMode.TERRAIN_FOLLOWING, commands_valid=True,
             min_clearance=600.0, commanded_altitude=4000.0, set_clearance=984.0)))
-        terminal.put_block(b.DspRdrTfrElevation, sample_elevation(), 2)
+        terminal.put_block(b.BcastRdrTfrElevation, sample_elevation(), 2)
         window.tick()
         self.app.processEvents()
         active = lit_pixels(window.picture.grab().toImage())
@@ -119,14 +119,14 @@ class DisplayWindowsTest(unittest.TestCase):
         window.pfd.update_flight_data()
         empty = lit_pixels(window.pfd.grab().toImage())
         self.assertFalse(window.pfd.validity.is_valid("heading"), "nothing from the bus yet: every field invalid")
-        terminal.put(m.PfdFlightData(payload=m.FmsFlightData(
+        terminal.put(m.BcastFmsFlightData(payload=m.FmsFlightData(
             roll_ssm=Ssm.NORMAL, pitch_ssm=Ssm.NORMAL, heading_ssm=Ssm.NORMAL, airspeed_ssm=Ssm.NORMAL,
             altitude_ssm=Ssm.NORMAL, vertical_speed_ssm=Ssm.NORMAL, g_ssm=Ssm.NORMAL, aoa_ssm=Ssm.NORMAL,
             mach_ssm=Ssm.NORMAL, energy_ssm=Ssm.NORMAL, flight_mode=FmsFlightMode.COMBAT, roll=-12.0, pitch=3.5,
             heading=275.0, airspeed=420.0, altitude=12345.0, vertical_speed=800.0, mach=0.71, g_force=1.3,
             angle_of_attack=4.0, energy_state=61.0)))
-        terminal.put(m.PfdFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT)))
-        terminal.put(m.PfdAttitudeStatus(payload=m.FmsAttitudeStatus(bank_limited=True)))
+        terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT)))
+        terminal.put(m.BcastFmsAttitudeStatus(payload=m.FmsAttitudeStatus(bank_limited=True)))
         window.pfd.update_flight_data()
         window.tick()
         self.app.processEvents()
@@ -148,7 +148,7 @@ class DisplayWindowsTest(unittest.TestCase):
         terminal = StubTerminal()
         terminal.rt = 13
         systems = SystemsFeed(terminal)
-        radar = RadarFeed(terminal, self.coordinator, sources=MFD_SOURCES)
+        radar = RadarFeed(terminal, self.coordinator)
         window = self.app_module.MfdWindow(terminal, radar, systems)
         try:
             window.show()
@@ -164,11 +164,11 @@ class DisplayWindowsTest(unittest.TestCase):
             self.assertTrue(hasattr(GCAS, "_evaluate"))
             self.assertEqual((0.0, "UNKNOWN"), mfd._read_tfr_clearance())
 
-            terminal.put(m.MfdGcasAlerts(payload=m.FcsGcasAlerts(
+            terminal.put(m.BcastFcsGcasAlerts(payload=m.FcsGcasAlerts(
                 status=GcasStatus.WARNING, sink_rate=True, vertical_speed=-2500.0, altitude=1800.0,
                 vertical_speed_ssm=Ssm.NORMAL, altitude_ssm=Ssm.NORMAL)))
-            terminal.put(m.MfdPerfStatus(payload=m.FcsPerfStatus(exceed_roll=True, g_ssm=Ssm.NORMAL, aoa_ssm=Ssm.NORMAL)))
-            terminal.put(m.MfdFlightData(payload=m.FmsFlightData(
+            terminal.put(m.BcastFcsPerfStatus(payload=m.FcsPerfStatus(exceed_roll=True, g_ssm=Ssm.NORMAL, aoa_ssm=Ssm.NORMAL)))
+            terminal.put(m.BcastFmsFlightData(payload=m.FmsFlightData(
                 position_ssm=Ssm.NORMAL, roll_ssm=Ssm.NORMAL, altitude_ssm=Ssm.NORMAL, latitude=1.5, longitude=-2.25,
                 altitude=5000.0, roll=-70.0)))
             for page in (pages.NAV, pages.SYSTEMS, pages.WEAPONS, pages.COMMS, pages.MISSION, pages.SETTINGS):
@@ -194,10 +194,10 @@ class DisplayWindowsTest(unittest.TestCase):
             self.app.processEvents()
             standby = lit_pixels(mfd.grab().toImage())
             self.assertEqual("STANDBY", mfd.radar_data.mode.name)
-            terminal.put(m.MfdRdrWxStatus(payload=m.RdrWxStatus(state=TerminalState.NORMAL, mode=WeatherMode.SURVEILLANCE)))
-            terminal.put(m.MfdRdrWxScan(payload=m.RdrWxScan(scan_id=3, mode=WeatherMode.SURVEILLANCE, range_km=200.0,
+            terminal.put(m.BcastRdrWxStatus(payload=m.RdrWxStatus(state=TerminalState.NORMAL, mode=WeatherMode.SURVEILLANCE)))
+            terminal.put(m.BcastRdrWxScan(payload=m.RdrWxScan(scan_id=3, mode=WeatherMode.SURVEILLANCE, range_km=200.0,
                                                             max_reflectivity=55.0)))
-            terminal.put_block(b.MfdRdrWxProducts, sample_products(), 1)
+            terminal.put_block(b.BcastRdrWxProducts, sample_products(), 1)
             window.tick()
             mfd.update()
             self.app.processEvents()
@@ -210,12 +210,12 @@ class DisplayWindowsTest(unittest.TestCase):
 
             # The terrain picture through the sub-menu's switch: the MFD empties the coordinator and builds a new
             # picture; the profile, mode and clearance come from the bus.
-            terminal.put(m.MfdRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL,
+            terminal.put(m.BcastRdrTfrStatus(payload=m.RdrTfrStatus(state=TerminalState.NORMAL,
                                                                   mode=TfrMode.TERRAIN_FOLLOWING)))
-            terminal.put(m.MfdRdrTfrGuidance(payload=m.RdrTfrGuidance(
+            terminal.put(m.BcastRdrTfrGuidance(payload=m.RdrTfrGuidance(
                 clearance_ssm=Ssm.NORMAL, level=ClearanceLevel.CAUTION, mode=TfrMode.TERRAIN_FOLLOWING,
                 commands_valid=True, min_clearance=600.0, commanded_altitude=4000.0, set_clearance=984.0)))
-            terminal.put_block(b.MfdRdrTfrElevation, sample_elevation(), 2)
+            terminal.put_block(b.BcastRdrTfrElevation, sample_elevation(), 2)
             mfd.current_radar_type = kinds.TFR
             mfd._update_radar_type()
             window.tick()

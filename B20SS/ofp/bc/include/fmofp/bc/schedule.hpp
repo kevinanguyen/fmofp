@@ -31,7 +31,9 @@ constexpr std::uint32_t kMinorFrameBudgetUs = 10 * 1000;
 constexpr std::size_t kMaxRelaysPerMessage = 4;
 
 // One consumer of a relayed transmit message: the terminal and subaddress
-// that receive the same words straight after the poll.
+// that receive the same words straight after the poll. The terminal may be
+// the broadcast address 31: one transfer, stored by every terminal that
+// accepts the subaddress (ICD README section 8), and one transfer of bus time.
 struct RelayTarget {
     std::uint8_t rt{0};
     std::uint8_t subaddress{0};

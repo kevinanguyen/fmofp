@@ -6,6 +6,7 @@
 
 #include <fmofp/bc/icd_schedule.hpp>
 #include <fmofp/bc/schedule.hpp>
+#include <fmofp/bus/command_word.hpp>
 #include <fmofp/icd/messages.hpp>
 
 namespace {
@@ -171,6 +172,16 @@ TEST(Schedule, RelaysRideWithTheirSourceAndCountTwice) {
     ASSERT_EQ(Status::kOk, three.build());
     EXPECT_EQ(3U, three.frame(0).slots[0].relay_count);
     EXPECT_EQ(52U + 4U * ((2U + 12U) * 20U + 12U), three.frame_load_us(0));
+
+    // A broadcast consumer (address 31) is one transfer, heard by every terminal
+    // that accepts the subaddress (ICD v1.7), so it costs what one consumer costs.
+    Schedule heard;
+    ScheduledMessage broadcast = src;
+    broadcast.relays[0] = {fmofp::bus::kBroadcastRt, 6};
+    ASSERT_EQ(Status::kOk, heard.add(broadcast));
+    ASSERT_EQ(Status::kOk, heard.build());
+    EXPECT_EQ(fmofp::bus::kBroadcastRt, heard.frame(0).slots[0].relays[0].rt);
+    EXPECT_EQ(52U + 2U * ((2U + 12U) * 20U + 12U), heard.frame_load_us(0));
 
     // A relay needs a transmit source and a real, different consumer.
     ScheduledMessage bad = msg(27, 1, 50, 12, false);

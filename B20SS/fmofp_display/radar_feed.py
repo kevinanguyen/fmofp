@@ -6,10 +6,10 @@ the RadarDisplayDataCoordinator's stores: lists of dictionaries with a
 the bridge used to put there. The terrain display draws a dictionary with the
 profile points, the clearance and the altitudes. RadarFeed builds both from
 RDR_WX_PRODUCTS, RDR_WX_SCAN, RDR_WX_STATUS, RDR_TFR_GUIDANCE, RDR_TFR_STATUS
-and RDR_TFR_ELEVATION as the display terminal receives them, from the radar
-display's copies (DSP_RDR_*, RT 15) or the MFD's (MFD_RDR_*, RT 13; v1.6). It
-knows nothing of Qt or of the display classes: the window applies what it
-returns.
+and RDR_TFR_ELEVATION as the display terminal hears them: broadcast once to
+address 31 for every display that accepts the subaddress (BCAST_RDR_*, ICD
+v1.7). It knows nothing of Qt or of the display classes: the window applies
+what it returns.
 
 Positions are true: the radar's azimuth and range become east and north in
 nautical miles, and the weather display's range scale follows the radar's range
@@ -52,12 +52,10 @@ TFR_DRAW_MODE = {
 }
 STORES = ("vil", "precipitation", "cells", "windshear", "turbulence")
 
-# The messages and blocks one display terminal receives the radars' data in.
+# The broadcast messages and blocks every display hears the radars' data in (ICD README section 8).
 RadarSources = namedtuple("RadarSources", "wx_status wx_scan wx_products tfr_status tfr_guidance tfr_elevation")
-RADAR_DISPLAY_SOURCES = RadarSources(m.DspRdrWxStatus, m.DspRdrWxScan, b.DspRdrWxProducts, m.DspRdrTfrStatus,
-                                     m.DspRdrTfrGuidance, b.DspRdrTfrElevation)
-MFD_SOURCES = RadarSources(m.MfdRdrWxStatus, m.MfdRdrWxScan, b.MfdRdrWxProducts, m.MfdRdrTfrStatus, m.MfdRdrTfrGuidance,
-                           b.MfdRdrTfrElevation)
+BROADCAST_SOURCES = RadarSources(m.BcastRdrWxStatus, m.BcastRdrWxScan, b.BcastRdrWxProducts, m.BcastRdrTfrStatus,
+                                 m.BcastRdrTfrGuidance, b.BcastRdrTfrElevation)
 
 
 def polar_to_nm(azimuth_deg, range_km):
@@ -117,7 +115,7 @@ class RadarFeed:
     the terrain display's dictionary.
     """
 
-    def __init__(self, terminal, coordinator, clock=None, sources=RADAR_DISPLAY_SOURCES):
+    def __init__(self, terminal, coordinator, clock=None, sources=BROADCAST_SOURCES):
         self.terminal = terminal
         self.coordinator = coordinator
         self.clock = clock

@@ -7,8 +7,10 @@ get_engine_control_unit().get_data(), get_comms_service().get_data(),
 get_mission_service().get_data() and .get_oob(); its terrain picture reads the
 terrain-following radar's clearance manager through
 get_radar_management_system(). SystemsFeed answers all of them from
-MFD_GCAS_ALERTS, MFD_PERF_STATUS and MFD_FLIGHT_DATA (ICD v1.6) and from the
-clearance the radar feed hands it. A page whose producer is not on the bus yet
+BCAST_FCS_GCAS_ALERTS, BCAST_FCS_PERF_STATUS and BCAST_FMS_FLIGHT_DATA, the
+flight computer's and the FMS's messages broadcast to the displays (ICD v1.7;
+the MFD had copies of its own in v1.6), and from the clearance the radar feed
+hands it. A page whose producer is not on the bus yet
 (engine, communications, mission) gets what the Python gave it when that
 service was not running: an empty dictionary. Nothing here touches Qt or
 imports FMOFP: the window points the getters at the feed's stand-ins.
@@ -87,7 +89,7 @@ class SystemsFeed:
 
     def get_alerts(self):
         """GCAS.get_alerts(): the Python's alert dictionaries, rebuilt from the bits and values of MFD_GCAS_ALERTS."""
-        message = self.terminal.fresh(m.MfdGcasAlerts, self.stale_after_s)
+        message = self.terminal.fresh(m.BcastFcsGcasAlerts, self.stale_after_s)
         if message is None:
             return []
         p = message.payload
@@ -107,13 +109,13 @@ class SystemsFeed:
 
     def get_exceedances(self):
         """PerformanceMonitor.get_exceedances(): one row per exceedance bit, with the magnitude the bus carries."""
-        message = self.terminal.fresh(m.MfdPerfStatus, self.stale_after_s)
+        message = self.terminal.fresh(m.BcastFcsPerfStatus, self.stale_after_s)
         if message is None:
             return []
         p = message.payload
         values = {"g_force": p.g_force if _valid(p.g_ssm) else None,
                   "angle_of_attack": p.angle_of_attack if _valid(p.aoa_ssm) else None}
-        flight = self.terminal.fresh(m.MfdFlightData, self.stale_after_s)
+        flight = self.terminal.fresh(m.BcastFmsFlightData, self.stale_after_s)
         if flight is not None:
             f = flight.payload
             values["roll"] = f.roll if _valid(f.roll_ssm) else None
@@ -138,7 +140,7 @@ class SystemsFeed:
 
     def mission_data(self):
         """MissionService.get_data(): the position from the FMS flight data; the route and targets wait for RT 6."""
-        flight = self.terminal.fresh(m.MfdFlightData, self.stale_after_s)
+        flight = self.terminal.fresh(m.BcastFmsFlightData, self.stale_after_s)
         if flight is None or not _valid(flight.payload.position_ssm):
             return {}
         f = flight.payload
@@ -153,7 +155,7 @@ class SystemsFeed:
 
     def status_text(self):
         parts = []
-        alerts = self.terminal.fresh(m.MfdGcasAlerts, self.stale_after_s)
+        alerts = self.terminal.fresh(m.BcastFcsGcasAlerts, self.stale_after_s)
         if alerts is not None:
             text = f"GCAS {alerts.payload.status.name}"
             codes = [a["code"] for a in self.get_alerts()]

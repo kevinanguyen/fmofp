@@ -47,6 +47,7 @@ RATES = {"50", "25", "10", "5", "1", "aperiodic"}
 FIELD_TYPES = {"uint", "sint", "enum", "bool", "ssm", "spare"}
 MIN_SA, MAX_SA = 1, 29          # 0 and 31 are mode codes, 30 is data wraparound
 MAX_RT = 30                     # 31 is broadcast
+BROADCAST_RT = 31               # a message here is heard by every terminal that accepts its subaddress
 MAX_WORDS = 32
 MAX_RELAYS_PER_SOURCE = 4       # bc/schedule.hpp kMaxRelaysPerMessage
 BLOCK_SEGMENT_PAYLOAD_WORDS = 31  # a segment is 32 words, the first being version and index (README section 8)
@@ -218,6 +219,24 @@ def message_rts(icd, msg):
     return [int(msg["rt"])]
 
 
+def is_broadcast(entry):
+    """A message or block at the broadcast address: one transfer, stored by every listener (README section 8)."""
+    return entry.get("rt") == str(BROADCAST_RT)
+
+
+def listeners_of(entry):
+    """RT addresses of the terminals that accept a broadcast message or block (its `listeners` attribute)."""
+    return [int(x) for x in (entry.get("listeners") or "").split()]
+
+
+def listener_mask(entry):
+    """The listeners as a bit mask, bit n for RT n (the generated relay tables carry it)."""
+    mask = 0
+    for rt in listeners_of(entry):
+        mask |= 1 << rt
+    return mask
+
+
 # --------------------------------------------------------------------- checks
 
 def check_enums(icd):
@@ -244,7 +263,10 @@ def check_enums(icd):
 def check_terminals(icd):
     ids = set()
     for rt, term in icd.terminals.items():
-        if not 0 <= rt <= MAX_RT:
+        if rt == BROADCAST_RT:
+            if term.get("status") != "reserved":
+                icd.error(f"terminal {term.get('id')}", "RT 31 is the broadcast address; its entry must stay reserved")
+        elif not 0 <= rt <= MAX_RT:
             icd.error(f"terminal {term.get('id')}", f"RT {rt} outside 0-{MAX_RT} (31 is broadcast)")
         if term.get("id") in ids:
             icd.error(f"terminal RT {rt}", f"duplicate id '{term.get('id')}'")
@@ -335,12 +357,30 @@ def check_fields(icd, where_prefix, fields, words):
             icd.error(where_prefix, f"word {word} bits {missing} undefined; declare them as spare")
 
 
+def check_broadcast_entry(icd, where, entry):
+    """A broadcast message or block: received (every listener stores it), a copy of its source, with listeners."""
+    if entry.get("dir") != "R":
+        icd.error(where, "a broadcast message is received by its listeners; dir must be R")
+    if not entry.get("layout_of"):
+        icd.error(where, "a broadcast message is a relayed copy: it must be layout_of its source")
+    listeners = listeners_of(entry)
+    if not listeners:
+        icd.error(where, 'a broadcast message names the terminals that accept it (listeners="13 15")')
+    for rt in listeners:
+        if rt not in icd.terminals or icd.terminals[rt].get("status") == "reserved":
+            icd.error(where, f"listener RT {rt} is not a terminal")
+
+
 def check_message(icd, msg):
     mid = msg["id"]
     if msg.get("rt") != "all" and int(msg["rt"]) not in icd.terminals:
         icd.error(f"message {mid}", f"unknown RT {msg['rt']}")
+    elif is_broadcast(msg):
+        check_broadcast_entry(icd, f"message {mid}", msg)
     elif msg.get("rt") != "all" and icd.terminals[int(msg["rt"])].get("status") == "reserved":
         icd.error(f"message {mid}", f"RT {msg['rt']} is reserved")
+    elif msg.get("listeners"):
+        icd.error(f"message {mid}", "only a broadcast message (RT 31) has listeners")
     sa = int(msg["sa"])
     if not MIN_SA <= sa <= MAX_SA:
         icd.error(f"message {mid}", f"SA {sa} outside {MIN_SA}-{MAX_SA}")
@@ -366,6 +406,10 @@ def block_payload_words(block):
 
 def check_block(icd, block):
     where = f"block {block['id']}"
+    if is_broadcast(block):
+        check_broadcast_entry(icd, where, block)
+    elif block.get("listeners"):
+        icd.error(where, "only a broadcast block (RT 31) has listeners")
     if block.get("rate") not in RATES - {"aperiodic"}:
         icd.error(where, f"rate '{block.get('rate')}' must be periodic")
     if block.get("dir") not in ("T", "R"):
@@ -543,6 +587,32 @@ def check_relays(icd):
             icd.error(f"relay {src}", f"{n} consumers; the bus controller relays to at most {MAX_RELAYS_PER_SOURCE}")
 
 
+def check_broadcasts(icd):
+    """Every broadcast message or block is fed by one relay, and no listener has a receive message or block of its
+    own on a broadcast subaddress it accepts: a terminal has one receive buffer per subaddress."""
+    fed = {r.get("to") for r in icd.relays}
+    own = {}
+    for msg in icd.messages:
+        if msg.get("dir") == "R" and not is_broadcast(msg):
+            for rt in message_rts(icd, msg):
+                own[(rt, int(msg["sa"]))] = f"message {msg['id']}"
+    for block in icd.blocks:
+        if block.get("dir") == "R" and not is_broadcast(block):
+            for key in ("desc_sa", "seg_sa"):
+                own[(int(block["rt"]), int(block[key]))] = f"block {block['id']}"
+    for entry in list(icd.messages) + list(icd.blocks):
+        if not is_broadcast(entry):
+            continue
+        where = f"broadcast {entry['id']}"
+        if entry["id"] not in fed:
+            icd.error(where, "no relay feeds it; a broadcast message is the far end of a relay")
+        sas = [int(entry["sa"])] if "sa" in entry else [int(entry["desc_sa"]), int(entry["seg_sa"])]
+        for rt in listeners_of(entry):
+            for sa in sas:
+                if (rt, sa) in own:
+                    icd.error(where, f"listener RT {rt} has its own {own[(rt, sa)]} on SA {sa}")
+
+
 def check(icd):
     check_enums(icd)
     check_terminals(icd)
@@ -552,6 +622,7 @@ def check(icd):
         check_block(icd, block)
     check_addresses(icd)
     check_relays(icd)
+    check_broadcasts(icd)
     check_legacy(icd)
     return not icd.errors
 
@@ -650,15 +721,20 @@ def render(icd):
     w("")
     w("| From | To | Words | Rate (Hz) |")
     w("|---|---|---|---|")
+    def heard_by(dst):
+        if dst is None or not is_broadcast(dst):
+            return ""
+        return " (broadcast, heard by RT " + ", ".join(str(rt) for rt in listeners_of(dst)) + ")"
+
     for relay in icd.relays:
         if is_block_relay(icd, relay):
             src = icd.block(relay["from"])
-            w(f"| [`{relay['from']}`](#{relay['from'].lower()}) | `{relay['to']}` | "
+            w(f"| [`{relay['from']}`](#{relay['from'].lower()}) | `{relay['to']}`{heard_by(icd.block(relay['to']))} | "
               f"block: 4 + 32 per frame | {src.get('rate') if src else '?'} |")
             continue
         src = icd.message(relay["from"])
-        w(f"| [`{relay['from']}`](#{relay['from'].lower()}) | [`{relay['to']}`](#{relay['to'].lower()}) | "
-          f"{src.get('words') if src else '?'} | {src.get('rate') if src else '?'} |")
+        w(f"| [`{relay['from']}`](#{relay['from'].lower()}) | [`{relay['to']}`](#{relay['to'].lower()})"
+          f"{heard_by(icd.message(relay['to']))} | {src.get('words') if src else '?'} | {src.get('rate') if src else '?'} |")
     w("")
 
     w("## Mode codes")
@@ -1138,7 +1214,8 @@ def gen_messages_hpp(icd):
         "}};",
         "",
         "// RT-to-RT transfers the bus controller performs: poll `from`, then write the",
-        "// same words into `to` in the same minor frame.",
+        "// same words into `to` in the same minor frame. A `to_rt` of 31 is a broadcast:",
+        "// one transfer, stored by every terminal in `listeners` (bit n = RT n).",
         "struct RelayInfo {",
         "    const char* from;",
         "    const char* to;",
@@ -1148,14 +1225,16 @@ def gen_messages_hpp(icd):
         "    std::uint8_t to_subaddress;",
         "    std::uint8_t words;",
         "    std::uint8_t rate_hz;",
+        "    std::uint32_t listeners;  // 0 for one consumer",
         "};",
         "",
         f"inline constexpr std::array<RelayInfo, {len(message_relays(icd))}> kRelays = {{{{",
     ]
     for relay in message_relays(icd):
         src, dst = pascal(relay["from"]), pascal(relay["to"])
+        mask = listener_mask(icd.message(relay["to"]))
         out.append(f"    {{\"{relay['from']}\", \"{relay['to']}\", {src}::kRt, {src}::kSubaddress, "
-                   f"{dst}::kRt, {dst}::kSubaddress, {src}::kWords, {src}::kRateHz}},")
+                   f"{dst}::kRt, {dst}::kSubaddress, {src}::kWords, {src}::kRateHz, 0x{mask:X}U}},")
     out += ["}};", "", "}  // namespace fmofp::icd", "", "#endif"]
     return "\n".join(out) + "\n"
 
@@ -1389,7 +1468,8 @@ def gen_blocks_hpp(icd):
         "}};",
         "",
         "// Block relays: in the frame where the bus controller polls `from`'s descriptor",
-        "// or segment subaddress, it writes the same words into `to`'s.",
+        "// or segment subaddress, it writes the same words into `to`'s. A `to_rt` of 31",
+        "// is a broadcast, stored by every terminal in `listeners` (bit n = RT n).",
         "struct BlockRelayInfo {",
         "    const char* from;",
         "    const char* to;",
@@ -1400,15 +1480,17 @@ def gen_blocks_hpp(icd):
         "    std::uint8_t to_descriptor_subaddress;",
         "    std::uint8_t to_segment_subaddress;",
         "    std::uint8_t rate_hz;",
+        "    std::uint32_t listeners;  // 0 for one consumer",
         "};",
         "",
         f"inline constexpr std::array<BlockRelayInfo, {len(block_relays)}> kBlockRelays = {{{{",
     ]
     for relay in block_relays:
         src, dst = pascal(relay["from"]), pascal(relay["to"])
+        mask = listener_mask(icd.block(relay["to"]))
         out.append(f"    {{\"{relay['from']}\", \"{relay['to']}\", {src}::kRt, {src}::kDescriptorSubaddress, "
                    f"{src}::kSegmentSubaddress, {dst}::kRt, {dst}::kDescriptorSubaddress, {dst}::kSegmentSubaddress, "
-                   f"{src}::kRateHz}},")
+                   f"{src}::kRateHz, 0x{mask:X}U}},")
     out += ["}};", "", "}  // namespace fmofp::icd", "", "#endif"]
     return "\n".join(out) + "\n"
 
@@ -1897,16 +1979,19 @@ def gen_py_messages(icd):
         "",
         "MESSAGE_CLASSES = {info.id: info.cls for info in MESSAGES}",
         "",
-        'RelayInfo = namedtuple("RelayInfo", "from_id to_id from_rt from_subaddress to_rt to_subaddress words rate_hz")',
+        'RelayInfo = namedtuple("RelayInfo", "from_id to_id from_rt from_subaddress to_rt to_subaddress words rate_hz '
+        'listeners")',
         "",
         "# RT-to-RT transfers the bus controller performs: poll `from`, then write the",
-        "# same words into `to` in the same minor frame.",
+        "# same words into `to` in the same minor frame. A to_rt of 31 is a broadcast:",
+        "# one transfer, stored by every terminal in `listeners`.",
         "RELAYS = (",
     ]
     for relay in message_relays(icd):
         src, dst = pascal(relay["from"]), pascal(relay["to"])
+        listeners = tuple(listeners_of(icd.message(relay["to"])))
         out.append(f"    RelayInfo(\"{relay['from']}\", \"{relay['to']}\", {src}.RT, {src}.SUBADDRESS, "
-                   f"{dst}.RT, {dst}.SUBADDRESS, {src}.WORDS, {src}.RATE_HZ),")
+                   f"{dst}.RT, {dst}.SUBADDRESS, {src}.WORDS, {src}.RATE_HZ, {listeners!r}),")
     out += [")"]
     return "\n".join(out) + "\n"
 
@@ -2069,17 +2154,19 @@ def gen_py_blocks(icd):
         "BLOCK_CLASSES = {info.id: info.cls for info in BLOCKS}",
         "",
         'BlockRelayInfo = namedtuple("BlockRelayInfo", "from_id to_id from_rt from_descriptor_subaddress '
-        'from_segment_subaddress to_rt to_descriptor_subaddress to_segment_subaddress rate_hz")',
+        'from_segment_subaddress to_rt to_descriptor_subaddress to_segment_subaddress rate_hz listeners")',
         "",
         "# Block relays: in the frame where the bus controller polls `from`'s descriptor",
-        "# or segment subaddress, it writes the same words into `to`'s.",
+        "# or segment subaddress, it writes the same words into `to`'s. A to_rt of 31 is",
+        "# a broadcast, stored by every terminal in `listeners`.",
         "BLOCK_RELAYS = (",
     ]
     for relay in block_relays:
         src, dst = pascal(relay["from"]), pascal(relay["to"])
+        listeners = tuple(listeners_of(icd.block(relay["to"])))
         out.append(f"    BlockRelayInfo(\"{relay['from']}\", \"{relay['to']}\", {src}.RT, {src}.DESCRIPTOR_SUBADDRESS, "
                    f"{src}.SEGMENT_SUBADDRESS, {dst}.RT, {dst}.DESCRIPTOR_SUBADDRESS, {dst}.SEGMENT_SUBADDRESS, "
-                   f"{src}.RATE_HZ),")
+                   f"{src}.RATE_HZ, {listeners!r}),")
     out += [")"]
     return "\n".join(out) + "\n"
 
