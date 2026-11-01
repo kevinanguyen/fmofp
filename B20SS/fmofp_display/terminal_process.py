@@ -15,8 +15,9 @@ TerminalProcess has DisplayTerminal's public interface (latest, fresh,
 latest_block, send, take_mode_request, the counters) and refreshes the mirror
 from the helper's queue every time the window reads it. Commands go the other
 way through a pipe. The helper leaves with its window: it watches for the
-parent to disappear, and it is a daemon process, so nothing is left answering
-the bus after the window closes.
+parent to disappear, it never waits for its queue on the way out, and it is a
+daemon process, so nothing is left answering the bus (or idling) after the
+window closes.
 """
 
 import multiprocessing
@@ -42,6 +43,12 @@ def _run_terminal(updates, commands, rt, port_base, status_class, mode_cmd_class
     if status != Status.OK:
         updates.close()
         return
+    # This process must be able to exit with updates still queued. The window reads the queue only between
+    # paints, a window that was killed never reads it again, and the pipe behind the queue never breaks (this
+    # process holds its read end too), so once the pipe is full the queue's feeder thread is stuck for good,
+    # and the default exit would wait for that thread for ever. Seen on 2026-11-01: a helper outlived its
+    # terminated window, off the bus, doing nothing.
+    updates.cancel_join_thread()
     parent = multiprocessing.parent_process()
     forwarded = {}
     forwarded_blocks = {}
