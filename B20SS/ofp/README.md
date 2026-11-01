@@ -34,6 +34,41 @@ major frame and `--free-run` to go as fast as the terminals answer. Default port
 follow the ICD (base 51000: terminal *n* at 51000+*n*, the controller at 51032,
 the monitor at 51033); a different `--port-base` lets two buses share a machine.
 
+## Seeing the whole aircraft run
+
+One command starts everything on the bus and shows what crosses it. From `B20SS/`:
+
+```bash
+py -m fmofp_demo
+```
+
+It starts the plant (the simulated aircraft with its weather, terrain and
+engines), the five ported partitions, the three display windows and the bus
+controller, runs a short scripted flight (radars on, the thrust lever, the
+autothrottle, a flight mode change, one engine throttled back, a fuel
+transfer; each event is announced as it happens) and prints one line a second:
+altitude, airspeed and heading from the FMS, the GCAS state, the engines' N1
+and the fuel, the radars' modes and the terrain clearance, the navigation fix,
+and which terminals are answering. The radar display window's buttons keep
+working: it is the radars' control panel. Each program's log is under
+`logs/demo/`. Stop with Ctrl-C.
+
+`--seconds 30` runs for a fixed time, `--headless` runs the displays without
+windows (what `test_demo.py` does on CI), `--no-events` leaves the flight to
+the display's buttons, `--hold altitude=5000,speed=450` pins the aircraft,
+`--build DIR` points at another build. On Windows the binaries need the MSYS2
+runtime; the launcher puts `C:\msys64\ucrt64\bin` on the children's PATH
+itself, so nothing has to be on yours. If the C++ or the ICD changed since the
+binaries were built, it says so; rebuild as described under *Building*.
+
+Each display program is a PyQt6 window plus a bus terminal in a helper
+process of its own (`fmofp_display/terminal_process.py`): the window's
+painting (the weather picture animates thousands of particles) holds the
+Python interpreter for longer than a bus reply may take, and with the terminal
+in a thread of the window the radar display missed every poll once the first
+scan arrived. The helper answers the bus and forwards what it hears; the
+window reads a mirror.
+
 ## Running the partitions
 
 Flight control, navigation, flight management, the weather radar, the

@@ -28,7 +28,7 @@ from fmofp_bus.status import Status
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed, TerrainClearance
-from fmofp_display.terminal import DisplayTerminal
+from fmofp_display.terminal_process import TerminalProcess
 
 B20SS = Path(__file__).resolve().parent.parent
 RADAR_RT = m.DspRadarStatus.RT
@@ -46,13 +46,13 @@ def bootstrap():
 
 
 def radar_terminal(port_base):
-    return DisplayTerminal(RADAR_RT, port_base, m.DspRadarStatus, m.DspRadarModeCmd,
+    return TerminalProcess(RADAR_RT, port_base, m.DspRadarStatus, m.DspRadarModeCmd,
                            receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance),
                            blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation))
 
 
 def pfd_terminal(port_base):
-    return DisplayTerminal(PFD_RT, port_base, m.DspPfdStatus, m.DspPfdModeCmd,
+    return TerminalProcess(PFD_RT, port_base, m.DspPfdStatus, m.DspPfdModeCmd,
                            receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFmsAttitudeStatus))
 
 
@@ -243,7 +243,7 @@ class PfdWindow(QWidget):
 # ---- the MFD, RT 13 --------------------------------------------------------------------
 
 def mfd_terminal(port_base):
-    return DisplayTerminal(MFD_RT, port_base, m.DspMfdStatus, m.DspMfdModeCmd,
+    return TerminalProcess(MFD_RT, port_base, m.DspMfdStatus, m.DspMfdModeCmd,
                            receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance,
                                      m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus, m.BcastFmsFlightData,
                                      m.BcastEngEngineStatus, m.BcastEngFuelStatus),

@@ -10,9 +10,12 @@ display's own status message, its mode command (the lighting mode) and
 TERM_STATUS. Nothing here touches Qt: the Qt side reads latest() from a timer,
 and the headless tests drive the terminal directly.
 
-A display is test equipment answering a 50 Hz bus from Python, next to a Qt
-paint loop: give the bus controller a reply timeout of 20 ms when displays are
-on the bus, and run it without --strict.
+A display is test equipment answering a 50 Hz bus from Python: give the bus
+controller a reply timeout of 20 ms when displays are on the bus, and run it
+without --strict. The window itself does not run this class in a thread: the
+Qt paint loop would hold the interpreter for longer than a reply may take
+(measured, see terminal_process.py), so the window uses TerminalProcess, which
+runs a DisplayTerminal in a helper process and mirrors it.
 """
 
 import threading
