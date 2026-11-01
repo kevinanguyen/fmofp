@@ -1,4 +1,4 @@
-"""What the PFD reads from the FMS, made from the PFD terminal's bus data.
+"""What the PFD, the EICAS and the TSD read from the FMS, made from a display terminal's bus data.
 
 PrimaryFlightDisplay.update_flight_data() polls fms.get_flight_data() and
 fms_control.get_tactical_status() sixty times a second. FlightDataFeed answers
@@ -73,6 +73,9 @@ class FlightDataFeed:
             navigation["heading"] = p.heading
         if _valid(p.altitude_ssm):
             navigation["altitude"] = p.altitude
+        if _valid(p.position_ssm):
+            navigation["latitude"] = p.latitude  # the TSD withholds its order-of-battle overlay without a fix
+            navigation["longitude"] = p.longitude
         if navigation:
             out["navigation"] = navigation
         tactical = {}
@@ -88,16 +91,32 @@ class FlightDataFeed:
         return out
 
     def get_tactical_status(self):
-        """fmsControl.get_tactical_status()'s dictionary, as far as the PFD reads it."""
+        """fmsControl.get_tactical_status()'s dictionary, as far as the PFD, the EICAS and the TSD read it: the
+        mode, the tactical systems the flight mode set (the TSD's strip), the envelope warnings, the profile limits
+        and the energy metrics (the TSD's panel). The tactical systems and the energy metrics are left out while
+        the bus has not vouched for them, so the TSD keeps its own defaults, as it did when fmsControl answered
+        without them."""
         status = self.terminal.fresh(m.BcastFmsStatus, self.stale_after_s)
         attitude = self.terminal.fresh(m.BcastFmsAttitudeStatus, self.stale_after_s)
+        energy = self.terminal.fresh(m.BcastFmsEnergy, self.stale_after_s)
         mode = status.payload.flight_mode if status is not None else None
         max_g, max_aoa, engine_power = PROFILE_LIMITS.get(mode, DEFAULT_LIMITS)
         warnings = []
         if attitude is not None:
             warnings = [name for field, name in ENVELOPE_WARNINGS if getattr(attitude.payload, field)]
-        return {"mode": mode.name if mode is not None else "UNKNOWN", "envelope_warnings": warnings,
-                "profile_limits": {"max_g_force": max_g, "max_aoa": max_aoa, "engine_power": engine_power}}
+        out = {"mode": mode.name if mode is not None else "UNKNOWN", "envelope_warnings": warnings,
+               "profile_limits": {"max_g_force": max_g, "max_aoa": max_aoa, "engine_power": engine_power}}
+        if status is not None:
+            s = status.payload
+            out["tactical_systems"] = {"countermeasures": s.countermeasures.name, "targeting": s.targeting.name,
+                                       "weapons": s.weapons.name, "stealth_mode": "ON" if s.stealth_mode else "OFF"}
+        if energy is not None and _valid(energy.payload.ssm):
+            e = energy.payload
+            out["energy_metrics"] = {"specific_excess_power": e.specific_excess_power,
+                                     "max_sustained_turn_rate": e.max_sustained_turn_rate,
+                                     "max_instantaneous_turn_rate": e.max_instantaneous_turn_rate,
+                                     "max_climb_rate_fpm": e.max_climb_rate, "energy_advantage": e.energy_advantage}
+        return out
 
     def status_text(self):
         message, age = self.terminal.latest(m.BcastFmsFlightData)

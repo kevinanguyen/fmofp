@@ -1,4 +1,4 @@
-"""The display windows and the entry point: py -m fmofp_display radar|pfd|mfd|eicas [--port-base N].
+"""The display windows and the entry point: py -m fmofp_display radar|pfd|mfd|eicas|tsd [--port-base N].
 
 The windows own a DisplayTerminal (the bus, in a thread) and a feed, and paint
 with the Python display classes from FMOFP/Interfaces/userInterface/displays,
@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QSpi
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import TargetingMode, TerminalState, TfrMode, TrackFilter, WeatherMode
 from fmofp_bus.status import Status
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
@@ -35,6 +35,7 @@ RADAR_RT = m.DspRadarStatus.RT
 PFD_RT = m.DspPfdStatus.RT
 MFD_RT = m.DspMfdStatus.RT
 EICAS_RT = m.DspEicasStatus.RT
+TSD_RT = m.DspTsdStatus.RT
 TICK_MS = 50
 DEFAULT_RANGE_KM = 200.0
 
@@ -48,7 +49,8 @@ def bootstrap():
 
 def radar_terminal(port_base):
     return TerminalProcess(RADAR_RT, port_base, m.DspRadarStatus, m.DspRadarModeCmd,
-                           receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance),
+                           receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance,
+                                     m.BcastRdrTgtStatus),
                            blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation))
 
 
@@ -67,6 +69,12 @@ def tfr_command(terminal, state, mode, set_clearance_ft):
     cmd = m.RdrTfrModeCmd(cmd_seq=terminal.next_command_seq(), requested_state=state, requested_mode=mode,
                           set_clearance=float(set_clearance_ft))
     return m.DspRdrTfrCmd(payload=cmd)
+
+
+def targeting_command(terminal, state, mode, lock_track_id=0, track_filter=TrackFilter.ALL):
+    cmd = m.RdrTgtModeCmd(cmd_seq=terminal.next_command_seq(), requested_state=state, requested_mode=mode,
+                          track_filter=track_filter, lock_track_id=int(lock_track_id))
+    return m.DspRdrTgtCmd(payload=cmd)
 
 
 class RadarPicture(QWidget):
@@ -150,6 +158,7 @@ class RadarWindow(QWidget):
         layout.addWidget(self.picture, 1)
         layout.addLayout(self._weather_controls())
         layout.addLayout(self._terrain_controls())
+        layout.addLayout(self._targeting_controls())
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(TICK_MS)
@@ -191,12 +200,40 @@ class RadarWindow(QWidget):
         row.addStretch(1)
         return row
 
+    def _targeting_controls(self):
+        """The targeting radar's buttons; its picture is the MFD's radar page, as it was in the Python."""
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Targeting radar:"))
+        self.lock_track = QSpinBox()
+        self.lock_track.setRange(0, 65535)
+        self.lock_track.setValue(1)
+        self.lock_track.setSpecialValueText("none")
+        standby = QPushButton("STANDBY")
+        standby.clicked.connect(lambda: self.terminal.send(targeting_command(self.terminal, TerminalState.STANDBY,
+                                                                             TargetingMode.NONE)))
+        row.addWidget(standby)
+        search = QPushButton("TARGET_SEARCH")
+        search.clicked.connect(lambda: self.terminal.send(targeting_command(self.terminal, TerminalState.NORMAL,
+                                                                            TargetingMode.TARGET_SEARCH)))
+        row.addWidget(search)
+        follow = QPushButton("TARGET_TRACK")
+        follow.clicked.connect(lambda: self.terminal.send(targeting_command(self.terminal, TerminalState.NORMAL,
+                                                                            TargetingMode.TARGET_TRACK,
+                                                                            self.lock_track.value())))
+        row.addWidget(follow)
+        row.addWidget(QLabel("lock track"))
+        row.addWidget(self.lock_track)
+        row.addWidget(QLabel("(picture: the MFD's radar page)"))
+        row.addStretch(1)
+        return row
+
     def tick(self):
         self.feed.update()
         self.picture.apply()
         self.terminal.take_mode_request()  # the radar picture has no lighting modes; the status reports it
         self.status.setText(f"RT {self.terminal.rt} {self.terminal.state.name}  frames {self.terminal.syncs}  |  "
-                            f"{self.feed.weather_status_text()}  |  {self.feed.tfr_status_text()}")
+                            f"{self.feed.weather_status_text()}  |  {self.feed.tfr_status_text()}  |  "
+                            f"{self.feed.targeting_status_text()}")
 
 
 def make_pfd(feed):
@@ -247,8 +284,8 @@ def mfd_terminal(port_base):
     return TerminalProcess(MFD_RT, port_base, m.DspMfdStatus, m.DspMfdModeCmd,
                            receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance,
                                      m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus, m.BcastFmsFlightData,
-                                     m.BcastEngEngineStatus, m.BcastEngFuelStatus),
-                           blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation))
+                                     m.BcastEngEngineStatus, m.BcastEngFuelStatus, m.BcastRdrTgtStatus),
+                           blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation, b.BcastRdrTgtTracks))
 
 
 # The getters mfd.py imports inside its page functions and eicas.py inside its poll, and the feed attribute each
@@ -390,7 +427,7 @@ class MfdWindow(QWidget):
         bootstrap()
         from FMOFP.Interfaces.userInterface.displays.radar.radar_display_data_coordinator import (
             get_radar_display_data_coordinator)
-        from FMOFP.Systems.radarManagement.radar_enums import tfr_radarMode, weather_radarMode
+        from FMOFP.Systems.radarManagement.radar_enums import targeting_radarMode, tfr_radarMode, weather_radarMode
         self.terminal = terminal
         self.systems = systems_feed if systems_feed is not None else SystemsFeed(terminal)
         self.radar = radar_feed if radar_feed is not None else RadarFeed(terminal, get_radar_display_data_coordinator())
@@ -404,6 +441,7 @@ class MfdWindow(QWidget):
         self._radar_types = RadarType
         self._weather_modes = weather_radarMode
         self._terrain_modes = tfr_radarMode
+        self._targeting_modes = targeting_radarMode
         self._radar_display_seen = None
         self._weather_mode_name = None
         layout = QVBoxLayout(self)
@@ -450,6 +488,11 @@ class MfdWindow(QWidget):
         elif kind == self._radar_types.TFR:
             self.mfd.radar_data.mode = self._terrain_modes[terrain["mode_name"]]
             self.mfd.radar_data.tfr_data = terrain["tfr_data"]
+        elif kind == self._radar_types.TARGETING:
+            targeting = self.radar.targeting_data()
+            display.range_scale = targeting["range_nm"]
+            self.mfd.radar_data.mode = self._targeting_modes[targeting["mode_name"]]
+            self.mfd.radar_data.targets = targeting["targets"]
 
     def closeEvent(self, event):
         self.mfd.stop()
@@ -461,7 +504,8 @@ class MfdWindow(QWidget):
 def eicas_terminal(port_base):
     return TerminalProcess(EICAS_RT, port_base, m.DspEicasStatus, m.DspEicasModeCmd,
                            receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus,
-                                     m.BcastEngEngineStatus, m.BcastEngFuelStatus, m.BcastRdrWxScan))
+                                     m.BcastEngEngineStatus, m.BcastEngFuelStatus, m.BcastRdrWxScan),
+                           blocks=(b.BcastRdrFusedTracks,))
 
 
 def make_eicas(systems_feed):
@@ -516,22 +560,78 @@ class EicasWindow(QWidget):
         super().closeEvent(event)
 
 
+# ---- the TSD, RT 16 --------------------------------------------------------------------
+
+def tsd_terminal(port_base):
+    return TerminalProcess(TSD_RT, port_base, m.DspTsdStatus, m.DspTsdModeCmd,
+                           receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFmsAttitudeStatus, m.BcastFmsEnergy),
+                           blocks=(b.BcastRdrFusedTracks,))
+
+
+def make_tsd(systems_feed):
+    """A TacticalSituationDisplay whose sources are the bus feeds: the FMS and the FMS control (flight data, tactical
+    systems, envelope warnings, energy metrics), the radar data fusion (the fused tracks), and the mission and
+    defensive services answering as they did with their terminals not yet on the bus (no route, no order of battle,
+    no radar warning contacts). Its own 10 Hz poll reads them."""
+    bootstrap()
+    install_system_sources(systems_feed)
+    import FMOFP.Interfaces.userInterface.displays.tsd as tsd_module
+    tsd = tsd_module.TacticalSituationDisplay()
+    tsd.start()
+    return tsd
+
+
+class TsdWindow(QWidget):
+    """The tactical situation display, RT 16: the unchanged TSD over the bus feeds."""
+
+    def __init__(self, terminal, systems_feed=None):
+        super().__init__()
+        bootstrap()
+        self.terminal = terminal
+        self.systems = systems_feed if systems_feed is not None else SystemsFeed(terminal)
+        self.setWindowTitle(f"FMOFP tactical situation display - RT {terminal.rt}")
+        self.status = QLabel("waiting for the bus")
+        self.tsd = make_tsd(self.systems)
+        from FMOFP.Interfaces.userInterface.displays.base_display import DisplayMode
+        self._display_modes = DisplayMode
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.status)
+        layout.addWidget(self.tsd, 1)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(250)
+
+    def tick(self):
+        requested = self.terminal.take_mode_request()
+        if requested is not None and requested.name in self._display_modes.__members__:
+            self.tsd.set_mode(self._display_modes[requested.name])
+        fused = self.systems.fused_summary()
+        tracks = "fusion: no data" if fused is None else f"fused {fused[0]} ({fused[1]} hostile), epoch {fused[2]}"
+        self.status.setText(f"RT {self.terminal.rt} {self.terminal.state.name}  frames {self.terminal.syncs}  |  "
+                            f"{self.systems.flight.status_text()}  |  {tracks}")
+
+    def closeEvent(self, event):
+        self.tsd.stop()
+        super().closeEvent(event)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("display", choices=["radar", "pfd", "mfd", "eicas"])
+    parser.add_argument("display", choices=["radar", "pfd", "mfd", "eicas", "tsd"])
     parser.add_argument("--port-base", type=int, default=51000)
     parser.add_argument("--seconds", type=float, default=0.0, help="close after this long (0 = until the window is closed)")
     args = parser.parse_args(argv)
     bootstrap()
     app = QApplication(sys.argv[:1])
-    terminals = {"radar": radar_terminal, "pfd": pfd_terminal, "mfd": mfd_terminal, "eicas": eicas_terminal}
+    terminals = {"radar": radar_terminal, "pfd": pfd_terminal, "mfd": mfd_terminal, "eicas": eicas_terminal,
+                 "tsd": tsd_terminal}
     terminal = terminals[args.display](args.port_base)
     status = terminal.start()
     if status != Status.OK:
         print(f"display: terminal init failed: {status.name} (port {args.port_base + terminal.rt} in use?)",
               file=sys.stderr)
         return 1
-    windows = {"radar": RadarWindow, "pfd": PfdWindow, "mfd": MfdWindow, "eicas": EicasWindow}
+    windows = {"radar": RadarWindow, "pfd": PfdWindow, "mfd": MfdWindow, "eicas": EicasWindow, "tsd": TsdWindow}
     window = windows[args.display](terminal)
     window.show()
     if args.seconds > 0.0:

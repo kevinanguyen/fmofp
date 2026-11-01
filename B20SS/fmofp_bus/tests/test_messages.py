@@ -12,14 +12,14 @@ from fmofp_bus.status import Status
 class GeneratedMessagesTest(unittest.TestCase):
     def test_version_and_table(self):
         self.assertEqual(1, m.ICD_MAJOR)
-        self.assertEqual(10, m.ICD_MINOR)
+        self.assertEqual(11, m.ICD_MINOR)
         self.assertEqual(30, len(m.RELAYS))
         self.assertEqual(("PLANT_SENSORS", "FCS_SENSORS", 27, 1, 5, 13, 11, 50, ()), tuple(m.RELAYS[0]))
         broadcast = [r for r in m.RELAYS if r.to_rt == 31]
         self.assertEqual(13, len(broadcast))
         self.assertEqual((13, 15), next(r.listeners for r in broadcast if r.to_id == "BCAST_RDR_WX_STATUS"))
-        self.assertEqual((3, 11, 13, 14), next(r.listeners for r in broadcast if r.to_id == "BCAST_FMS_FLIGHT_DATA"),
-                         "the engine computer and the EICAS listen too")
+        self.assertEqual((3, 11, 13, 14, 16), next(r.listeners for r in broadcast if r.to_id == "BCAST_FMS_FLIGHT_DATA"),
+                         "the engine computer, the EICAS and the TSD listen too")
         self.assertEqual((5, 13, 14), next(r.listeners for r in broadcast if r.to_id == "BCAST_ENG_ENGINE_STATUS"))
         self.assertEqual((13, 14, 15), next(r.listeners for r in broadcast if r.to_id == "BCAST_RDR_WX_SCAN"))
         self.assertEqual(4, len([r for r in b.BLOCK_RELAYS if r.to_rt == 31]))

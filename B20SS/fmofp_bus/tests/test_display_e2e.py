@@ -1,8 +1,9 @@
 """The displays on the bus, end to end, headless.
 
 The plant, the real fmofp_fcs, fmofp_nav, fmofp_fms, fmofp_radar and
-fmofp_engine, and four DisplayTerminals in this process (the radar display,
-RT 15, the PFD, RT 11, the MFD, RT 13, and the EICAS, RT 14) under the real fmofp_bc. The radar display commands both radars from its own
+fmofp_engine, and five DisplayTerminals in this process (the radar display,
+RT 15, the PFD, RT 11, the MFD, RT 13, the EICAS, RT 14, and the TSD, RT 16) under the real fmofp_bc. The radar
+display commands the weather, terrain-following and targeting radars from its own
 transmit subaddresses, exactly as the window's buttons do; the bus controller
 broadcasts the radars' status, scan summary, guidance and product blocks, the
 flight computer's alerts and exceedances, the FMS's flight data and the engine
@@ -13,6 +14,7 @@ what the Qt windows would draw.
 Needs FMOFP_BC, FMOFP_FCS, FMOFP_NAV, FMOFP_FMS, FMOFP_RADAR and FMOFP_ENGINE (CI sets them).
 """
 
+import math
 import os
 import subprocess
 import threading
@@ -22,12 +24,13 @@ import unittest
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
 from fmofp_bus.command_word import BROADCAST_RT
-from fmofp_bus.icd.enums import FmsFlightMode, GcasStatus, Ssm, TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import FmsFlightMode, GcasStatus, Ssm, TargetingMode, TerminalState, TfrMode, WeatherMode
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 from fmofp_bus.tests._support import binary_env, needs
 from fmofp_bus.tests.test_display_feeds import FakeCoordinator
-from fmofp_display.app import eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, tfr_command, weather_command
+from fmofp_display.app import (eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, targeting_command, tfr_command,
+                               tsd_terminal, weather_command)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
@@ -60,6 +63,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
     pfd = None
     mfd = None
     eicas = None
+    tsd = None
 
     @classmethod
     def setUpClass(cls):
@@ -80,6 +84,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
             assert cls.mfd.start() == Status.OK, "MFD port in use?"
             cls.eicas = eicas_terminal(PORT_BASE)
             assert cls.eicas.start() == Status.OK, "EICAS port in use?"
+            cls.tsd = tsd_terminal(PORT_BASE)
+            assert cls.tsd.start() == Status.OK, "TSD port in use?"
             for binary in BINARIES:
                 cls.processes.append(subprocess.Popen(
                     [os.environ[binary], "--port-base", str(PORT_BASE), "--quiet"], stdout=subprocess.PIPE,
@@ -96,7 +102,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
             p.wait(timeout=10)
             p.stdout.close()
         cls.processes = []
-        for terminal in (cls.radar_display, cls.pfd, cls.mfd, cls.eicas):
+        for terminal in (cls.radar_display, cls.pfd, cls.mfd, cls.eicas, cls.tsd):
             if terminal is not None:
                 terminal.stop()
         if cls.plant_thread is not None:
@@ -110,7 +116,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
     def run_bus(self):
         terminals = ["27", str(m.FcsStatus.RT), str(m.NavSolution.RT), str(m.FmsStatus.RT), str(m.RdrWxStatus.RT),
                      str(m.EngStatus.RT), str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT),
-                     str(m.DspEicasStatus.RT)]
+                     str(m.DspEicasStatus.RT), str(m.DspTsdStatus.RT)]
         args = [os.environ["FMOFP_BC"]]
         for rt in terminals:
             args += ["--rt", rt]
@@ -151,6 +157,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # The control panel: both radars on, before the bus starts.
         self.radar_display.send(weather_command(self.radar_display, TerminalState.NORMAL, WeatherMode.SURVEILLANCE))
         self.radar_display.send(tfr_command(self.radar_display, TerminalState.NORMAL, TfrMode.TERRAIN_FOLLOWING, 984))
+        self.radar_display.send(targeting_command(self.radar_display, TerminalState.NORMAL, TargetingMode.TARGET_SEARCH))
         records, output = self.run_bus()
         framed = self.by_frame(records)
         self.assertGreaterEqual(framed[-1][0], FRAMES - 2)
@@ -223,8 +230,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # copy written into any display.
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
-        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27}, broadcast)  # 28, the energy, has only the TSD listening
-        for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT):
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28}, broadcast)
+        for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT, m.DspTsdStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}
             self.assertEqual(set(), unicast, f"RT {rt}")
@@ -282,10 +289,40 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.assertEqual(("NONE", "NONE", False), eicas.weather_severity(), "a surveillance scan finds no shear")
         self.assertIsNotNone(self.eicas.fresh(m.BcastRdrWxScan, stale_after_s=60.0))
         self.assertIsNone(self.eicas.fresh(m.BcastRdrWxStatus, stale_after_s=60.0), "not among its receives: ignored")
-        self.assertEqual(0, self.eicas.blocks_completed)
+        self.assertGreaterEqual(self.eicas.blocks_completed, 1, "the fused tracks block, which it accepts")
+        self.assertEqual(len(eicas.threat_tracks()), eicas.fused_summary()[1], "the hostile count the EICAS alarms on")
         self.assertEqual([a["code"] for a in alerts], [a["code"] for a in eicas.get_alerts()])
         eicas_status = self.transmitted(framed, m.DspEicasStatus, 100, FRAMES)
         self.assertEqual(TerminalState.NORMAL, eicas_status[-1][1].state)
+        # The targeting radar, commanded from the radar display: its status and tracks reach the MFD's targeting page,
+        # the fusion's tracks reach the EICAS and the TSD, and the TSD hears the FMS's energy metrics and position.
+        tgt_status = self.radar_display.fresh(m.BcastRdrTgtStatus, stale_after_s=60.0)
+        self.assertIsNotNone(tgt_status)
+        self.assertEqual((TerminalState.NORMAL, TargetingMode.TARGET_SEARCH, 3, False),
+                         (tgt_status.payload.state, tgt_status.payload.mode, tgt_status.payload.last_cmd_seq,
+                          tgt_status.payload.cmd_rejected))
+        self.assertGreaterEqual(tgt_status.payload.track_count, 1)
+        targeting = mfd_feed.targeting_data()
+        self.assertEqual("TARGET_SEARCH", targeting["mode_name"])
+        self.assertGreaterEqual(len(targeting["targets"]), 1, "no tracks block at the MFD")
+        for target in targeting["targets"]:
+            self.assertLessEqual(math.hypot(target["position"][0], target["position"][1]), targeting["range_nm"] + 1e-6)
+            self.assertIn(target["classification"], ("FIXED_WING", "ROTARY_WING", None))
+        self.assertIn("TGT NORMAL TARGET_SEARCH", mfd_feed.targeting_status_text())
+        tsd = SystemsFeed(self.tsd, stale_after_s=60.0)
+        fused = tsd.fusion.get_fused_tracks()
+        self.assertGreaterEqual(len(fused), 1, "no fused tracks block at the TSD")
+        threats = [track.to_tsd_dict() for track in fused]
+        self.assertTrue(all(0.0 <= t["bearing"] < 360.0 and 0.0 < t["range_nm"] <= 60.0 for t in threats), threats)
+        self.assertEqual(tsd.fused_summary()[1], len([t for t in threats if t["hostile"]]))
+        tactical = tsd.fms_control.get_tactical_status()
+        self.assertIn("energy_metrics", tactical, "BCAST_FMS_ENERGY reached the TSD")
+        self.assertEqual({"countermeasures", "targeting", "weapons", "stealth_mode"}, set(tactical["tactical_systems"]))
+        self.assertIn("latitude", tsd.fms.get_flight_data()["navigation"])
+        self.assertIsNone(self.tsd.fresh(m.BcastRdrWxScan, stale_after_s=60.0), "not among its receives: ignored")
+        self.assertEqual(({"route": []}, []), (tsd.mission.get_nav_data(), tsd.defensive.get_rwr_contacts()))
+        tsd_status = self.transmitted(framed, m.DspTsdStatus, 100, FRAMES)
+        self.assertEqual(TerminalState.NORMAL, tsd_status[-1][1].state)
         self.assertIn("overruns=0", output)
         self.assertGreaterEqual(self.radar_display.syncs, FRAMES - 2)
 

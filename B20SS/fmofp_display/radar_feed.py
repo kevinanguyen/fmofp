@@ -4,9 +4,10 @@ The weather radar display (Interfaces/userInterface/displays/radar) draws from
 the RadarDisplayDataCoordinator's stores: lists of dictionaries with a
 `position` in nautical miles from the aircraft (x east, y north) and the fields
 the bridge used to put there. The terrain display draws a dictionary with the
-profile points, the clearance and the altitudes. RadarFeed builds both from
-RDR_WX_PRODUCTS, RDR_WX_SCAN, RDR_WX_STATUS, RDR_TFR_GUIDANCE, RDR_TFR_STATUS
-and RDR_TFR_ELEVATION as the display terminal hears them: broadcast once to
+profile points, the clearance and the altitudes; the targeting display (on the
+MFD's radar page) a list of targets. RadarFeed builds them from
+RDR_WX_PRODUCTS, RDR_WX_SCAN, RDR_WX_STATUS, RDR_TFR_GUIDANCE, RDR_TFR_STATUS,
+RDR_TFR_ELEVATION, RDR_TGT_STATUS and RDR_TGT_TRACKS as the display terminal hears them: broadcast once to
 address 31 for every display that accepts the subaddress (BCAST_RDR_*, ICD
 v1.7). It knows nothing of Qt or of the display classes: the window applies
 what it returns.
@@ -22,7 +23,7 @@ from collections import namedtuple
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import Ssm, TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import LockStatus, Ssm, TargetingMode, TerminalState, TfrMode, WeatherMode
 from fmofp_display.terminal import STALE_AFTER_S
 
 NM_PER_KM = 1.0 / 1.852
@@ -52,10 +53,30 @@ TFR_DRAW_MODE = {
 }
 STORES = ("vil", "precipitation", "cells", "windshear", "turbulence")
 
+# The MFD's targeting picture (TargetingRadarDisplay) draws whatever targets it is given; the MFD's own mode enum
+# (targeting_radarMode) names the radar's modes as the ICD does, STANDBY when the radar is not operating.
+TARGETING_DRAW_MODE = {
+    TargetingMode.NONE: "STANDBY",
+    TargetingMode.TARGET_SEARCH: "TARGET_SEARCH",
+    TargetingMode.TARGET_TRACK: "TARGET_TRACK",
+    TargetingMode.LOCK: "LOCK",
+    TargetingMode.TERRAIN_AVOIDANCE: "TERRAIN_AVOIDANCE",
+    TargetingMode.GROUND_MAPPING: "GROUND_MAPPING",
+}
+# The display's symbol vocabulary (FIXED_WING, ROTARY_WING, SURFACE, else a '?') from the radar's classification;
+# the Python radar's class names never matched it, so every target drew as unknown. A missile is no aircraft
+# shape the display has, so it keeps the '?'.
+SYMBOL_CLASS = {"FIGHTER": "FIXED_WING", "BOMBER": "FIXED_WING", "HIGH_ALT": "FIXED_WING", "DRONE": "FIXED_WING",
+                "STEALTH": "FIXED_WING", "HELICOPTER": "ROTARY_WING"}
+M_PER_NM = 1852.0
+TARGETING_RANGE_NM = 100.0 * NM_PER_KM  # the targeting radar's maximum range: the picture's range scale
+
 # The broadcast messages and blocks every display hears the radars' data in (ICD README section 8).
-RadarSources = namedtuple("RadarSources", "wx_status wx_scan wx_products tfr_status tfr_guidance tfr_elevation")
+RadarSources = namedtuple("RadarSources", "wx_status wx_scan wx_products tfr_status tfr_guidance tfr_elevation "
+                                           "tgt_status tgt_tracks")
 BROADCAST_SOURCES = RadarSources(m.BcastRdrWxStatus, m.BcastRdrWxScan, b.BcastRdrWxProducts, m.BcastRdrTfrStatus,
-                                 m.BcastRdrTfrGuidance, b.BcastRdrTfrElevation)
+                                 m.BcastRdrTfrGuidance, b.BcastRdrTfrElevation, m.BcastRdrTgtStatus,
+                                 b.BcastRdrTgtTracks)
 
 
 def polar_to_nm(azimuth_deg, range_km):
@@ -104,6 +125,20 @@ def weather_items(products, request_id, timestamp):
             "position": polar_to_nm(t.azimuth, t.range), "intensity": t.intensity, "category": t.category.name,
             "altitude_ft": t.altitude, "cell_id": i, "id": f"{request_id}_turb_{i}", "timestamp": timestamp})
     return items
+
+
+def targeting_item(track):
+    """One RDR_TGT_TRACKS record as the dictionary TargetingRadarDisplay._draw_target reads: the position in nautical
+    miles east, north and up of the aircraft, the velocity relative to the aircraft in m/s, the identity and the
+    classification in the display's vocabulary (None where it has no symbol or colour), the id; and, for a feed
+    that wants them, the threat, the lock and the stealth flag."""
+    return {"id": track.track_id,
+            "position": (track.x / M_PER_NM, track.y / M_PER_NM, track.z / M_PER_NM),
+            "velocity": (track.velocity_east, track.velocity_north, track.velocity_up),
+            "identity": None if track.identity.name == "UNKNOWN" else track.identity.name,
+            "classification": SYMBOL_CLASS.get(track.classification.name),
+            "threat": track.threat.name, "locked": bool(track.locked), "stealth": bool(track.stealth),
+            "confidence": track.confidence}
 
 
 class RadarFeed:
@@ -214,4 +249,36 @@ class RadarFeed:
         if guidance is not None and guidance.payload.clearance_ssm == Ssm.NORMAL:
             g = guidance.payload
             text += f"  {g.level.name}  min clearance {g.min_clearance:.0f} ft  cmd {g.commanded_altitude:.0f} ft"
+        return text
+
+    def targeting_data(self):
+        """The targeting picture's data: the MFD's draw mode name, the targets as TargetingRadarDisplay draws them,
+        the range scale (the radar's 100 km), the track count and the lock. The last tracks block stays until it
+        goes stale or the radar publishes an empty one (it does when commanded out of an operating mode)."""
+        status = self.terminal.fresh(self.sources.tgt_status)
+        tracks, _, age = self.terminal.latest_block(self.sources.tgt_tracks)
+        data = {"mode_name": "STANDBY", "targets": [], "range_nm": TARGETING_RANGE_NM, "track_count": 0,
+                "lock_status": "NONE", "locked_track_id": 0, "jamming": False}
+        if status is not None:
+            s = status.payload
+            if s.state == TerminalState.NORMAL:
+                data["mode_name"] = TARGETING_DRAW_MODE.get(s.mode, "STANDBY")
+            data["track_count"] = s.track_count
+            data["lock_status"] = s.lock_status.name
+            data["locked_track_id"] = s.locked_track_id
+            data["jamming"] = bool(s.jamming)
+        if tracks is not None and age is not None and age <= STALE_AFTER_S:
+            data["targets"] = [targeting_item(t) for t in tracks.track]
+        return data
+
+    def targeting_status_text(self):
+        status = self.terminal.fresh(self.sources.tgt_status)
+        if status is None:
+            return "TGT: no data"
+        s = status.payload
+        text = f"TGT {s.state.name} {s.mode.name}  {s.track_count} tracks"
+        if s.lock_status != LockStatus.NONE:
+            text += f"  lock {s.locked_track_id} {s.lock_status.name}"
+        if s.jamming:
+            text += "  JAMMING"
         return text

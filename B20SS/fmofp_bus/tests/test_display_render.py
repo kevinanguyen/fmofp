@@ -19,9 +19,10 @@ except ImportError:  # pragma: no cover - depends on the machine
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, ShearSeverity, Ssm, TerminalState, TfrMode,
-                                 WeatherMode)
-from fmofp_bus.tests.test_display_feeds import FakeTerminal, flight_payload, sample_elevation, sample_products
+from fmofp_bus.icd.enums import (ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, ShearSeverity, Ssm,
+                                 TargetingMode, TargetingState, TerminalState, TfrMode, WeaponsState, WeatherMode)
+from fmofp_bus.tests.test_display_feeds import (FakeTerminal, flight_payload, sample_elevation, sample_fused,
+                                                sample_products, sample_tracks)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
@@ -87,6 +88,8 @@ class DisplayWindowsTest(unittest.TestCase):
             clearance_ssm=Ssm.NORMAL, level=ClearanceLevel.CAUTION, mode=TfrMode.TERRAIN_FOLLOWING, commands_valid=True,
             min_clearance=600.0, commanded_altitude=4000.0, set_clearance=984.0)))
         terminal.put_block(b.BcastRdrTfrElevation, sample_elevation(), 2)
+        terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(state=TerminalState.NORMAL,
+                                                              mode=TargetingMode.TARGET_SEARCH, track_count=4)))
         window.tick()
         self.app.processEvents()
         active = lit_pixels(window.picture.grab().toImage())
@@ -96,16 +99,23 @@ class DisplayWindowsTest(unittest.TestCase):
         self.assertAlmostEqual(200.0 / 1.852, window.picture.weather.range_scale)
         self.assertIn("WX NORMAL SURVEILLANCE", window.status.text())
         self.assertIn("TFR NORMAL TERRAIN_FOLLOWING", window.status.text())
+        self.assertIn("TGT NORMAL TARGET_SEARCH  4 tracks", window.status.text())
         # The control panel sends commands through the terminal.
         window.findChildren(type(window.clearance))  # the spin box exists
         buttons = {button.text(): button for button in window.findChildren(self.app_module.QPushButton)}
         buttons["WINDSHEAR"].click()
         buttons["TFR_SEARCH"].click()
+        buttons["TARGET_SEARCH"].click()
+        window.lock_track.setValue(3)
+        buttons["TARGET_TRACK"].click()
         sent = getattr(terminal, "sent", [])
-        self.assertEqual(2, len(sent))
+        self.assertEqual(4, len(sent))
         self.assertEqual((WeatherMode.WINDSHEAR, TerminalState.NORMAL), (sent[0].payload.requested_mode,
                                                                           sent[0].payload.requested_state))
         self.assertEqual((TfrMode.TFR_SEARCH, 1000.0), (sent[1].payload.requested_mode, sent[1].payload.set_clearance))
+        self.assertEqual((m.DspRdrTgtCmd, TargetingMode.TARGET_SEARCH, 0), (type(sent[2]), sent[2].payload.requested_mode,
+                                                                          sent[2].payload.lock_track_id))
+        self.assertEqual((TargetingMode.TARGET_TRACK, 3), (sent[3].payload.requested_mode, sent[3].payload.lock_track_id))
         window.timer.stop()
         window.close()
 
@@ -229,8 +239,30 @@ class DisplayWindowsTest(unittest.TestCase):
             self.assertAlmostEqual(600.0 * 0.3048, clearance_m)
             self.assertEqual("CAUTION", level)
 
-            # The other three radars are not on the bus yet: their standby pictures paint.
-            for kind in (kinds.TARGETING, kinds.SAR, kinds.AEWC):
+            # The targeting picture: standby until the radar reports, then its tracks in the display's vocabulary.
+            mfd.current_radar_type = kinds.TARGETING
+            mfd._update_radar_type()
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertEqual("TargetingRadarDisplay", type(mfd._current_radar_display).__name__)
+            self.assertEqual("STANDBY", mfd.radar_data.mode.name)
+            standby_targets = lit_pixels(mfd.grab().toImage())
+            terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(state=TerminalState.NORMAL,
+                                                                  mode=TargetingMode.TARGET_SEARCH, track_count=2)))
+            terminal.put_block(b.BcastRdrTgtTracks, sample_tracks(), 1)
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertEqual(window._targeting_modes.TARGET_SEARCH, mfd.radar_data.mode)
+            self.assertEqual([1, 2], [target["id"] for target in mfd.radar_data.targets])
+            self.assertAlmostEqual(100.0 / 1.852, mfd._current_radar_display.range_scale)
+            self.assertGreater(lit_pixels(mfd.grab().toImage()), standby_targets, "two targets and their labels")
+
+            # The other two radars are not on the bus yet: their standby pictures paint.
+            for kind in (kinds.SAR, kinds.AEWC):
                 mfd.current_radar_type = kind
                 mfd._update_radar_type()
                 window.tick()
@@ -309,6 +341,57 @@ class DisplayWindowsTest(unittest.TestCase):
             self.assertIn("ENG  EGT CAUTION", texts, "graded on the thrust model (350 + 4.5 x 100 C at COMBAT power), which eicas.py computes before its ECU override")
             self.assertIn("2 warnings 6 cautions", window.status.text())
             self.assertIn("ENG N1 82.0%", window.status.text())
+        finally:
+            window.timer.stop()
+            window.close()
+            self.app_module.uninstall_system_sources()
+
+    def test_the_tsd_window_draws_the_fused_tracks_the_metrics_and_the_strip_from_the_bus_data(self):
+        terminal = StubTerminal()
+        terminal.rt = 16
+        systems = SystemsFeed(terminal)
+        window = self.app_module.TsdWindow(terminal, systems)
+        try:
+            window.show()
+            self.app.processEvents()
+            tsd = window.tsd
+            tsd._poll_data()
+            window.tick()
+            self.app.processEvents()
+            empty = lit_pixels(tsd.grab().toImage())
+            self.assertGreater(empty, 0)
+            self.assertEqual([], tsd._threats)
+            self.assertFalse(tsd._ownship_position_known)
+            self.assertIn("fusion: no data", window.status.text())
+
+            terminal.put(m.BcastFmsFlightData(payload=flight_payload(flight_mode=FmsFlightMode.COMBAT, heading=45.0,
+                                                                     g_force=3.2, angle_of_attack=8.0, energy_state=70.0)))
+            terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
+                state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT, countermeasures=CountermeasuresState.ACTIVE,
+                targeting=TargetingState.ACTIVE, weapons=WeaponsState.ARMED)))
+            terminal.put(m.BcastFmsAttitudeStatus(payload=m.FmsAttitudeStatus(bank_limited=True)))
+            terminal.put(m.BcastFmsEnergy(payload=m.FmsEnergy(
+                ssm=Ssm.NORMAL, specific_excess_power=42.5, max_sustained_turn_rate=12.3, max_instantaneous_turn_rate=20.1,
+                max_climb_rate=6000.0, energy_advantage=425.0)))
+            terminal.put_block(b.BcastRdrFusedTracks, sample_fused(), 5)
+            tsd._poll_data()   # the 10 Hz poll reads the getters
+            window.tick()
+            self.app.processEvents()
+            full = lit_pixels(tsd.grab().toImage())
+            self.assertFalse(getattr(tsd, "_paint_error", False))
+            self.assertNotEqual(empty, full)
+            self.assertEqual(("COMBAT", 45.0, 3.2, 8.0, 70.0), (tsd._mode, tsd._heading, tsd._g_force, tsd._aoa, tsd._energy))
+            self.assertTrue(tsd._ownship_position_known)
+            self.assertEqual((42.5, 12.3, 20.1, 6000.0),
+                             (tsd._sep, tsd._max_turn_sustained, tsd._max_turn_instant, tsd._max_climb_fpm))
+            self.assertEqual(100.0, tsd._throttle, "COMBAT's engine power")
+            self.assertEqual({"countermeasures": "ACTIVE", "targeting": "ACTIVE", "weapons": "ARMED", "stealth_mode": "OFF"},
+                             tsd._tac)
+            self.assertEqual(["BANK_ANGLE"], tsd._warnings)
+            self.assertEqual([("FIGHTER", True), ("UNKNOWN", False)], [(t["type"], t["hostile"]) for t in tsd._threats])
+            self.assertAlmostEqual(45.0, tsd._threats[0]["bearing"])
+            self.assertEqual(([], []), (tsd._waypoints, tsd._rwr_contacts), "no mission or defensive terminal yet")
+            self.assertIn("fused 2 (1 hostile), epoch 3", window.status.text())
         finally:
             window.timer.stop()
             window.close()

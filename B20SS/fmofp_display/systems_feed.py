@@ -26,11 +26,19 @@ and the services whose terminals do not exist yet answer as they did when they
 were not running. The oil readings, the fuel quantity and the left-right
 balance have no getter: the EICAS takes them through set_engine_readings(),
 and engine_readings() is what the window hands it each tick.
+
+tsd._poll_data() (v1.11) polls the FMS getters too, and the radar data fusion's
+get_fused_tracks(), whose tracks it draws from their to_tsd_dict(); the mission
+service's get_nav_data() and the defensive service's get_rwr_contacts() answer
+empty until those terminals exist. The fused tracks are the BCAST_RDR_FUSED_TRACKS
+block's, and the EICAS's hostile count comes from the same block.
 """
 
+import math
 import time
 from types import SimpleNamespace
 
+from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
 from fmofp_bus.icd.enums import Ssm
 from fmofp_display.flight_feed import FlightDataFeed
@@ -130,8 +138,49 @@ class ShearEvent:
         return self.LEVELS.get(self.severity, 0)
 
 
+class FusedTrackView:
+    """One track of the fused tracks block, as much of radar_data_fusion.FusedTrack as the TSD and the EICAS read:
+    to_tsd_dict() (bearing and range from the aircraft, the type, hostile or not, the confidence, the sources, the
+    id and the identity) and the threat for get_threat_tracks(). Positions are metres east, north and up of the
+    aircraft, as the Python's were. The dictionary carries no velocity, as the Python's did not, so the TSD draws
+    no vector on a fused track."""
+
+    def __init__(self, record):
+        self.track_id = record.track_id
+        self.position_m = (record.x, record.y, record.z)
+        self.velocity_ms = (record.velocity_east, record.velocity_north, record.velocity_up)
+        self.confidence = record.confidence
+        self.classification = record.classification.name
+        self.identity = record.identity.name
+        self.threat = record.threat.name
+        self.sources = [name for flag, name in ((record.from_targeting, "targeting_radar"),
+                                                 (record.from_aewc, "aewc_radar")) if flag]
+
+    @property
+    def range_m(self):
+        x, y, z = self.position_m
+        return math.sqrt(x * x + y * y + z * z)
+
+    @property
+    def range_nm(self):
+        return self.range_m / 1852.0
+
+    @property
+    def bearing_deg(self):
+        x, y, _ = self.position_m
+        return math.degrees(math.atan2(x, y)) % 360.0
+
+    def is_hostile(self):
+        return self.threat == "HOSTILE"
+
+    def to_tsd_dict(self):
+        return {"bearing": self.bearing_deg, "range_nm": self.range_nm, "type": self.classification,
+                "hostile": self.is_hostile(), "confidence": self.confidence, "sources": list(self.sources),
+                "track_id": self.track_id, "identity": self.identity}
+
+
 class SystemsFeed:
-    """Stands in for the systems the MFD's pages and the EICAS poll."""
+    """Stands in for the systems the MFD's pages, the EICAS and the TSD poll."""
 
     def __init__(self, terminal, stale_after_s=STALE_AFTER_S, clock=time.time):
         self.terminal = terminal
@@ -144,7 +193,8 @@ class SystemsFeed:
         self.performance = SimpleNamespace(get_exceedances=self.get_exceedances)
         self.engine = SimpleNamespace(get_data=self.engine_data)
         self.comms = SimpleNamespace(get_data=self.comms_data)
-        self.mission = SimpleNamespace(get_data=self.mission_data, get_oob=self.order_of_battle)
+        self.mission = SimpleNamespace(get_data=self.mission_data, get_oob=self.order_of_battle,
+                                       get_nav_data=self.nav_data)
         self.radar_management = SimpleNamespace(radars={"tfr_radar": TerrainClearance(self),
                                                         "weather_radar": WeatherSeverity(self)})
         # What eicas.py polls beyond the MFD's getters.
@@ -152,9 +202,9 @@ class SystemsFeed:
         self.fms = self.flight            # get_flightManagementSystem(): get_flight_data()
         self.fms_control = self.flight    # get_fms_control(): get_tactical_status()
         self.bit = SimpleNamespace(self_tests=[])  # BuiltInTestController(): no results until the avionics terminal
-        self.defensive = SimpleNamespace(get_data=self.defensive_data)
+        self.defensive = SimpleNamespace(get_data=self.defensive_data, get_rwr_contacts=self.rwr_contacts)
         self.sensors = SimpleNamespace(get_data=self.sensor_data)
-        self.fusion = SimpleNamespace(get_threat_tracks=self.threat_tracks)
+        self.fusion = SimpleNamespace(get_threat_tracks=self.threat_tracks, get_fused_tracks=self.fused_tracks)
 
     def get_alerts(self):
         """GCAS.get_alerts(): the Python's alert dictionaries, rebuilt from the bits and values of MFD_GCAS_ALERTS."""
@@ -246,10 +296,24 @@ class SystemsFeed:
         reads the health as UNKNOWN and no fused tracks."""
         return {}
 
+    def fused_tracks(self):
+        """RadarDataFusion.get_fused_tracks(): the tracks of the last fused tracks block the bus delivered whole, while
+        it is fresh; empty when the fusion is silent, as the Python's table was with the fusion not running."""
+        block, _, age = self.terminal.latest_block(b.BcastRdrFusedTracks)
+        if block is None or age is None or age > self.stale_after_s:
+            return []
+        return [FusedTrackView(record) for record in block.track]
+
     def threat_tracks(self):
-        """RadarDataFusion.get_threat_tracks(): no hostile tracks until the targeting and AEWC radars and their fusion
-        are ported."""
-        return []
+        """RadarDataFusion.get_threat_tracks(): the fused tracks assessed HOSTILE (the EICAS counts them)."""
+        return [track for track in self.fused_tracks() if track.is_hostile()]
+
+    def fused_summary(self):
+        """(tracks, hostile, epoch) of the last fused tracks block, or None while there is none."""
+        block, _, age = self.terminal.latest_block(b.BcastRdrFusedTracks)
+        if block is None or age is None or age > self.stale_after_s:
+            return None
+        return len(block.track), block.hostile_count, block.epoch
 
     def weather_severity(self):
         """(wind shear severity, turbulence category, microburst) of the last weather scan, as the names eicas.py
@@ -289,6 +353,15 @@ class SystemsFeed:
         """MissionService.get_oob(): empty until the mission terminal is on the bus."""
         return {"summary": {}, "friendly": [], "enemy": [], "neutral": []}
 
+    def nav_data(self):
+        """MissionService.get_nav_data(): no route until the mission terminal is on the bus (the TSD then draws no
+        waypoints, as with the service not running)."""
+        return {"route": []}
+
+    def rwr_contacts(self):
+        """DefensiveService.get_rwr_contacts(): none until the defensive systems terminal (RT 22) is on the bus."""
+        return []
+
     def status_text(self):
         parts = []
         alerts = self.terminal.fresh(m.BcastFcsGcasAlerts, self.stale_after_s)
@@ -317,4 +390,7 @@ class SystemsFeed:
             if fuel["leak_suspected"]:
                 text += " LEAK?"
             parts.append(text)
+        fused = self.fused_summary()
+        if fused is not None:
+            parts.append(f"fused {fused[0]} ({fused[1]} hostile)")
         return "  ".join(parts) if parts else "FCS: no data"

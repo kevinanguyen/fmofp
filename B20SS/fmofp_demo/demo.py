@@ -6,17 +6,18 @@
 It starts, in this order: the plant (the simulated aircraft with its weather,
 terrain and engines, RT 27), the ported partitions (flight control RT 5,
 navigation RT 7, flight management RT 12, the radar computer RT 9, engine
-management RT 3), the four display programs (the radar display RT 15, the PFD
-RT 11, the MFD RT 13 and the EICAS RT 14, each in its own window), and finally the bus
+management RT 3), the five display programs (the radar display RT 15, the PFD
+RT 11, the MFD RT 13, the EICAS RT 14 and the TSD RT 16, each in its own window), and finally the bus
 controller, which drives the bus in real time. Every program writes its own
 log under logs/demo/. The console shows one line a second with what is
 crossing the bus, read from the controller's monitor port: altitude, airspeed
 and heading from the FMS flight data, the ground collision avoidance state,
-the engines' N1 and the fuel, the radars' modes and the terrain clearance, the
-navigation fix, and which terminals are answering.
+the engines' N1 and the fuel, the radars' modes, the terrain clearance and the
+targeting tracks, the navigation fix, and which terminals are answering.
 
 Unless --no-events is given, a short scripted flight runs: the radars are
-switched on, the thrust lever moves, the autothrottle holds 500 kt, the flight
+switched on (the targeting radar searches, later locks on a track), the thrust
+lever moves, the autothrottle holds 500 kt, the flight
 mode changes, one engine is throttled back, fuel is transferred. Each event is
 announced as it happens. The radar display window's own buttons keep working
 throughout: it is the radars' control panel.
@@ -33,8 +34,8 @@ import time
 from collections import namedtuple
 
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (EngineCommand, EngineSelect, FmsFlightMode, FuelTank, Ssm, TerminalState, TfrMode,
-                                 WeatherMode)
+from fmofp_bus.icd.enums import (EngineCommand, EngineSelect, FmsFlightMode, FuelTank, LockStatus, Ssm, TargetingMode,
+                                 TerminalState, TfrMode, TrackFilter, WeatherMode)
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 
@@ -50,10 +51,11 @@ PARTITIONS = (("fcs", m.FcsStatus.RT), ("nav", m.NavSolution.RT), ("fms", m.FmsS
               ("radar", m.RdrWxStatus.RT), ("engine", m.EngStatus.RT))
 # (fmofp_display argument, RT) of each display program.
 DISPLAYS = (("radar", m.DspRadarStatus.RT), ("pfd", m.DspPfdStatus.RT), ("mfd", m.DspMfdStatus.RT),
-            ("eicas", m.DspEicasStatus.RT))
+            ("eicas", m.DspEicasStatus.RT), ("tsd", m.DspTsdStatus.RT))
 NAMES = {PLANT_RT: "plant", m.FcsStatus.RT: "FCS", m.NavSolution.RT: "nav", m.FmsStatus.RT: "FMS",
          m.RdrWxStatus.RT: "radar", m.EngStatus.RT: "engine", m.DspRadarStatus.RT: "radar display",
-         m.DspPfdStatus.RT: "PFD", m.DspMfdStatus.RT: "MFD", m.DspEicasStatus.RT: "EICAS"}
+         m.DspPfdStatus.RT: "PFD", m.DspMfdStatus.RT: "MFD", m.DspEicasStatus.RT: "EICAS",
+         m.DspTsdStatus.RT: "TSD"}
 
 Event = namedtuple("Event", "seconds what message")
 
@@ -68,6 +70,9 @@ def default_events():
         Event(3.0, "terrain-following radar on, set clearance 1000 ft",
               m.RdrTfrModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL,
                               requested_mode=TfrMode.TERRAIN_FOLLOWING, set_clearance=1000.0)),
+        Event(6.0, "targeting radar on: TARGET_SEARCH (the plant flies twelve aircraft around us)",
+              m.RdrTgtModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL,
+                              requested_mode=TargetingMode.TARGET_SEARCH, track_filter=TrackFilter.ALL)),
         Event(10.0, "FMS thrust lever to 80 %", m.FmsControlCmd(cmd_seq=201, thrust_present=True, thrust=0.8)),
         Event(20.0, "autothrottle engaged: hold 500 kt",
               m.EngCmd(cmd_seq=201, command=EngineCommand.AUTOTHROTTLE_ENGAGE, target_airspeed=500.0)),
@@ -78,6 +83,10 @@ def default_events():
         Event(50.0, "1000 kg from the Center tank to Main Left (it takes what fits)",
               m.EngCmd(cmd_seq=204, command=EngineCommand.FUEL_TRANSFER, source=FuelTank.CENTER,
                        destination=FuelTank.MAIN_LEFT, amount=1000.0)),
+        Event(55.0, "targeting radar to TARGET_TRACK, lock on track 1",
+              m.RdrTgtModeCmd(cmd_seq=202, requested_state=TerminalState.NORMAL,
+                              requested_mode=TargetingMode.TARGET_TRACK, track_filter=TrackFilter.ALL,
+                              lock_track_id=1)),
         Event(60.0, "weather radar to MAPPING",
               m.RdrWxModeCmd(cmd_seq=202, requested_state=TerminalState.NORMAL,
                              requested_mode=WeatherMode.MAPPING, range_km=200.0, tilt=0.0)),
@@ -283,6 +292,15 @@ class Dashboard:
                 parts.append(f"TFR {tfr.mode.name} clr {tfr.min_clearance:5.0f} ft {tfr.level.name}")
             else:
                 parts.append("TFR " + ("off" if tfr.mode == TfrMode.NONE else tfr.mode.name))
+        tgt = self.latest.get(m.RdrTgtStatus)
+        if tgt is not None:
+            if tgt.state == TerminalState.NORMAL and tgt.mode != TargetingMode.NONE:
+                text = f"TGT {tgt.mode.name} {tgt.track_count} trk"
+                if tgt.lock_status != LockStatus.NONE:
+                    text += f" lock {tgt.locked_track_id} {tgt.lock_status.name}"
+            else:
+                text = "TGT " + ("off" if tgt.state == TerminalState.NORMAL else tgt.state.name)
+            parts.append(text)
         nav = self.latest.get(m.NavSolution)
         if nav is not None and nav.position_ssm == Ssm.NORMAL:
             parts.append(f"nav {nav.latitude:+.4f} {nav.longitude:+.4f} ({nav.sats_used} sats)")
@@ -301,13 +319,16 @@ def banner(args, terminals, events, log_dir, paths):
     print(f"fmofp_demo: {len(terminals)} terminals on port base {args.port_base}, binaries from "
           f"{shown(os.path.dirname(paths['bc']))}, logs in {shown(log_dir)}")
     if not args.no_displays and not args.headless:
-        print("  radar display window: weather picture left, terrain picture right; its WX and TFR buttons set the\n"
-              "    radars' modes and the spinbox is the terrain-following set clearance.\n"
+        print("  radar display window: weather picture left, terrain picture right; its WX, TFR and TGT buttons set\n"
+              "    the radars' modes, the spinboxes the terrain-following set clearance and the track to lock.\n"
               "  PFD window: attitude, airspeed, altitude and heading from the FMS flight data.\n"
-              "  MFD window: RADAR shows the radars' pictures, SYSTEMS the GCAS alerts, exceedances and engine\n"
+              "  MFD window: RADAR shows the radars' pictures (Targeting Radar: the tracks), SYSTEMS the GCAS alerts,\n"
+              "    exceedances and engine\n"
               "    rows, MISSION the position.\n"
               "  EICAS window: the engine readings, the fuel quantity and balance, the FCS alerts and the crew alert\n"
-              "    list (hydraulics, electrical and ECS read unknown until their terminals exist).")
+              "    list (hydraulics, electrical and ECS read unknown until their terminals exist).\n"
+              "  TSD window: the fused air tracks around the aircraft (bearing and range), the energy metrics and\n"
+              "    the tactical systems strip.")
     if events:
         print("  scripted flight: " + "; ".join(f"{e.seconds:.0f} s {e.what}" for e in events))
     print("  stop with Ctrl-C" + (f"; runs for {args.seconds:.0f} s" if args.seconds > 0 else ""))

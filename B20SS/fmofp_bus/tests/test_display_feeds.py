@@ -5,11 +5,13 @@ import unittest
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, PathReason, PrecipType, ShearSeverity, Ssm,
-                                 TerminalState, TfrMode, TurbulenceCategory, WeatherMode)
+from fmofp_bus.icd.enums import (ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, IffIdentity, LockStatus,
+                                 PathReason, PrecipType, ShearSeverity, Ssm, TargetClass, TargetingMode, TargetingState,
+                                 TerminalState, TfrMode, Threat, TurbulenceCategory, WeaponsState, WeatherMode)
 from fmofp_display.flight_feed import FlightDataFeed
-from fmofp_display.radar_feed import BROADCAST_SOURCES, RadarFeed, cell_velocity_nm_s, polar_to_nm, weather_items
-from fmofp_display.systems_feed import LIMITS, SystemsFeed, TerrainClearance, WeatherSeverity
+from fmofp_display.radar_feed import (BROADCAST_SOURCES, SYMBOL_CLASS, RadarFeed, cell_velocity_nm_s, polar_to_nm,
+                                      targeting_item, weather_items)
+from fmofp_display.systems_feed import LIMITS, FusedTrackView, SystemsFeed, TerrainClearance, WeatherSeverity
 
 
 class FakeTerminal:
@@ -77,6 +79,30 @@ def sample_elevation(samples=100, range_m=10000.0, mode=TfrMode.TERRAIN_FOLLOWIN
                  for i in range(samples)]
     e.commands = [b.RdrTfrElevationCommands(distance=0.0, altitude=1219.0, reason=PathReason.TERRAIN_AVOIDANCE)]
     return e
+
+
+def sample_tracks(mode=TargetingMode.TARGET_SEARCH):
+    """An RDR_TGT_TRACKS block: a fighter 10 nm east, 1000 m up, and a locked friendly helicopter 20 nm south."""
+    t = b.RdrTgtTracks(update_seq=7, mode=mode, lock_status=LockStatus.LOCKED, locked_track_id=2, lock_quality=0.8)
+    t.track = [b.RdrTgtTracksTrack(track_id=1, x=18520.0, y=0.0, z=1000.0, velocity_east=0.0, velocity_north=250.0,
+                                   classification=TargetClass.FIGHTER, identity=IffIdentity.UNKNOWN,
+                                   threat=Threat.HOSTILE, confidence=0.7, stealth_probability=0.05),
+               b.RdrTgtTracksTrack(track_id=2, x=0.0, y=-37040.0, z=-500.0, velocity_east=-100.0, velocity_north=0.0,
+                                   classification=TargetClass.HELICOPTER, identity=IffIdentity.FRIENDLY,
+                                   threat=Threat.FRIENDLY, locked=True, confidence=0.5)]
+    return t
+
+
+def sample_fused(epoch=3):
+    """An RDR_FUSED_TRACKS block: a hostile fighter 10 nm east and 10 nm north, an unknown 5 nm south."""
+    f = b.RdrFusedTracks(epoch=epoch, hostile_count=1, targeting_present=True)
+    f.track = [b.RdrFusedTracksTrack(track_id=1, x=18520.0, y=18520.0, z=0.0, velocity_north=250.0,
+                                     classification=TargetClass.FIGHTER, identity=IffIdentity.UNKNOWN,
+                                     threat=Threat.HOSTILE, from_targeting=True, confidence=0.8),
+               b.RdrFusedTracksTrack(track_id=2, x=0.0, y=-9260.0, z=0.0, classification=TargetClass.UNKNOWN,
+                                     identity=IffIdentity.UNKNOWN, threat=Threat.UNKNOWN, from_targeting=True,
+                                     confidence=0.8)]
+    return f
 
 
 class WeatherItemsTest(unittest.TestCase):
@@ -442,6 +468,120 @@ class EicasFeedTest(unittest.TestCase):
         self.assertEqual({}, self.feed.sensors.get_data())
         self.assertEqual([], self.feed.fusion.get_threat_tracks())
         self.assertEqual({"tfr_radar", "weather_radar"}, set(self.feed.radar_management.radars))
+
+
+class TargetingFeedTest(unittest.TestCase):
+    """The MFD's targeting picture: RDR_TGT_STATUS and the RDR_TGT_TRACKS block as TargetingRadarDisplay draws them."""
+
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = RadarFeed(self.terminal, FakeCoordinator(), clock=lambda: 1000.0)
+
+    def test_standby_until_the_radar_reports(self):
+        data = self.feed.targeting_data()
+        self.assertEqual(("STANDBY", [], 0, "NONE", 0),
+                         (data["mode_name"], data["targets"], data["track_count"], data["lock_status"],
+                          data["locked_track_id"]))
+        self.assertAlmostEqual(100.0 / 1.852, data["range_nm"], msg="the targeting radar's 100 km")
+        self.assertEqual("TGT: no data", self.feed.targeting_status_text())
+
+    def test_targets_in_the_displays_vocabulary(self):
+        self.terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(
+            state=TerminalState.NORMAL, mode=TargetingMode.TARGET_TRACK, track_count=2, lock_status=LockStatus.LOCKED,
+            locked_track_id=2, lock_quality=0.8)))
+        self.terminal.put_block(b.BcastRdrTgtTracks, sample_tracks(TargetingMode.TARGET_TRACK), 3)
+        data = self.feed.targeting_data()
+        self.assertEqual(("TARGET_TRACK", 2, "LOCKED", 2),
+                         (data["mode_name"], data["track_count"], data["lock_status"], data["locked_track_id"]))
+        one, two = data["targets"]
+        self.assertEqual(1, one["id"])
+        self.assertAlmostEqual(10.0, one["position"][0])
+        self.assertAlmostEqual(0.0, one["position"][1])
+        self.assertAlmostEqual(1000.0 / 1852.0, one["position"][2])
+        self.assertEqual((0.0, 250.0, 0.0), one["velocity"])
+        self.assertEqual(("FIXED_WING", None, "HOSTILE", False),
+                         (one["classification"], one["identity"], one["threat"], one["locked"]))
+        self.assertEqual(("ROTARY_WING", "FRIENDLY", True), (two["classification"], two["identity"], two["locked"]))
+        self.assertAlmostEqual(-20.0, two["position"][1])
+        self.assertIn("TGT NORMAL TARGET_TRACK  2 tracks  lock 2 LOCKED", self.feed.targeting_status_text())
+        # Out of an operating mode the picture reads STANDBY; the last block stays until it is stale.
+        self.terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(state=TerminalState.STANDBY, mode=TargetingMode.NONE)))
+        self.assertEqual("STANDBY", self.feed.targeting_data()["mode_name"])
+        self.assertEqual(2, len(self.feed.targeting_data()["targets"]))
+        self.terminal.put_block(b.BcastRdrTgtTracks, sample_tracks(), 4, age=3.0)
+        self.assertEqual([], self.feed.targeting_data()["targets"], "stale data is no data")
+
+    def test_the_symbol_vocabulary(self):
+        for name in ("FIGHTER", "BOMBER", "HIGH_ALT", "DRONE", "STEALTH"):
+            self.assertEqual("FIXED_WING", SYMBOL_CLASS[name], name)
+        self.assertEqual("ROTARY_WING", SYMBOL_CLASS["HELICOPTER"])
+        self.assertNotIn("MISSILE", SYMBOL_CLASS, "no missile shape: the display's '?'")
+        self.assertNotIn("UNKNOWN", SYMBOL_CLASS)
+        item = targeting_item(b.RdrTgtTracksTrack(track_id=9, x=-1852.0, y=1852.0, z=0.0, classification=TargetClass.MISSILE,
+                                                  identity=IffIdentity.HOSTILE, threat=Threat.HOSTILE, stealth=True))
+        self.assertEqual((9, (-1.0, 1.0, 0.0), None, "HOSTILE", True),
+                         (item["id"], item["position"], item["classification"], item["identity"], item["stealth"]))
+
+
+class TsdFeedTest(unittest.TestCase):
+    """What tsd._poll_data() reads: the FMS getters' tactical systems and energy metrics, the fusion's tracks as
+    to_tsd_dict() dictionaries, and the services not on the bus yet."""
+
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = SystemsFeed(self.terminal, clock=lambda: 1000.0)
+
+    def test_the_tactical_status_grows_the_tsd_fields(self):
+        tactical = self.feed.fms_control.get_tactical_status()
+        self.assertNotIn("tactical_systems", tactical, "the TSD keeps its own defaults until the FMS status says")
+        self.assertNotIn("energy_metrics", tactical)
+        self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
+            state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT, countermeasures=CountermeasuresState.ACTIVE,
+            targeting=TargetingState.ACTIVE, weapons=WeaponsState.ARMED, stealth_mode=False)))
+        self.terminal.put(m.BcastFmsEnergy(payload=m.FmsEnergy(
+            ssm=Ssm.NORMAL, specific_excess_power=42.5, max_sustained_turn_rate=12.3, max_instantaneous_turn_rate=20.1,
+            max_climb_rate=6000.0, energy_advantage=425.0)))
+        tactical = self.feed.fms_control.get_tactical_status()
+        self.assertEqual({"countermeasures": "ACTIVE", "targeting": "ACTIVE", "weapons": "ARMED", "stealth_mode": "OFF"},
+                         tactical["tactical_systems"])
+        self.assertEqual({"specific_excess_power": 42.5, "max_sustained_turn_rate": 12.3,
+                          "max_instantaneous_turn_rate": 20.1, "max_climb_rate_fpm": 6000.0, "energy_advantage": 425.0},
+                         tactical["energy_metrics"])
+        self.terminal.put(m.BcastFmsEnergy(payload=m.FmsEnergy(ssm=Ssm.NO_COMPUTED_DATA)))
+        self.assertNotIn("energy_metrics", self.feed.fms_control.get_tactical_status())
+
+    def test_the_position_reaches_the_navigation_group(self):
+        self.terminal.put(m.BcastFmsFlightData(payload=flight_payload()))
+        nav = self.feed.fms.get_flight_data()["navigation"]
+        self.assertEqual((1.5, -2.25), (nav["latitude"], nav["longitude"]))
+        self.terminal.put(m.BcastFmsFlightData(payload=flight_payload(position_ssm=Ssm.NO_COMPUTED_DATA)))
+        self.assertNotIn("latitude", self.feed.fms.get_flight_data()["navigation"])
+
+    def test_fused_tracks_are_the_pythons_tsd_dictionaries(self):
+        self.assertEqual([], self.feed.fusion.get_fused_tracks())
+        self.assertIsNone(self.feed.fused_summary())
+        self.terminal.put_block(b.BcastRdrFusedTracks, sample_fused(), 5)
+        tracks = self.feed.fusion.get_fused_tracks()
+        self.assertEqual(2, len(tracks))
+        self.assertIsInstance(tracks[0], FusedTrackView)
+        d = tracks[0].to_tsd_dict()
+        self.assertEqual({"bearing", "range_nm", "type", "hostile", "confidence", "sources", "track_id", "identity"},
+                         set(d), "FusedTrack.to_tsd_dict()'s keys")
+        self.assertAlmostEqual(45.0, d["bearing"])
+        self.assertAlmostEqual(math.hypot(10.0, 10.0), d["range_nm"])
+        self.assertEqual(("FIGHTER", True, ["targeting_radar"], 1, "UNKNOWN"),
+                         (d["type"], d["hostile"], d["sources"], d["track_id"], d["identity"]))
+        self.assertAlmostEqual(0.8, d["confidence"])
+        self.assertAlmostEqual(180.0, tracks[1].to_tsd_dict()["bearing"])
+        self.assertEqual([1], [t.track_id for t in self.feed.fusion.get_threat_tracks()])
+        self.assertEqual((2, 1, 3), self.feed.fused_summary())
+        self.assertIn("fused 2 (1 hostile)", self.feed.status_text())
+        self.terminal.put_block(b.BcastRdrFusedTracks, sample_fused(), 6, age=3.0)
+        self.assertEqual([], self.feed.fusion.get_fused_tracks(), "stale data is no data")
+
+    def test_the_services_not_on_the_bus_yet(self):
+        self.assertEqual({"route": []}, self.feed.mission.get_nav_data())
+        self.assertEqual([], self.feed.defensive.get_rwr_contacts())
 
 
 if __name__ == "__main__":
