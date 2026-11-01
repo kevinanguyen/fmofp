@@ -139,10 +139,14 @@ TEST_F(WeatherRadarTest, AModeChangeRestartsTheScanAndChangesTheProducts) {
     EXPECT_EQ(0U, radar->products().vil_count);
     EXPECT_GT(radar->products().windshear_count, 0U) << "the storm cell's edges are shear";
     EXPECT_EQ(1U, radar->scan_summary().elevations);
+    EXPECT_NE(icd::ShearSeverity::NONE, radar->scan_summary().max_shear);
+    EXPECT_EQ(radar->products().windshear[0].severity, radar->scan_summary().max_shear)
+        << "the summary's severity is the strongest event's (they are reported strongest first)";
     radar->command_mode(command(3, TerminalState::NORMAL, WeatherMode::TURBULENCE));
     run(60);
     EXPECT_EQ(WeatherMode::TURBULENCE, radar->products().mode);
     EXPECT_EQ(0U, radar->products().windshear_count);
+    EXPECT_EQ(icd::ShearSeverity::NONE, radar->scan_summary().max_shear) << "not assessed outside WINDSHEAR";
     radar->command_mode(command(4, TerminalState::NORMAL, WeatherMode::MAPPING));
     run(60);
     EXPECT_EQ(WeatherMode::MAPPING, radar->products().mode);

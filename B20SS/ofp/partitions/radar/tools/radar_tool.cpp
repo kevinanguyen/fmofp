@@ -132,11 +132,11 @@ void do_scan(std::uint32_t frame) {
 
 void do_summary() {
     const icd::RdrWxScan& s = g_radar.scan_summary();
-    std::printf("%u %s %.17g %u %u %u %u %u %u %.17g %d %s\n", static_cast<unsigned>(s.scan_id), icd::to_string(s.mode),
+    std::printf("%u %s %.17g %u %u %u %u %u %u %.17g %d %s %s\n", static_cast<unsigned>(s.scan_id), icd::to_string(s.mode),
                 s.max_reflectivity, static_cast<unsigned>(s.storm_cells), static_cast<unsigned>(s.precip_areas),
                 static_cast<unsigned>(s.windshear_events), static_cast<unsigned>(s.turbulence_cells),
                 static_cast<unsigned>(s.vil_points), static_cast<unsigned>(s.precip_points), s.vil_max,
-                s.microburst ? 1 : 0, icd::to_string(s.max_turbulence));
+                s.microburst ? 1 : 0, icd::to_string(s.max_turbulence), icd::to_string(s.max_shear));
 }
 
 void do_payload() {

@@ -6,8 +6,8 @@
 It starts, in this order: the plant (the simulated aircraft with its weather,
 terrain and engines, RT 27), the ported partitions (flight control RT 5,
 navigation RT 7, flight management RT 12, the radar computer RT 9, engine
-management RT 3), the three display programs (the radar display RT 15, the PFD
-RT 11 and the MFD RT 13, each in its own window), and finally the bus
+management RT 3), the four display programs (the radar display RT 15, the PFD
+RT 11, the MFD RT 13 and the EICAS RT 14, each in its own window), and finally the bus
 controller, which drives the bus in real time. Every program writes its own
 log under logs/demo/. The console shows one line a second with what is
 crossing the bus, read from the controller's monitor port: altitude, airspeed
@@ -49,10 +49,11 @@ PLANT_RT = m.PlantSensors.RT
 PARTITIONS = (("fcs", m.FcsStatus.RT), ("nav", m.NavSolution.RT), ("fms", m.FmsStatus.RT),
               ("radar", m.RdrWxStatus.RT), ("engine", m.EngStatus.RT))
 # (fmofp_display argument, RT) of each display program.
-DISPLAYS = (("radar", m.DspRadarStatus.RT), ("pfd", m.DspPfdStatus.RT), ("mfd", m.DspMfdStatus.RT))
+DISPLAYS = (("radar", m.DspRadarStatus.RT), ("pfd", m.DspPfdStatus.RT), ("mfd", m.DspMfdStatus.RT),
+            ("eicas", m.DspEicasStatus.RT))
 NAMES = {PLANT_RT: "plant", m.FcsStatus.RT: "FCS", m.NavSolution.RT: "nav", m.FmsStatus.RT: "FMS",
          m.RdrWxStatus.RT: "radar", m.EngStatus.RT: "engine", m.DspRadarStatus.RT: "radar display",
-         m.DspPfdStatus.RT: "PFD", m.DspMfdStatus.RT: "MFD"}
+         m.DspPfdStatus.RT: "PFD", m.DspMfdStatus.RT: "MFD", m.DspEicasStatus.RT: "EICAS"}
 
 Event = namedtuple("Event", "seconds what message")
 
@@ -304,7 +305,9 @@ def banner(args, terminals, events, log_dir, paths):
               "    radars' modes and the spinbox is the terrain-following set clearance.\n"
               "  PFD window: attitude, airspeed, altitude and heading from the FMS flight data.\n"
               "  MFD window: RADAR shows the radars' pictures, SYSTEMS the GCAS alerts, exceedances and engine\n"
-              "    rows, MISSION the position.")
+              "    rows, MISSION the position.\n"
+              "  EICAS window: the engine readings, the fuel quantity and balance, the FCS alerts and the crew alert\n"
+              "    list (hydraulics, electrical and ECS read unknown until their terminals exist).")
     if events:
         print("  scripted flight: " + "; ".join(f"{e.seconds:.0f} s {e.what}" for e in events))
     print("  stop with Ctrl-C" + (f"; runs for {args.seconds:.0f} s" if args.seconds > 0 else ""))

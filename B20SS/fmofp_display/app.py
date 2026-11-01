@@ -1,4 +1,4 @@
-"""The display windows and the entry point: py -m fmofp_display radar|pfd|mfd [--port-base N].
+"""The display windows and the entry point: py -m fmofp_display radar|pfd|mfd|eicas [--port-base N].
 
 The windows own a DisplayTerminal (the bus, in a thread) and a feed, and paint
 with the Python display classes from FMOFP/Interfaces/userInterface/displays,
@@ -27,13 +27,14 @@ from fmofp_bus.icd.enums import TerminalState, TfrMode, WeatherMode
 from fmofp_bus.status import Status
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
-from fmofp_display.systems_feed import SystemsFeed, TerrainClearance
+from fmofp_display.systems_feed import SystemsFeed, TerrainClearance, WeatherSeverity
 from fmofp_display.terminal_process import TerminalProcess
 
 B20SS = Path(__file__).resolve().parent.parent
 RADAR_RT = m.DspRadarStatus.RT
 PFD_RT = m.DspPfdStatus.RT
 MFD_RT = m.DspMfdStatus.RT
+EICAS_RT = m.DspEicasStatus.RT
 TICK_MS = 50
 DEFAULT_RANGE_KM = 200.0
 
@@ -250,7 +251,8 @@ def mfd_terminal(port_base):
                            blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation))
 
 
-# The getters mfd.py imports inside its page functions, and the feed attribute each answers with.
+# The getters mfd.py imports inside its page functions and eicas.py inside its poll, and the feed attribute each
+# answers with (BuiltInTestController is a class the EICAS constructs; the stand-in returns the feed's object).
 SYSTEM_GETTERS = {
     "FMOFP.Systems.engineManagement.ecu.engineControlUnit": ("get_engine_control_unit", "engine"),
     "FMOFP.Systems.flightControlSys.groundCollisionAvoidanceSys.groundCollisionAvoidanceSys": ("get_gcas", "gcas"),
@@ -259,8 +261,15 @@ SYSTEM_GETTERS = {
     "FMOFP.Systems.comms.messaging_service": ("get_comms_service", "comms"),
     "FMOFP.Systems.missionPlanning.missionService": ("get_mission_service", "mission"),
     "FMOFP.Systems.radarManagement.radarControl": ("get_radar_management_system", "radar_management"),
+    "FMOFP.Systems.flightManagementSys.flightManagementSystem": ("get_flightManagementSystem", "fms"),
+    "FMOFP.Systems.flightManagementSys.fmsControl": ("get_fms_control", "fms_control"),
+    "FMOFP.Systems.builtInTestSystems.bitControl": ("BuiltInTestController", "bit"),
+    "FMOFP.Systems.defensiveSys.defensiveService": ("get_defensive_service", "defensive"),
+    "FMOFP.Systems.sensorManagement.sensorService": ("get_sensor_service", "sensors"),
+    "FMOFP.Systems.radarManagement.radar_data_fusion": ("get_radar_data_fusion", "fusion"),
 }
 TFR_RADAR_MODULE = "FMOFP.Systems.radarManagement.terrainFollowing.tfr_radar"
+WEATHER_RADAR_MODULE = "FMOFP.Systems.radarManagement.weather.weather_radar"
 _installed = []  # what install_system_sources() changed, for uninstall_system_sources()
 
 
@@ -294,18 +303,22 @@ def _install_attribute(module_name, attribute, value):
 
 
 def install_system_sources(feed):
-    """Points the getters mfd.py imports at the feed's stand-ins, without importing the aircraft's systems.
+    """Points the getters mfd.py and eicas.py import at the feed's stand-ins, without importing the aircraft's
+    systems.
 
-    The pages do `from FMOFP.Systems... import get_x` when they paint, which
-    reads the attribute off whatever module is registered under that name. A
-    stand-in module is registered for each, so the display process never loads
-    the engine, GCAS, performance, comms, mission or radar management code,
-    which belongs to the flight computers; the terrain picture's lookup finds
-    TerrainClearance where it expects the tfr_radar class.
+    The pages (and the EICAS's poll) do `from FMOFP.Systems... import get_x`
+    when they run, which reads the attribute off whatever module is registered
+    under that name. A stand-in module is registered for each, so the display
+    process never loads the engine, GCAS, performance, comms, mission, FMS,
+    built-in test, defensive, sensor, fusion or radar management code, which
+    belongs to the flight computers; the terrain picture's lookup finds
+    TerrainClearance where it expects the tfr_radar class, and the EICAS's
+    weather lookup finds WeatherSeverity where it expects the weather_radar class.
     """
     for module_name, (getter, attribute) in SYSTEM_GETTERS.items():
         _install_attribute(module_name, getter, lambda feed=feed, attribute=attribute: getattr(feed, attribute))
     _install_attribute(TFR_RADAR_MODULE, "tfr_radar", TerrainClearance)
+    _install_attribute(WEATHER_RADAR_MODULE, "weather_radar", WeatherSeverity)
 
 
 def uninstall_system_sources():
@@ -443,22 +456,82 @@ class MfdWindow(QWidget):
         super().closeEvent(event)
 
 
+# ---- the EICAS, RT 14 ------------------------------------------------------------------
+
+def eicas_terminal(port_base):
+    return TerminalProcess(EICAS_RT, port_base, m.DspEicasStatus, m.DspEicasModeCmd,
+                           receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus,
+                                     m.BcastEngEngineStatus, m.BcastEngFuelStatus, m.BcastRdrWxScan))
+
+
+def make_eicas(systems_feed):
+    """An EICASDisplay whose sources are the bus feeds: the FMS and the FMS control, the GCAS, the performance
+    monitor, the engine control unit, the built-in test controller, the defensive, sensor and fusion services and
+    the weather radar it polls ten times a second all answer from the feed's stand-ins."""
+    bootstrap()
+    install_system_sources(systems_feed)
+    import FMOFP.Interfaces.userInterface.displays.eicas as eicas_module
+    eicas = eicas_module.EICASDisplay()
+    eicas.start()
+    return eicas
+
+
+class EicasWindow(QWidget):
+    """The engine indicating and crew alerting display, RT 14: the unchanged EICAS over the bus feeds."""
+
+    def __init__(self, terminal, systems_feed=None):
+        super().__init__()
+        bootstrap()
+        self.terminal = terminal
+        self.systems = systems_feed if systems_feed is not None else SystemsFeed(terminal)
+        self.setWindowTitle(f"FMOFP EICAS - RT {terminal.rt}")
+        self.status = QLabel("waiting for the bus")
+        self.eicas = make_eicas(self.systems)
+        from FMOFP.Interfaces.userInterface.displays.base_display import DisplayMode
+        self._display_modes = DisplayMode
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.status)
+        layout.addWidget(self.eicas, 1)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(TICK_MS)
+
+    def tick(self):
+        # The oil readings, the fuel quantity and the balance have no getter the EICAS polls: it takes them through
+        # set_engine_readings(), which marks them valid, so they age out like everything else when the bus goes quiet.
+        readings = self.systems.engine_readings()
+        if readings:
+            self.eicas.set_engine_readings(**readings)
+        requested = self.terminal.take_mode_request()
+        if requested is not None and requested.name in self._display_modes.__members__:
+            self.eicas.set_mode(self._display_modes[requested.name])
+        alerts = self.eicas._alerts
+        warnings = sum(1 for a in alerts if a["severity"] == "WARNING")
+        cautions = sum(1 for a in alerts if a["severity"] == "CAUTION")
+        self.status.setText(f"RT {self.terminal.rt} {self.terminal.state.name}  frames {self.terminal.syncs}  |  "
+                            f"{warnings} warnings {cautions} cautions  |  {self.systems.status_text()}")
+
+    def closeEvent(self, event):
+        self.eicas.stop()
+        super().closeEvent(event)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("display", choices=["radar", "pfd", "mfd"])
+    parser.add_argument("display", choices=["radar", "pfd", "mfd", "eicas"])
     parser.add_argument("--port-base", type=int, default=51000)
     parser.add_argument("--seconds", type=float, default=0.0, help="close after this long (0 = until the window is closed)")
     args = parser.parse_args(argv)
     bootstrap()
     app = QApplication(sys.argv[:1])
-    terminals = {"radar": radar_terminal, "pfd": pfd_terminal, "mfd": mfd_terminal}
+    terminals = {"radar": radar_terminal, "pfd": pfd_terminal, "mfd": mfd_terminal, "eicas": eicas_terminal}
     terminal = terminals[args.display](args.port_base)
     status = terminal.start()
     if status != Status.OK:
         print(f"display: terminal init failed: {status.name} (port {args.port_base + terminal.rt} in use?)",
               file=sys.stderr)
         return 1
-    windows = {"radar": RadarWindow, "pfd": PfdWindow, "mfd": MfdWindow}
+    windows = {"radar": RadarWindow, "pfd": PfdWindow, "mfd": MfdWindow, "eicas": EicasWindow}
     window = windows[args.display](terminal)
     window.show()
     if args.seconds > 0.0:

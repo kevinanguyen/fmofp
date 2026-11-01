@@ -9,7 +9,7 @@ from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, Path
                                  TerminalState, TfrMode, TurbulenceCategory, WeatherMode)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import BROADCAST_SOURCES, RadarFeed, cell_velocity_nm_s, polar_to_nm, weather_items
-from fmofp_display.systems_feed import LIMITS, SystemsFeed, TerrainClearance
+from fmofp_display.systems_feed import LIMITS, SystemsFeed, TerrainClearance, WeatherSeverity
 
 
 class FakeTerminal:
@@ -236,14 +236,14 @@ class FlightDataFeedTest(unittest.TestCase):
 
     def test_tactical_status_from_the_fms_status_and_the_limited_bits(self):
         tactical = self.feed.get_tactical_status()
-        self.assertEqual(("UNKNOWN", [], {"max_g_force": 9.0, "max_aoa": 25.0}),
+        self.assertEqual(("UNKNOWN", [], {"max_g_force": 9.0, "max_aoa": 25.0, "engine_power": 0.7}),
                          (tactical["mode"], tactical["envelope_warnings"], tactical["profile_limits"]))
         self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL, flight_mode=FmsFlightMode.STEALTH)))
         self.terminal.put(m.BcastFmsAttitudeStatus(payload=m.FmsAttitudeStatus(bank_limited=True, yaw_rate_limited=True)))
         tactical = self.feed.get_tactical_status()
         self.assertEqual("STEALTH", tactical["mode"])
         self.assertEqual(["BANK_ANGLE", "YAW_RATE"], tactical["envelope_warnings"])
-        self.assertEqual({"max_g_force": 5.0, "max_aoa": 20.0}, tactical["profile_limits"])
+        self.assertEqual({"max_g_force": 5.0, "max_aoa": 20.0, "engine_power": 0.6}, tactical["profile_limits"])
 
 
 def flight_payload(**overrides):
@@ -385,6 +385,63 @@ class SystemsFeedTest(unittest.TestCase):
                                                 radar.clearance_manager.master_level))
         self.feed.terrain = (None, "NONE")
         self.assertEqual((0.0, "UNKNOWN"), (radar.clearance_manager.min_clearance_m, radar.clearance_manager.master_level))
+
+
+class EicasFeedTest(unittest.TestCase):
+    """What eicas._poll_data() reads beyond the MFD's getters, from the same SystemsFeed."""
+
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = SystemsFeed(self.terminal, clock=lambda: 1000.0)
+
+    def test_the_fms_getters_are_the_flight_data_feed(self):
+        self.assertIsInstance(self.feed.fms, FlightDataFeed)
+        self.assertIs(self.feed.fms, self.feed.fms_control)
+        self.assertEqual({}, self.feed.fms.get_flight_data())
+        self.assertEqual(0.7, self.feed.fms_control.get_tactical_status()["profile_limits"]["engine_power"],
+                         "the EICAS compares the thrust unconditionally: NORMAL's power until the FMS says otherwise")
+        self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT)))
+        self.assertEqual(1.0, self.feed.fms_control.get_tactical_status()["profile_limits"]["engine_power"])
+
+    def test_engine_readings_are_what_set_engine_readings_takes(self):
+        self.assertEqual({}, self.feed.engine_readings())
+        self.terminal.put(m.BcastEngEngineStatus(payload=m.EngEngineStatus(
+            engine_1_ssm=Ssm.NORMAL, oil_pressure_1=61.237, oil_temperature_1=95.5, vibration_1=0.3124)))
+        self.assertEqual({"oil_psi": 61.24, "oil_temp_c": 95.5, "vib": 0.312}, self.feed.engine_readings())
+        self.terminal.put(m.BcastEngFuelStatus(payload=m.EngFuelStatus(main_left=9000.0, main_right=10000.0,
+                                                                       center=20000.0, total=39000.0)))
+        readings = self.feed.engine_readings()
+        self.assertEqual((39000.0, -1000.0), (readings["total_kg"], readings["balance_kg"]),
+                         "balance = Main Left - Main Right, the imbalance the EICAS alarms on")
+        self.terminal.put(m.BcastEngEngineStatus(payload=m.EngEngineStatus(engine_1_ssm=Ssm.NO_COMPUTED_DATA)))
+        self.assertEqual({"total_kg", "balance_kg"}, set(self.feed.engine_readings()),
+                         "an invalid engine gives no oil readings")
+
+    def test_weather_severity_from_the_scan_summary(self):
+        self.assertEqual(("NONE", "NONE", False), self.feed.weather_severity())
+        radar = self.feed.radar_management.radars["weather_radar"]
+        self.assertIsInstance(radar, WeatherSeverity)
+        self.assertEqual(([], False, "NONE"), (radar.windshear_proc.get_last_result(), radar.windshear_proc.has_microburst(),
+                                               radar.turbulence_proc.max_category()))
+        self.terminal.put(m.BcastRdrWxScan(payload=m.RdrWxScan(scan_id=4, mode=WeatherMode.WINDSHEAR,
+                                                             max_shear=ShearSeverity.MODERATE, microburst=True,
+                                                             max_turbulence=TurbulenceCategory.LIGHT)))
+        self.assertEqual(("MODERATE", "LIGHT", True), self.feed.weather_severity())
+        events = radar.windshear_proc.get_last_result()
+        self.assertEqual(["MODERATE"], [e.severity for e in events])
+        self.assertEqual("MODERATE", max(events, key=lambda e: e.severity_level()).severity, "what eicas.py does with the list")
+        self.assertTrue(radar.windshear_proc.has_microburst())
+        self.assertEqual("LIGHT", radar.turbulence_proc.max_category())
+        self.terminal.put(m.BcastRdrWxScan(payload=m.RdrWxScan(scan_id=5, mode=WeatherMode.WINDSHEAR,
+                                                             max_shear=ShearSeverity.SEVERE)), age=3.0)
+        self.assertEqual(("NONE", "NONE", False), self.feed.weather_severity(), "stale data is no data")
+
+    def test_the_sources_not_on_the_bus_yet(self):
+        self.assertEqual([], self.feed.bit.self_tests, "no BITS section until the avionics terminal")
+        self.assertEqual({}, self.feed.defensive.get_data())
+        self.assertEqual({}, self.feed.sensors.get_data())
+        self.assertEqual([], self.feed.fusion.get_threat_tracks())
+        self.assertEqual({"tfr_radar", "weather_radar"}, set(self.feed.radar_management.radars))
 
 
 if __name__ == "__main__":

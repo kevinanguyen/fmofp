@@ -19,9 +19,9 @@ except ImportError:  # pragma: no cover - depends on the machine
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, Ssm, TerminalState, TfrMode,
+from fmofp_bus.icd.enums import (ClearanceLevel, FmsFlightMode, GcasStatus, ShearSeverity, Ssm, TerminalState, TfrMode,
                                  WeatherMode)
-from fmofp_bus.tests.test_display_feeds import FakeTerminal, sample_elevation, sample_products
+from fmofp_bus.tests.test_display_feeds import FakeTerminal, flight_payload, sample_elevation, sample_products
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
@@ -255,6 +255,64 @@ class DisplayWindowsTest(unittest.TestCase):
         from FMOFP.Systems.flightControlSys.groundCollisionAvoidanceSys import groundCollisionAvoidanceSys
         self.assertFalse(getattr(groundCollisionAvoidanceSys, "_fmofp_stand_in", False),
                          "after the window the real module is back for everyone else")
+
+    def test_the_eicas_window_draws_the_engine_the_fuel_and_the_alerts_from_the_bus_data(self):
+        terminal = StubTerminal()
+        terminal.rt = 14
+        systems = SystemsFeed(terminal)
+        window = self.app_module.EicasWindow(terminal, systems)
+        try:
+            window.show()
+            self.app.processEvents()
+            eicas = window.eicas
+            eicas._poll_data()
+            window.tick()
+            self.app.processEvents()
+            empty = lit_pixels(eicas.grab().toImage())
+            self.assertGreater(empty, 0)
+            self.assertFalse(eicas.has_valid("total_kg"), "nothing from the bus yet")
+            self.assertIn("FUEL QTY UNKNOWN", [a["text"] for a in eicas._alerts])
+
+            terminal.put(m.BcastFmsFlightData(payload=flight_payload(airspeed=420.0, altitude=12345.0, g_force=1.3)))
+            terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT)))
+            terminal.put(m.BcastEngEngineStatus(payload=m.EngEngineStatus(
+                engine_1_ssm=Ssm.NORMAL, engine_2_ssm=Ssm.NORMAL, thrust_1=80.0, n1_1=82.0, n2_1=82.0, egt_1=710.0,
+                fuel_flow_1=3360.0, oil_pressure_1=61.2, oil_temperature_1=95.5, vibration_1=0.31)))
+            terminal.put(m.BcastEngFuelStatus(payload=m.EngFuelStatus(main_left=9000.0, main_right=10000.0,
+                                                                     center=20000.0, total=39000.0, burn_rate=6720.0)))
+            terminal.put(m.BcastFcsGcasAlerts(payload=m.FcsGcasAlerts(
+                status=GcasStatus.WARNING, sink_rate=True, vertical_speed=-2500.0, altitude=1800.0,
+                vertical_speed_ssm=Ssm.NORMAL, altitude_ssm=Ssm.NORMAL)))
+            terminal.put(m.BcastRdrWxScan(payload=m.RdrWxScan(scan_id=4, mode=WeatherMode.WINDSHEAR,
+                                                            max_shear=ShearSeverity.SEVERE)))
+            window.tick()        # the oil and fuel readings go in through set_engine_readings()
+            eicas._poll_data()   # the 10 Hz poll reads the getters
+            window.tick()
+            self.app.processEvents()
+            full = lit_pixels(eicas.grab().toImage())
+            self.assertFalse(getattr(eicas, "_paint_error", False))
+            self.assertNotEqual(empty, full)
+            self.assertEqual((82.0, 710.0, 61.2), (eicas._engine["n1_pct"], eicas._engine["egt_c"], eicas._engine["oil_psi"]))
+            self.assertEqual(100.0, eicas._engine["thrust_pct"], "COMBAT's engine power, as the Python showed")
+            for field in ("oil_psi", "oil_temp_c", "vib", "total_kg", "balance_kg", "sys_a_psi"):
+                self.assertTrue(eicas.has_valid(field), field)
+            self.assertFalse(eicas.has_valid("sys_c_psi"), "no hydraulics terminal yet")
+            self.assertEqual((39000.0, -1000.0), (eicas._fuel["total_kg"], eicas._fuel["balance_kg"]))
+            texts = [a["text"] for a in eicas._alerts]
+            self.assertIn("FUEL  IMBALANCE", texts)
+            self.assertIn("FCS  SINK RATE  -2500 fpm", texts)
+            self.assertIn("WX   SEVERE WINDSHEAR", texts)
+            self.assertIn("ENG  MAX CONTINUOUS THRUST", texts)
+            self.assertIn("HYD C  PRESSURE UNKNOWN", texts, "honest dashes for what has no terminal")
+            self.assertNotIn("FUEL QTY UNKNOWN", texts)
+            self.assertNotIn("ENG  OIL PRESS UNKNOWN", texts)
+            self.assertIn("ENG  EGT CAUTION", texts, "graded on the thrust model (350 + 4.5 x 100 C at COMBAT power), which eicas.py computes before its ECU override")
+            self.assertIn("2 warnings 6 cautions", window.status.text())
+            self.assertIn("ENG N1 82.0%", window.status.text())
+        finally:
+            window.timer.stop()
+            window.close()
+            self.app_module.uninstall_system_sources()
 
 
 if __name__ == "__main__":

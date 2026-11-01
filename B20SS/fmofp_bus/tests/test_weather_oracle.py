@@ -309,8 +309,9 @@ class WeatherOracleTest(unittest.TestCase):
 
     def test_wind_shear_events_match(self):
         from FMOFP.Systems.radarManagement.weather.weather_processor import WindShearProcessor
-        tool = self.scan("WINDSHEAR", extra=("windshear",))
+        tool = self.scan("WINDSHEAR", extra=("windshear", "summary"))
         rows = tool.block()
+        summary = tool.line()
         events = WindShearProcessor().process(self.volume("WINDSHEAR"), VCP["WINDSHEAR"], scan_range_km=200.0)
         self.assertEqual(len(events), len(rows))
         self.assertGreater(len(rows), 0)
@@ -325,6 +326,8 @@ class WeatherOracleTest(unittest.TestCase):
             self.assertEqual(e.is_microburst, row[4] == "1")
             self.assertEqual(severities[e.severity], severities[row[5]])
             self.assertAlmostEqual(e.altitude_ft, float(row[6]), delta=1e-9)
+        self.assertEqual(max(severities[row[5]] for row in rows), severities.get(summary[12], 0),
+                         "RDR_WX_SCAN.max_shear is the strongest event's severity")
 
     def test_turbulence_cells_match(self):
         """The EDR proxy falls with the cube root of the range in metres, so only

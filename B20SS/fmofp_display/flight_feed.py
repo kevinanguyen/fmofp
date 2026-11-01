@@ -14,16 +14,20 @@ from fmofp_bus.icd import messages as m
 from fmofp_bus.icd.enums import FmsFlightMode, Ssm
 from fmofp_display.terminal import STALE_AFTER_S
 
-# fmsControl's flight profiles: max g and max angle of attack per mode, as the
-# fms_flight_mode enum documents them. The PFD scales its tactical indicators by these.
+# fmsControl's flight profiles: max g, max angle of attack and engine power per mode, as
+# the fms_flight_mode enum documents them. The PFD scales its tactical indicators by the
+# first two; the EICAS takes its THRUST row from the engine power (eicas._poll_data) and
+# compares that thrust unconditionally in _compute_alerts (None would end its poll), so the
+# profile is always given: NORMAL's until the FMS has said which mode it is in, which is
+# fmsControl's own state from construction.
 PROFILE_LIMITS = {
-    FmsFlightMode.NORMAL: (2.5, 15.0),
-    FmsFlightMode.COMBAT: (9.0, 25.0),
-    FmsFlightMode.STEALTH: (5.0, 20.0),
-    FmsFlightMode.TRAINING: (7.0, 22.0),
-    FmsFlightMode.EMERGENCY: (9.5, 30.0),
+    FmsFlightMode.NORMAL: (2.5, 15.0, 0.7),
+    FmsFlightMode.COMBAT: (9.0, 25.0, 1.0),
+    FmsFlightMode.STEALTH: (5.0, 20.0, 0.6),
+    FmsFlightMode.TRAINING: (7.0, 22.0, 0.9),
+    FmsFlightMode.EMERGENCY: (9.5, 30.0, 1.0),
 }
-DEFAULT_LIMITS = (9.0, 25.0)  # pfd.py's own defaults when the FMS said nothing
+DEFAULT_LIMITS = (9.0, 25.0, 0.7)  # pfd.py's own g and AoA defaults when the FMS said nothing; NORMAL's power
 
 # FMS_ATTITUDE_STATUS limited bits -> the warning names fmsControl.update_attitude raised.
 ENVELOPE_WARNINGS = (("bank_limited", "BANK_ANGLE"), ("pitch_limited", "PITCH_ANGLE"), ("roll_rate_limited", "ROLL_RATE"),
@@ -35,7 +39,7 @@ def _valid(ssm):
 
 
 class FlightDataFeed:
-    """Stands in for the FMS and the FMS control the PFD polls."""
+    """Stands in for the FMS and the FMS control the PFD and the EICAS poll."""
 
     def __init__(self, terminal, stale_after_s=STALE_AFTER_S):
         self.terminal = terminal
@@ -88,12 +92,12 @@ class FlightDataFeed:
         status = self.terminal.fresh(m.BcastFmsStatus, self.stale_after_s)
         attitude = self.terminal.fresh(m.BcastFmsAttitudeStatus, self.stale_after_s)
         mode = status.payload.flight_mode if status is not None else None
-        max_g, max_aoa = PROFILE_LIMITS.get(mode, DEFAULT_LIMITS)
+        max_g, max_aoa, engine_power = PROFILE_LIMITS.get(mode, DEFAULT_LIMITS)
         warnings = []
         if attitude is not None:
             warnings = [name for field, name in ENVELOPE_WARNINGS if getattr(attitude.payload, field)]
         return {"mode": mode.name if mode is not None else "UNKNOWN", "envelope_warnings": warnings,
-                "profile_limits": {"max_g_force": max_g, "max_aoa": max_aoa}}
+                "profile_limits": {"max_g_force": max_g, "max_aoa": max_aoa, "engine_power": engine_power}}
 
     def status_text(self):
         message, age = self.terminal.latest(m.BcastFmsFlightData)

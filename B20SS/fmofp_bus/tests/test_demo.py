@@ -43,7 +43,7 @@ class ScriptedFlightTest(unittest.TestCase):
         self.assertEqual({"bc", "fcs", "nav", "fms", "radar", "engine"}, set(paths))
         self.assertEqual(len(paths), len(missing_binaries(paths)), "a build directory that does not exist")
         self.assertEqual([5, 7, 12, 9, 3], [rt for _, rt in PARTITIONS])
-        self.assertEqual([15, 11, 13], [rt for _, rt in DISPLAYS])
+        self.assertEqual([15, 11, 13, 14], [rt for _, rt in DISPLAYS])
         self.assertEqual(27, PLANT_RT)
 
 
@@ -96,7 +96,7 @@ class DemoRunTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, output)
         self.assertIn(">> t=2 s: weather radar on", output)
         self.assertIn(">> t=3 s: terrain-following radar on", output)
-        self.assertIn("9/9 answering", output)
+        self.assertIn("10/10 answering", output)
         self.assertIn("GCAS ", output)
         self.assertIn("N1 ", output)
         self.assertIn("WX SURVEILLANCE", output)

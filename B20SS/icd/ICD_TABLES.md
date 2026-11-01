@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.8 (DRAFT, 2026-10-25). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.9 (DRAFT, 2026-11-01). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -20,7 +20,7 @@
 | 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then) |
 | 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py | Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object |
 | 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py | On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10), its mission page the FMS flight data (31/25) and, from v1.8, its systems and engine pages the engine computer's engine and fuel status (31/18, 31/19); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing |
-| 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays |  |
+| 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays/eicas.py | On the bus from v1.9 (fmofp_display eicas): it hears the engine computer's engine and fuel status (31/18-19), the flight computer's GCAS alerts and exceedances (31/5, 31/10), the FMS's flight data and status (31/25-26) and the weather radar's scan summary (31/2) by broadcast, and commands nothing. Its hydraulic, electrical and environmental rows read unknown until those terminals exist |
 | 15 | `radar_display` | Radar display - the radars' pictures and their control panel | new | Interfaces/userInterface/displays/radar | On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24) |
 | 16 | `tsd` | Tactical situation display | new | Interfaces/userInterface/displays/tsd.py |  |
 | 17 | `sms` | Stores management display | new | Interfaces/userInterface/displays |  |
@@ -167,21 +167,21 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | [`FCS_TERRAIN`](#fcs_terrain) | 8 | 10 |
 | [`PLANT_TERRAIN`](#plant_terrain) | `RDR_TFR_TERRAIN` | block: 4 + 32 per frame | 50 |
 | [`RDR_WX_STATUS`](#rdr_wx_status) | [`BCAST_RDR_WX_STATUS`](#bcast_rdr_wx_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
-| [`RDR_WX_SCAN`](#rdr_wx_scan) | [`BCAST_RDR_WX_SCAN`](#bcast_rdr_wx_scan) (broadcast, heard by RT 13, 15) | 10 | 5 |
+| [`RDR_WX_SCAN`](#rdr_wx_scan) | [`BCAST_RDR_WX_SCAN`](#bcast_rdr_wx_scan) (broadcast, heard by RT 13, 14, 15) | 10 | 5 |
 | [`RDR_TFR_STATUS`](#rdr_tfr_status) | [`BCAST_RDR_TFR_STATUS`](#bcast_rdr_tfr_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
 | [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | [`BCAST_RDR_TFR_GUIDANCE`](#bcast_rdr_tfr_guidance) (broadcast, heard by RT 13, 15) | 8 | 10 |
 | [`RDR_WX_PRODUCTS`](#rdr_wx_products) | `BCAST_RDR_WX_PRODUCTS` (broadcast, heard by RT 13, 15) | block: 4 + 32 per frame | 25 |
 | [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) | `BCAST_RDR_TFR_ELEVATION` (broadcast, heard by RT 13, 15) | block: 4 + 32 per frame | 25 |
-| [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) (broadcast, heard by RT 13) | 4 | 5 |
-| [`FCS_PERF_STATUS`](#fcs_perf_status) | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) (broadcast, heard by RT 13) | 4 | 1 |
-| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 3, 11, 13) | 21 | 10 |
-| [`FMS_STATUS`](#fms_status) | [`BCAST_FMS_STATUS`](#bcast_fms_status) (broadcast, heard by RT 11) | 3 | 5 |
+| [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) (broadcast, heard by RT 13, 14) | 4 | 5 |
+| [`FCS_PERF_STATUS`](#fcs_perf_status) | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) (broadcast, heard by RT 13, 14) | 4 | 1 |
+| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 3, 11, 13, 14) | 21 | 10 |
+| [`FMS_STATUS`](#fms_status) | [`BCAST_FMS_STATUS`](#bcast_fms_status) (broadcast, heard by RT 11, 14) | 3 | 5 |
 | [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) (broadcast, heard by RT 11) | 8 | 10 |
 | [`FMS_CONTROL_STATUS`](#fms_control_status) | [`ENG_FMS_CONTROL`](#eng_fms_control) | 3 | 5 |
 | [`PLANT_ENGINE`](#plant_engine) | [`ENG_ENGINE_IN`](#eng_engine_in) | 19 | 10 |
 | [`ENG_THRUST_CMD`](#eng_thrust_cmd) | [`PLANT_THRUST_CMD`](#plant_thrust_cmd) | 3 | 10 |
-| [`ENG_ENGINE_STATUS`](#eng_engine_status) | [`BCAST_ENG_ENGINE_STATUS`](#bcast_eng_engine_status) (broadcast, heard by RT 5, 13) | 20 | 5 |
-| [`ENG_FUEL_STATUS`](#eng_fuel_status) | [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) (broadcast, heard by RT 13) | 7 | 1 |
+| [`ENG_ENGINE_STATUS`](#eng_engine_status) | [`BCAST_ENG_ENGINE_STATUS`](#bcast_eng_engine_status) (broadcast, heard by RT 5, 13, 14) | 20 | 5 |
+| [`ENG_FUEL_STATUS`](#eng_fuel_status) | [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) (broadcast, heard by RT 13, 14) | 7 | 1 |
 
 ## Mode codes
 
@@ -609,7 +609,8 @@ What the last completed scan found, for the display's header and for anyone who 
 | 0 | 3 | `scanning` | bool |  | 1 = a scan is in progress |
 | 0 | 2-0 | `max_turbulence` | enum | enum `turbulence_category` | Strongest turbulence category found (TURBULENCE mode) |
 | 1 | 15 | `microburst` | bool |  | 1 = a wind shear event with microburst divergence was found (WINDSHEAR mode) |
-| 1 | 14-12 | `spare_1` | spare |  |  |
+| 1 | 14-13 | `max_shear` | enum | enum `shear_severity` | Strongest wind shear event severity found (WINDSHEAR mode), for a consumer that grades the shear without reassembling the products block: the EICAS's wind shear alert (v1.9) |
+| 1 | 12 | `spare_1` | spare |  |  |
 | 1 | 11-8 | `elevations` | uint | raw counts | Elevation angles in the scan's volume coverage pattern: 4 for SURVEILLANCE, 7 for MAPPING and PRECIPITATION, 1 for TURBULENCE and WINDSHEAR |
 | 1 | 7-0 | `products_version` | uint | raw counts | RDR_WX_PRODUCTS block version carrying this scan's products |
 | 2 | 15-0 | `range_km` | uint | LSB 1 km, range 10 to 200 | Instrumented range in effect; range bins beyond it are not scanned |
@@ -1464,7 +1465,7 @@ Same layout as [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance).
 
 **GCAS alerts, broadcast to the displays** — RT 31 · SA 5 · receive (bus to terminal) · 4 words · 5 Hz
 
-The MFD's systems page rows, and any display that shows the alerts later (EICAS, HUD) by adding itself to the listeners.
+The MFD's systems page rows and the EICAS's FCS rows and alert list (v1.9); any display that shows the alerts later (HUD) adds itself to the listeners.
 
 Same layout as [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts).
 
@@ -1498,7 +1499,7 @@ Same layout as [`FMS_ATTITUDE_STATUS`](#fms_attitude_status).
 
 **Engine status, broadcast** — RT 31 · SA 18 · receive (bus to terminal) · 20 words · 5 Hz
 
-The engine band of the broadcast map, 18-19 (v1.8). The MFD's systems and engine pages draw it; the flight control computer takes the total fuel flow for FCS_PERF_STATUS's fuel efficiency; the EICAS will listen too.
+The engine band of the broadcast map, 18-19 (v1.8). The MFD's systems and engine pages draw it; the flight control computer takes the total fuel flow for FCS_PERF_STATUS's fuel efficiency; the EICAS's engine panel draws it too (v1.9).
 
 Same layout as [`ENG_ENGINE_STATUS`](#eng_engine_status).
 

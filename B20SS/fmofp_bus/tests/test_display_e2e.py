@@ -1,8 +1,8 @@
 """The displays on the bus, end to end, headless.
 
 The plant, the real fmofp_fcs, fmofp_nav, fmofp_fms, fmofp_radar and
-fmofp_engine, and three DisplayTerminals in this process (the radar display,
-RT 15, the PFD, RT 11, and the MFD, RT 13) under the real fmofp_bc. The radar display commands both radars from its own
+fmofp_engine, and four DisplayTerminals in this process (the radar display,
+RT 15, the PFD, RT 11, the MFD, RT 13, and the EICAS, RT 14) under the real fmofp_bc. The radar display commands both radars from its own
 transmit subaddresses, exactly as the window's buttons do; the bus controller
 broadcasts the radars' status, scan summary, guidance and product blocks, the
 flight computer's alerts and exceedances, the FMS's flight data and the engine
@@ -27,7 +27,7 @@ from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 from fmofp_bus.tests._support import binary_env, needs
 from fmofp_bus.tests.test_display_feeds import FakeCoordinator
-from fmofp_display.app import mfd_terminal, pfd_terminal, radar_terminal, tfr_command, weather_command
+from fmofp_display.app import eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, tfr_command, weather_command
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
@@ -59,6 +59,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
     radar_display = None
     pfd = None
     mfd = None
+    eicas = None
 
     @classmethod
     def setUpClass(cls):
@@ -77,6 +78,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
             assert cls.pfd.start() == Status.OK, "PFD port in use?"
             cls.mfd = mfd_terminal(PORT_BASE)
             assert cls.mfd.start() == Status.OK, "MFD port in use?"
+            cls.eicas = eicas_terminal(PORT_BASE)
+            assert cls.eicas.start() == Status.OK, "EICAS port in use?"
             for binary in BINARIES:
                 cls.processes.append(subprocess.Popen(
                     [os.environ[binary], "--port-base", str(PORT_BASE), "--quiet"], stdout=subprocess.PIPE,
@@ -93,7 +96,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
             p.wait(timeout=10)
             p.stdout.close()
         cls.processes = []
-        for terminal in (cls.radar_display, cls.pfd, cls.mfd):
+        for terminal in (cls.radar_display, cls.pfd, cls.mfd, cls.eicas):
             if terminal is not None:
                 terminal.stop()
         if cls.plant_thread is not None:
@@ -106,7 +109,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
 
     def run_bus(self):
         terminals = ["27", str(m.FcsStatus.RT), str(m.NavSolution.RT), str(m.FmsStatus.RT), str(m.RdrWxStatus.RT),
-                     str(m.EngStatus.RT), str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT)]
+                     str(m.EngStatus.RT), str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT),
+                     str(m.DspEicasStatus.RT)]
         args = [os.environ["FMOFP_BC"]]
         for rt in terminals:
             args += ["--rt", rt]
@@ -203,7 +207,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.assertEqual("NORMAL", data["status"]["mode"])
         tactical = flight.get_tactical_status()
         self.assertEqual("NORMAL", tactical["mode"])
-        self.assertEqual({"max_g_force": 2.5, "max_aoa": 15.0}, tactical["profile_limits"])
+        self.assertEqual({"max_g_force": 2.5, "max_aoa": 15.0, "engine_power": 0.7}, tactical["profile_limits"])
         self.assertIsNotNone(self.pfd.fresh(m.BcastFmsAttitudeStatus, stale_after_s=60.0))
         self.assertEqual(FmsFlightMode.NORMAL, self.pfd.fresh(m.BcastFmsStatus, stale_after_s=60.0).payload.flight_mode)
 
@@ -220,7 +224,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
         self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 19, 25, 26, 27}, broadcast)
-        for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT):
+        for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}
             self.assertEqual(set(), unicast, f"RT {rt}")
@@ -266,6 +270,22 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.assertGreaterEqual(self.mfd.blocks_completed, 4)
         mfd_status = self.transmitted(framed, m.DspMfdStatus, 100, FRAMES)
         self.assertEqual(TerminalState.NORMAL, mfd_status[-1][1].state)
+
+        # The EICAS: the engine computer's readings and tanks, the flight computer's alerts, the FMS's power
+        # setting and the weather scan's severities, all by broadcast; it ignores the subaddresses it did not accept.
+        eicas = SystemsFeed(self.eicas, stale_after_s=60.0)
+        readings = eicas.engine_readings()
+        self.assertEqual({"oil_psi", "oil_temp_c", "vib", "total_kg", "balance_kg"}, set(readings))
+        self.assertAlmostEqual(fuel["total"], readings["total_kg"], delta=20.0)
+        self.assertAlmostEqual(0.0, readings["balance_kg"], delta=20.0, msg="both mains burn alike")
+        self.assertEqual(0.7, eicas.fms_control.get_tactical_status()["profile_limits"]["engine_power"])
+        self.assertEqual(("NONE", "NONE", False), eicas.weather_severity(), "a surveillance scan finds no shear")
+        self.assertIsNotNone(self.eicas.fresh(m.BcastRdrWxScan, stale_after_s=60.0))
+        self.assertIsNone(self.eicas.fresh(m.BcastRdrWxStatus, stale_after_s=60.0), "not among its receives: ignored")
+        self.assertEqual(0, self.eicas.blocks_completed)
+        self.assertEqual([a["code"] for a in alerts], [a["code"] for a in eicas.get_alerts()])
+        eicas_status = self.transmitted(framed, m.DspEicasStatus, 100, FRAMES)
+        self.assertEqual(TerminalState.NORMAL, eicas_status[-1][1].state)
         self.assertIn("overruns=0", output)
         self.assertGreaterEqual(self.radar_display.syncs, FRAMES - 2)
 

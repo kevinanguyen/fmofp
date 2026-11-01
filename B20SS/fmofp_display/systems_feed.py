@@ -15,6 +15,17 @@ radar feed hands it. A page whose producer is not on the bus yet
 (communications, mission) gets what the Python gave it when that service was
 not running: an empty dictionary. Nothing here touches Qt or imports FMOFP: the
 window points the getters at the feed's stand-ins.
+
+eicas.py polls more of them (v1.9): the FMS and the FMS control
+(get_flight_data(), get_tactical_status()['profile_limits']['engine_power']),
+the built-in test controller, the defensive, sensor and radar data fusion
+services, and the weather radar's wind shear and turbulence processors through
+the radar management system. The same feed answers those: the FMS getters are
+the PFD's FlightDataFeed, the weather severities come from BCAST_RDR_WX_SCAN,
+and the services whose terminals do not exist yet answer as they did when they
+were not running. The oil readings, the fuel quantity and the left-right
+balance have no getter: the EICAS takes them through set_engine_readings(),
+and engine_readings() is what the window hands it each tick.
 """
 
 import time
@@ -22,6 +33,7 @@ from types import SimpleNamespace
 
 from fmofp_bus.icd import messages as m
 from fmofp_bus.icd.enums import Ssm
+from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.terminal import STALE_AFTER_S
 
 # performaneMonitoring.PerformanceMonitor.LIMITS, in the order of FCS_PERF_STATUS's exceedance bits:
@@ -71,8 +83,55 @@ class TerrainClearance:
         return "UNKNOWN" if clearance_m is None else level
 
 
+class WeatherSeverity:
+    """Stands in for the weather radar object eicas._poll_data() looks for among the radar management system's radars.
+
+    It reads radar.windshear_proc.get_last_result() (a list of events with
+    .severity and .severity_level()) and .has_microburst(), and
+    radar.turbulence_proc.max_category(). The scan summary the radar broadcasts
+    (BCAST_RDR_WX_SCAN) carries the strongest severity, the strongest category
+    and the microburst flag of the last scan, so one event of the strongest
+    severity stands for the result list. The window installs this class as the
+    weather_radar class and an instance of it as one of the radars, so the
+    isinstance lookup finds it.
+    """
+
+    def __init__(self, feed):
+        self.feed = feed
+
+    @property
+    def windshear_proc(self):
+        return self
+
+    @property
+    def turbulence_proc(self):
+        return self
+
+    def get_last_result(self):
+        shear, _, _ = self.feed.weather_severity()
+        return [] if shear == "NONE" else [ShearEvent(shear)]
+
+    def has_microburst(self):
+        return self.feed.weather_severity()[2]
+
+    def max_category(self):
+        return self.feed.weather_severity()[1]
+
+
+class ShearEvent:
+    """As much of weather_processor's wind shear event as the EICAS reads."""
+
+    LEVELS = {"NONE": 0, "LOW": 1, "MODERATE": 2, "SEVERE": 3}
+
+    def __init__(self, severity):
+        self.severity = severity
+
+    def severity_level(self):
+        return self.LEVELS.get(self.severity, 0)
+
+
 class SystemsFeed:
-    """Stands in for the systems the MFD's pages poll."""
+    """Stands in for the systems the MFD's pages and the EICAS poll."""
 
     def __init__(self, terminal, stale_after_s=STALE_AFTER_S, clock=time.time):
         self.terminal = terminal
@@ -86,7 +145,16 @@ class SystemsFeed:
         self.engine = SimpleNamespace(get_data=self.engine_data)
         self.comms = SimpleNamespace(get_data=self.comms_data)
         self.mission = SimpleNamespace(get_data=self.mission_data, get_oob=self.order_of_battle)
-        self.radar_management = SimpleNamespace(radars={"tfr_radar": TerrainClearance(self)})
+        self.radar_management = SimpleNamespace(radars={"tfr_radar": TerrainClearance(self),
+                                                        "weather_radar": WeatherSeverity(self)})
+        # What eicas.py polls beyond the MFD's getters.
+        self.flight = FlightDataFeed(terminal, stale_after_s)
+        self.fms = self.flight            # get_flightManagementSystem(): get_flight_data()
+        self.fms_control = self.flight    # get_fms_control(): get_tactical_status()
+        self.bit = SimpleNamespace(self_tests=[])  # BuiltInTestController(): no results until the avionics terminal
+        self.defensive = SimpleNamespace(get_data=self.defensive_data)
+        self.sensors = SimpleNamespace(get_data=self.sensor_data)
+        self.fusion = SimpleNamespace(get_threat_tracks=self.threat_tracks)
 
     def get_alerts(self):
         """GCAS.get_alerts(): the Python's alert dictionaries, rebuilt from the bits and values of MFD_GCAS_ALERTS."""
@@ -166,6 +234,45 @@ class SystemsFeed:
     def comms_data(self):
         """CommsService.get_data(): nothing until the communications terminal (RT 2) is on the bus."""
         return {}
+
+    def defensive_data(self):
+        """DefensiveService.get_data(): nothing until the defensive systems terminal (RT 22) is on the bus; the
+        EICAS then shows its own defaults (full countermeasures, ECM standby, no contacts), as it did with the service
+        not running."""
+        return {}
+
+    def sensor_data(self):
+        """SensorService.get_data(): nothing until the sensor management terminal (RT 10) is on the bus; the EICAS
+        reads the health as UNKNOWN and no fused tracks."""
+        return {}
+
+    def threat_tracks(self):
+        """RadarDataFusion.get_threat_tracks(): no hostile tracks until the targeting and AEWC radars and their fusion
+        are ported."""
+        return []
+
+    def weather_severity(self):
+        """(wind shear severity, turbulence category, microburst) of the last weather scan, as the names eicas.py
+        grades, from BCAST_RDR_WX_SCAN; NONE, NONE, False while the radar is silent."""
+        scan = self.terminal.fresh(m.BcastRdrWxScan, self.stale_after_s)
+        if scan is None:
+            return "NONE", "NONE", False
+        p = scan.payload
+        return p.max_shear.name, p.max_turbulence.name, bool(p.microburst)
+
+    def engine_readings(self):
+        """What eicas.set_engine_readings() takes: the oil pressure, oil temperature and vibration of engine 1 (the
+        EICAS's ECU override copies them but never marks them valid: eicas.py left them UNKNOWN for want of a feed)
+        and the fuel quantity and left-right balance of the tanks, which have no getter at all. Only what the bus
+        vouches for is present; set_engine_readings marks each key valid, so they age out like everything else."""
+        readings = {}
+        engine = self.engine_data()
+        if engine:
+            readings.update(oil_psi=engine["oil_psi"], oil_temp_c=engine["oil_temp_c"], vib=engine["vibration"])
+        fuel = self.fuel_data()
+        if fuel:
+            readings.update(total_kg=fuel["total"], balance_kg=fuel["Main Left"] - fuel["Main Right"])
+        return readings
 
     def mission_data(self):
         """MissionService.get_data(): the position from the FMS flight data; the route and targets wait for RT 6."""

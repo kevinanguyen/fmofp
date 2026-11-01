@@ -16,7 +16,7 @@ using namespace fmofp::icd;  // NOLINT: test
 
 TEST(IcdVersion, MatchesTheDocument) {
     EXPECT_EQ(1, kIcdMajor);
-    EXPECT_EQ(8, kIcdMinor);
+    EXPECT_EQ(9, kIcdMinor);
 }
 
 TEST(FcsAttitude, ConstantsMatchTheIcd) {

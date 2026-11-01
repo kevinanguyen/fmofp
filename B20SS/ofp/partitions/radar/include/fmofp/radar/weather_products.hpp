@@ -235,6 +235,10 @@ public:
     // Events in order of severity, highest first (ties in detection order).
     [[nodiscard]] const ShearEvent& event_at(std::size_t i) const noexcept { return events_[order_[i]]; }
     [[nodiscard]] bool has_microburst() const noexcept { return microburst_; }
+    // The strongest event's severity (the events are ordered by severity), NONE when there is none.
+    [[nodiscard]] icd::ShearSeverity max_severity() const noexcept {
+        return count_ > 0 ? events_[order_[0]].severity : icd::ShearSeverity::NONE;
+    }
 
     static constexpr double kShearThresholdKts = 15.0;
     static constexpr double kMicroburstThreshold = 0.08;

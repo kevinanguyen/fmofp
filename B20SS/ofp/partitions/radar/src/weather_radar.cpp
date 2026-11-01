@@ -274,6 +274,7 @@ void WeatherRadar::finish_scan(std::uint32_t frame) noexcept {
     scan_.mode = scan_mode_;
     scan_.max_turbulence = wanted_.turbulence ? turbulence_.max_category() : icd::TurbulenceCategory::NONE;
     scan_.microburst = wanted_.windshear && windshear_.has_microburst();
+    scan_.max_shear = wanted_.windshear ? windshear_.max_severity() : icd::ShearSeverity::NONE;
     scan_.elevations = static_cast<std::uint8_t>(vcp_.count);
     scan_.range_km = range_km_;
     scan_.tilt = tilt_deg_;

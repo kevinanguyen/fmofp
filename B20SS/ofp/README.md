@@ -43,7 +43,7 @@ py -m fmofp_demo
 ```
 
 It starts the plant (the simulated aircraft with its weather, terrain and
-engines), the five ported partitions, the three display windows and the bus
+engines), the five ported partitions, the four display windows and the bus
 controller, runs a short scripted flight (radars on, the thrust lever, the
 autothrottle, a flight mode change, one engine throttled back, a fuel
 transfer; each event is announced as it happens) and prints one line a second:
@@ -131,22 +131,27 @@ frame 40:
 ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --port-base 53000 --script commands.txt
 ```
 
-**The displays.** Three of the PyQt6 displays run as their own bus terminals
+**The displays.** Four of the PyQt6 displays run as their own bus terminals
 (`B20SS/fmofp_display`): the radar display, RT 15, which shows the weather and
 terrain-following radars' pictures and commands both radars; the primary
-flight display, RT 11, which reads the FMS's flight data; and the
-multi-function display, RT 13, whose radar page mirrors the radars' pictures
-from its own copies of the same relays and blocks, whose systems page shows
-the flight computer's GCAS alerts and envelope exceedances, and whose mission
-page shows the FMS position (its engine, communications and mission rows wait
-for those terminals). List them for the controller and give it a reply timeout
-a Python process beside a Qt paint loop can meet, without `--strict`:
+flight display, RT 11, which reads the FMS's flight data; the multi-function
+display, RT 13, whose radar page mirrors the radars' pictures from the same
+broadcasts, whose systems page shows the flight computer's GCAS alerts and
+envelope exceedances and the engine computer's readings, and whose mission
+page shows the FMS position (its communications and mission rows wait for
+those terminals); and the EICAS, RT 14, which shows the engine computer's
+readings and tanks, the flight computer's alerts, the weather radar's wind
+shear and turbulence severities and the crew alert list (its hydraulic,
+electrical and ECS rows wait for those terminals). List them for the
+controller and give it a reply timeout a Python process beside a Qt paint loop
+can meet, without `--strict`:
 
 ```bash
 py -m fmofp_display radar --port-base 53000
 py -m fmofp_display pfd --port-base 53000
 py -m fmofp_display mfd --port-base 53000
-ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 11 --rt 13 --rt 15 --port-base 53000 --timeout-ms 20 --report
+py -m fmofp_display eicas --port-base 53000
+ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 3 --rt 11 --rt 13 --rt 14 --rt 15 --port-base 53000 --timeout-ms 20 --report
 ```
 
 The controller broadcasts the radars' status, scan summary and guidance, their
@@ -188,15 +193,15 @@ clearance levels and their latch, the path commands and the terrain warnings.
 `fmofp_engine_tool` through the same lever inputs and autothrottle steps, and
 `test_plant_engine.py` checks the plant's engine model against
 `engineControlUnit.py`'s formulas.
-`test_display_e2e.py` runs the three display terminals headless beside the
+`test_display_e2e.py` runs the four display terminals headless beside the
 whole set of partitions and checks that the radars' products and the FMS's
 flight data arrive at the displays by broadcast, that the flight computer's
 alerts and exceedances and the engine computer's engine and fuel status reach
-the MFD, and that the radar
+the MFD and the EICAS, and that the radar
 display's commands reach the radars; `test_display_feeds.py` checks the feeds
-and `test_display_render.py` paints the three windows offscreen from sample
-bus data, the MFD through every page and radar picture (skipped without
-PyQt6).
+and `test_display_render.py` paints the four windows offscreen from sample
+bus data, the MFD through every page and radar picture and the EICAS with its
+alert list (skipped without PyQt6).
 
 ## Building on Windows
 
