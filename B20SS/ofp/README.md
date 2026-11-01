@@ -12,7 +12,7 @@ Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 | `osal/` | The only code that talks to the OS: monotonic clock with absolute-deadline sleep, UDP on 127.0.0.1. One implementation each for Windows and POSIX | `ofp::osal` |
 | `icd/` | Builds the generated headers (`fmofp/icd/enums.hpp`, `messages.hpp`, `blocks.hpp`, `version.hpp`) from `../icd/fmofp_icd.xml`. Nothing here is checked in | `ofp::icd` |
 | `bc/` | The bus controller: the 20 ms schedule, the frame loop with sync and timing, the transaction engine, and the `fmofp_bc` process, which can also send commands to terminals at given frames from a script | `ofp::bc`, `fmofp_bc` |
-| `partitions/` | `common/`: the socket loop every partition runs around its terminal. `rt_stub/`: a stand-in terminal that answers `TERM_STATUS`. `fcs/`: flight control, the first ported partition (GCAS alerts, envelope monitoring, mode and surface commands). `nav/`: navigation (the GPS position solver, the GPS / dead-reckoning fusion), plus `fmofp_nav_tool`, which puts its arithmetic on stdin/stdout for the Python oracle tests. `fms/`: flight management (flight modes and their envelopes, attitude commands and maneuvers, autopilot targets, thrust and gear, the flight data the displays read, energy maneuverability). `radar/`: the radar computer with the weather radar and the terrain-following radar ported: the sensor model that renders the plant's weather, the signal processing (VIL, rain rate, storm cells, precipitation areas, wind shear, turbulence), the 1.2 s scan and the products block; the clearance assessment, path optimiser and terrain warnings over the plant's terrain profile, the guidance and the elevation block; plus `fmofp_radar_tool` for the oracle tests. `engine/`: engine management (the commanded thrust of each engine, the autothrottle and the asymmetry check; the tanks, fuel lines, transfer policy and fuel monitor; the assessment of the engines' measurements; the engine model itself runs in the plant), plus `fmofp_engine_tool`. Each is a pure library plus a process | `ofp::rt_process`, `fmofp_rt_stub`, `ofp::fcs`, `fmofp_fcs`, `ofp::nav`, `fmofp_nav`, `fmofp_nav_tool`, `ofp::fms`, `fmofp_fms`, `ofp::radar`, `fmofp_radar`, `fmofp_radar_tool`, `ofp::engine`, `fmofp_engine`, `fmofp_engine_tool` |
+| `partitions/` | `common/`: the socket loop every partition runs around its terminal. `rt_stub/`: a stand-in terminal that answers `TERM_STATUS`. `fcs/`: flight control, the first ported partition (GCAS alerts, envelope monitoring, mode and surface commands). `nav/`: navigation (the GPS position solver, the GPS / dead-reckoning fusion), plus `fmofp_nav_tool`, which puts its arithmetic on stdin/stdout for the Python oracle tests. `fms/`: flight management (flight modes and their envelopes, attitude commands and maneuvers, autopilot targets, thrust and gear, the flight data the displays read, energy maneuverability). `radar/`: the radar computer with the weather radar, the terrain-following radar and the targeting radar ported, and the cross-radar track fusion: the sensor model that renders the plant's weather, the signal processing (VIL, rain rate, storm cells, precipitation areas, wind shear, turbulence), the 1.2 s scan and the products block; the clearance assessment, path optimiser and terrain warnings over the plant's terrain profile, the guidance and the elevation block; the track table over the plant's traffic with the signature analyser, the stealth detector, the lock and the track filter, and the fusion's epochs over the radars' tracks; plus `fmofp_radar_tool` for the oracle tests. `engine/`: engine management (the commanded thrust of each engine, the autothrottle and the asymmetry check; the tanks, fuel lines, transfer policy and fuel monitor; the assessment of the engines' measurements; the engine model itself runs in the plant), plus `fmofp_engine_tool`. Each is a pure library plus a process | `ofp::rt_process`, `fmofp_rt_stub`, `ofp::fcs`, `fmofp_fcs`, `ofp::nav`, `fmofp_nav`, `fmofp_nav_tool`, `ofp::fms`, `fmofp_fms`, `ofp::radar`, `fmofp_radar`, `fmofp_radar_tool`, `ofp::engine`, `fmofp_engine`, `fmofp_engine_tool` |
 | `tests/` | GoogleTest unit tests for the hand-written code, including the Phase 1 gate run in-process | `ofp_tests` |
 | `cmake/` | The compiler flags every target gets | `ofp::warnings`, `ofp::flight` |
 
@@ -72,9 +72,10 @@ window reads a mirror.
 ## Running the partitions
 
 Flight control, navigation, flight management, the weather radar, the
-terrain-following radar and engine management on the bus, fed by the Python
-plant model (the simulated aircraft, its weather, its terrain and its two
-engines, RT 27). From `B20SS/`:
+terrain-following radar, the targeting radar with the track fusion and engine
+management on the bus, fed by the Python plant model (the simulated aircraft,
+its weather, its terrain, its two engines and the air traffic around it,
+RT 27). From `B20SS/`:
 
 ```bash
 py -m fmofp_plant --port-base 53000                 # the aircraft; add --hold altitude=150 to test ALT LOW
@@ -192,7 +193,13 @@ clearance levels and their latch, the path commands and the terrain warnings.
 `test_engine_oracle.py` drives `thrustManagement.py`'s thrust manager and
 `fmofp_engine_tool` through the same lever inputs and autothrottle steps, and
 `test_plant_engine.py` checks the plant's engine model against
-`engineControlUnit.py`'s formulas.
+`engineControlUnit.py`'s formulas. `test_targeting_e2e.py` runs the plant with its
+traffic, the radar and the controller through search, a lock and standby, and
+checks the tracks block against the plant's aircraft and the fused block against
+the tracks; `test_targeting_oracle.py` checks the signature analyser, the stealth
+detector, the threat rule and a fusion epoch against the original Python through
+`fmofp_radar_tool`, and `test_plant_traffic.py` the plant's traffic against the
+radars' generators.
 `test_display_e2e.py` runs the four display terminals headless beside the
 whole set of partitions and checks that the radars' products and the FMS's
 flight data arrive at the displays by broadcast, that the flight computer's

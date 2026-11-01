@@ -26,6 +26,15 @@
 //   tfr_reset                                     -> the latch back to CLEAR
 //   tfr_path <altitude_m> <speed_mps> <clearance_m> -> "distance altitude reason" per command, "end"
 //   tfr_warnings                                  -> "i distance warning" per sample, "end"
+// Targeting (target_processor.py) and fusion (radar_data_fusion.py):
+//   signature <rcs> <scintillation> <speed> <altitude> -> "<class> <confidence> <rcs_corrected>"
+//   stealth_reset                                 -> the detector's state for one track back to the prior
+//   stealth <rcs> <snr>                           -> "<posterior> <snr_integrated> <pulses> <is_stealth>"
+//   threat <class> <identity> <avg_rcs> <speed>   -> "<threat>"
+//   fusion_reset                                  -> a fresh fusion (no previous epoch)
+//   fusion <n>, then n lines "x y z vx vy vz class identity rcs weight sensor"
+//                                                 -> "n <count> <hostile>", then "id x y z vx vy vz confidence
+//                                                    class identity threat sources" per track, "end"
 
 #include <cstdio>
 #include <iostream>
@@ -35,7 +44,9 @@
 
 #include <fmofp/bus/status.hpp>
 #include <fmofp/icd/blocks.hpp>
+#include <fmofp/radar/target_processing.hpp>
 #include <fmofp/radar/terrain_following.hpp>
+#include <fmofp/radar/track_fusion.hpp>
 #include <fmofp/radar/weather_model.hpp>
 #include <fmofp/radar/weather_products.hpp>
 #include <fmofp/radar/weather_radar.hpp>
@@ -55,6 +66,55 @@ std::uint32_t g_frame = 0;
 std::vector<fmofp::bus::Word> g_payload(icd::RdrWxProducts::kMaxPayloadWords);
 radar::TerrainProfile g_profile;
 icd::ClearanceLevel g_master = icd::ClearanceLevel::CLEAR;
+radar::StealthState g_stealth;
+radar::TrackFusion g_fusion;
+std::vector<radar::TrackReport> g_reports;
+
+// An enumerator by its ICD name, for the enums the tool reads.
+template <typename Enum>
+bool parse_enum(const std::string& name, Enum& out) {
+    for (unsigned v = 0; v < 16U; ++v) {
+        const Enum candidate = static_cast<Enum>(v);
+        if (icd::is_valid(candidate) && name == icd::to_string(candidate)) {
+            out = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+void do_fusion(std::size_t n) {
+    g_reports.assign(n, radar::TrackReport{});
+    std::string line;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!std::getline(std::cin, line)) {
+            std::printf("error kInvalidArgument\n");
+            return;
+        }
+        std::istringstream in(line);
+        std::string cls;
+        std::string identity;
+        double sensor = 0.0;
+        radar::TrackReport& r = g_reports[i];
+        if (!(in >> r.position[0] >> r.position[1] >> r.position[2] >> r.velocity[0] >> r.velocity[1] >> r.velocity[2] >>
+              cls >> identity >> r.rcs >> r.weight >> sensor) ||
+            !parse_enum(cls, r.classification) || !parse_enum(identity, r.identity)) {
+            std::printf("error kInvalidArgument\n");
+            return;
+        }
+        r.sensor = static_cast<std::uint8_t>(sensor);
+    }
+    g_fusion.epoch(g_reports.data(), n, true, false);
+    std::printf("n %u %u\n", static_cast<unsigned>(g_fusion.count()), static_cast<unsigned>(g_fusion.hostile_count()));
+    for (std::size_t i = 0; i < g_fusion.count(); ++i) {
+        const radar::FusedTrack& f = g_fusion.track(i);
+        std::printf("%u %.17g %.17g %.17g %.17g %.17g %.17g %.17g %s %s %s %u\n", static_cast<unsigned>(f.id),
+                    f.position[0], f.position[1], f.position[2], f.velocity[0], f.velocity[1], f.velocity[2],
+                    f.confidence, icd::to_string(f.classification), icd::to_string(f.identity),
+                    icd::to_string(f.threat), static_cast<unsigned>(f.sources));
+    }
+    std::printf("end\n");
+}
 
 void print_values(const std::vector<double>& values) {
     bool first = true;
@@ -205,6 +265,7 @@ void do_tfr_warnings() {
 
 int main() {
     (void)g_radar.init();
+    (void)g_fusion.init();
     std::string line;
     std::vector<double> a;
     while (std::getline(std::cin, line)) {
@@ -213,7 +274,32 @@ int main() {
         if (!(in >> cmd) || cmd.empty() || cmd[0] == '#') {
             continue;
         }
-        if (cmd == "sigfigs" && read(in, a, 1)) {
+        if (cmd == "signature" && read(in, a, 4)) {
+            const radar::SignatureResult r = radar::analyse_signature(a[0], a[1], a[2], a[3]);
+            std::printf("%s %.17g %.17g\n", icd::to_string(r.type), r.confidence, r.rcs_corrected);
+        } else if (cmd == "stealth_reset") {
+            g_stealth = radar::StealthState{};
+            std::printf("ok\n");
+        } else if (cmd == "stealth" && read(in, a, 2)) {
+            const radar::StealthResult r = radar::assess_stealth(g_stealth, a[0], a[1]);
+            std::printf("%.17g %.17g %u %d\n", r.posterior, r.snr_integrated_db, static_cast<unsigned>(r.pulses),
+                        r.is_stealth ? 1 : 0);
+        } else if (cmd == "threat") {
+            std::string cls;
+            std::string identity;
+            icd::TargetClass type = icd::TargetClass::UNKNOWN;
+            icd::IffIdentity iff = icd::IffIdentity::UNKNOWN;
+            if (!(in >> cls >> identity) || !parse_enum(cls, type) || !parse_enum(identity, iff) || !read(in, a, 2)) {
+                std::printf("error kInvalidArgument\n");
+                continue;
+            }
+            std::printf("%s\n", icd::to_string(radar::assess_threat(type, iff, a[0], a[1])));
+        } else if (cmd == "fusion_reset") {
+            (void)g_fusion.init();
+            std::printf("ok\n");
+        } else if (cmd == "fusion" && read(in, a, 1)) {
+            do_fusion(static_cast<std::size_t>(a[0]));
+        } else if (cmd == "sigfigs" && read(in, a, 1)) {
             double n = 3.0;
             in >> n;
             print_values({radar::round_to_sigfigs(a[0], static_cast<int>(n))});

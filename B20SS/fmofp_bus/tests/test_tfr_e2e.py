@@ -168,13 +168,13 @@ class TerrainFollowingEndToEndTest(unittest.TestCase):
         relayed = [r for _, r in framed if not r.command.transmit and not r.command.is_mode_code
                    and r.command.rt == RADAR_RT
                    and r.command.subaddress in (b.RdrTfrTerrain.DESCRIPTOR_SUBADDRESS, b.RdrTfrTerrain.SEGMENT_SUBADDRESS)]
-        self.assertGreaterEqual(len(relayed), 2 * (FRAMES - 10))
+        self.assertGreaterEqual(len(relayed), FRAMES - 10)  # polled every other frame since v1.10
         self.assertTrue(all(r.answered for r in relayed))
 
-        # What the plant published: one profile every five frames, sequence numbers in order.
+        # What the plant published: one profile every ten frames, sequence numbers in order.
         plant_blocks = blocks_from_records(records, m.PlantSensors.RT, b.PlantTerrain.DESCRIPTOR_SUBADDRESS,
                                            b.PlantTerrain.SEGMENT_SUBADDRESS)
-        self.assertGreaterEqual(len(plant_blocks), FRAMES // 5 - 4)
+        self.assertGreaterEqual(len(plant_blocks), FRAMES // 10 - 4)
         profiles = {}
         last_seq = None
         for _, _, payload in plant_blocks:

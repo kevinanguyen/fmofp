@@ -223,7 +223,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # copy written into any display.
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
-        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 19, 25, 26, 27}, broadcast)
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27}, broadcast)  # 28, the energy, has only the TSD listening
         for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}

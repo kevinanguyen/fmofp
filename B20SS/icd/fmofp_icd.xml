@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="9" status="DRAFT" date="2026-11-01">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="10" status="DRAFT" date="2026-11-01">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -220,6 +220,32 @@
       <value name="MAIN_RIGHT" value="2"/>
       <value name="CENTER" value="3"/>
     </enum>
+    <enum id="target_class" bits="3" doc="Air target classification: the radar's own assessment (targeting_radar._generate_target's speed and altitude rules refined by target_processor.SignatureAnalyzer), never the truth">
+      <value name="UNKNOWN" value="0"/>
+      <value name="FIGHTER" value="1"/>
+      <value name="BOMBER" value="2"/>
+      <value name="HIGH_ALT" value="3"/>
+      <value name="MISSILE" value="4"/>
+      <value name="HELICOPTER" value="5"/>
+      <value name="DRONE" value="6"/>
+      <value name="STEALTH" value="7" doc="aewc_radar's classification of its stealth targets"/>
+    </enum>
+    <enum id="iff_identity" bits="2" doc="Identity of a track (the radars' identity field, radar_data_fusion.FusedTrack.identity): UNKNOWN until an IFF interrogator exists, as the Python's always was">
+      <value name="UNKNOWN" value="0"/>
+      <value name="FRIENDLY" value="1"/>
+      <value name="HOSTILE" value="2"/>
+      <value name="NEUTRAL" value="3"/>
+    </enum>
+    <enum id="threat" bits="2" doc="Threat assessment of a track (radar_data_fusion.RadarDataFusion._assess_threat): a hostile or friendly identity decides; otherwise HOSTILE when the radar cross-section is under 3 m2 and the speed over 200 m/s, else UNKNOWN">
+      <value name="UNKNOWN" value="0"/>
+      <value name="HOSTILE" value="1"/>
+      <value name="FRIENDLY" value="2"/>
+    </enum>
+    <enum id="lock_status" bits="2" doc="The targeting radar's lock (targeting_radar._handle_track_request: LOCKED when the lock quality is above 0.5, else ACQUIRING)">
+      <value name="NONE" value="0"/>
+      <value name="ACQUIRING" value="1"/>
+      <value name="LOCKED" value="2"/>
+    </enum>
   </enums>
 
   <terminals>
@@ -232,7 +258,7 @@
     <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
     <terminal rt="7" id="nav" name="Navigation - GPS position solver and GPS/dead-reckoning fusion" status="existing" source="Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py" note="Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2)"/>
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
-    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19) and the terrain-following radar in v1.4 (SA 2, 14-15, 20-23); SAR, targeting and AEWC are still Python"/>
+    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19), the terrain-following radar in v1.4 (SA 2, 14-15, 20-23) and the targeting radar with the track fusion in v1.10 (SA 4, 8-11, 24-25); SAR and AEWC are still Python"/>
     <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
     <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then)"/>
     <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py" note="Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object"/>
@@ -247,7 +273,7 @@
     <terminal rt="21" id="flightsurfaces" name="Flight surfaces" status="new" source="Systems/flightSurfaces"/>
     <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
     <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
-    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD)"/>
+    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC)"/>
     <terminal rt="31" id="broadcast" name="Broadcast address - every terminal that accepts a subaddress hears it" status="reserved" note="Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7"/>
   </terminals>
 
@@ -374,21 +400,30 @@
       <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
       <field name="resolution" word="1" bits="15-0" type="uint" doc="Image resolution per pixel; sar_radar.py default 1.0 m, limits from rmConfig.xml sar_radar resolution" lsb="1/100" units="m" min="0.1" max="10"/>
     </message>
-    <message id="RDR_TGT_STATUS" rt="9" sa="4" dir="T" words="2" rate="5" title="Targeting radar status" replaces="targeting_radarStatusRequest targeting_radarStatusResponse targeting_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+    <message id="RDR_TGT_STATUS" rt="9" sa="4" dir="T" words="4" rate="5" title="Targeting radar status" replaces="targeting_radarStatusRequest targeting_radarStatusResponse targeting_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <doc>targeting_radar.get_status(): the state and mode, how many tracks the radar holds, the lock and the jamming flag (v1.10). The tracks themselves are the RDR_TGT_TRACKS block. The radar tracks in every operating mode (the Python answered track requests in any mode but STANDBY) and locks only in TARGET_TRACK.</doc>
       <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="mode" word="0" bits="11-8" type="enum" enum="targeting_mode" doc="Operating mode; NONE unless state is NORMAL"/>
       <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
       <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
       <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
-      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="track_count" word="1" bits="13-9" type="uint" doc="Tracks held (saturates at 31)"/>
+      <field name="lock_status" word="1" bits="8-7" type="enum" enum="lock_status"/>
+      <field name="jamming" word="1" bits="6" type="bool" doc="1 = jamming detected on the locked track (the Python's 5 % per update, drawn from the radar's own generator)"/>
+      <field name="track_filter" word="1" bits="5-2" type="enum" enum="track_filter" doc="The filter in force: which tracks RDR_TGT_TRACKS reports, by threat"/>
+      <field name="spare_1" word="1" bits="1" type="spare"/>
       <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+      <field name="locked_track_id" word="2" bits="15-0" type="uint" doc="The locked track; 0 = no lock"/>
+      <field name="lock_quality" word="3" bits="15-0" type="uint" lsb="1/1000" min="0" max="1" doc="min(1, snr / 30) of the locked track (the Python's model), 0 when it is negative"/>
     </message>
-    <message id="RDR_TGT_MODE_CMD" rt="9" sa="4" dir="R" words="2" rate="aperiodic" title="Targeting radar mode command" replaces="targeting_radarCommand targeting_radarModeChangeRequest targeting_radarTrackRequest radarCommand">
+    <message id="RDR_TGT_MODE_CMD" rt="9" sa="4" dir="R" words="3" rate="aperiodic" title="Targeting radar mode command" replaces="targeting_radarCommand targeting_radarModeChangeRequest targeting_radarTrackRequest radarCommand">
+      <doc>The mode, the track filter and the lock request in one command (the Python's LOCK_REQUEST was a message of its own; v1.10 folds it in). A command whose requested_state is not NORMAL clears the tracks and the lock, as set_mode(STANDBY) did.</doc>
       <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="requested_mode" word="0" bits="11-8" type="enum" enum="targeting_mode"/>
       <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
       <field name="spare_1" word="1" bits="15-4" type="spare"/>
-      <field name="track_filter" word="1" bits="3-0" type="enum" doc="Which tracks to report (legacy track_type)" enum="track_filter"/>
+      <field name="track_filter" word="1" bits="3-0" type="enum" doc="Which tracks to report (legacy track_type): ALL, or those whose threat is HOSTILE, FRIENDLY or UNKNOWN" enum="track_filter"/>
+      <field name="lock_track_id" word="2" bits="15-0" type="uint" doc="In TARGET_TRACK mode: the track to lock on (targeting_radar._handle_lock_request), 0 = release the lock; a track the radar does not hold leaves the lock as it is. Ignored in other modes, where the Python refused lock requests"/>
     </message>
     <message id="RDR_AEWC_STATUS" rt="9" sa="5" dir="T" words="2" rate="5" title="AEWC radar status" replaces="aewc_radarStatusRequest aewc_radarStatusResponse aewc_radarModeChangeResponse radarStatusRequest radarStatusResponse">
       <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
@@ -771,7 +806,7 @@
     <message id="DSP_RDR_SAR_CMD" rt="15" sa="22" dir="T" words="2" rate="10" title="Radar display command to the synthetic aperture radar" status="PROPOSED" layout_of="RDR_SAR_MODE_CMD">
       <doc>Relayed into RT 9 SA 3, when that radar is ported.</doc>
     </message>
-    <message id="DSP_RDR_TGT_CMD" rt="15" sa="23" dir="T" words="2" rate="10" title="Radar display command to the targeting radar" status="PROPOSED" layout_of="RDR_TGT_MODE_CMD">
+    <message id="DSP_RDR_TGT_CMD" rt="15" sa="23" dir="T" words="3" rate="10" title="Radar display command to the targeting radar" layout_of="RDR_TGT_MODE_CMD">
       <doc>Relayed into RT 9 SA 4, when that radar is ported.</doc>
     </message>
     <message id="DSP_RDR_AEWC_CMD" rt="15" sa="24" dir="T" words="4" rate="10" title="Radar display command to the AEWC radar" status="PROPOSED" layout_of="RDR_AEWC_MODE_CMD">
@@ -800,6 +835,12 @@
       <doc>The engine band of the broadcast map, 18-19 (v1.8). The MFD's systems and engine pages draw it; the flight control computer takes the total fuel flow for FCS_PERF_STATUS's fuel efficiency; the EICAS's engine panel draws it too (v1.9).</doc>
     </message>
     <message id="BCAST_ENG_FUEL_STATUS" rt="31" sa="19" dir="R" words="7" rate="1" title="Fuel status, broadcast" layout_of="ENG_FUEL_STATUS" listeners="13 14"/>
+    <message id="BCAST_RDR_TGT_STATUS" rt="31" sa="24" dir="R" words="4" rate="5" title="Targeting radar status, broadcast to the displays" layout_of="RDR_TGT_STATUS" listeners="13 15">
+      <doc>The tracks band of the broadcast map, 20-24 (v1.10): the targeting radar's status for the MFD's targeting page and the radar display's control panel, and the two track blocks.</doc>
+    </message>
+    <message id="BCAST_FMS_ENERGY" rt="31" sa="28" dir="R" words="6" rate="1" title="Energy maneuverability, broadcast to the displays" layout_of="FMS_ENERGY" listeners="16">
+      <doc>The TSD's energy metrics (tsd._poll_data reads get_tactical_status()['energy_metrics']), v1.10.</doc>
+    </message>
 
 
     <!-- ===== v1.1: the plant and the flight control partition's inputs and outputs ===== -->
@@ -1109,6 +1150,11 @@
     <relay from="ENG_THRUST_CMD" to="PLANT_THRUST_CMD"/>
     <relay from="ENG_ENGINE_STATUS" to="BCAST_ENG_ENGINE_STATUS"/>
     <relay from="ENG_FUEL_STATUS" to="BCAST_ENG_FUEL_STATUS"/>
+    <relay from="PLANT_TRAFFIC" to="RDR_TRAFFIC"/>
+    <relay from="RDR_TGT_STATUS" to="BCAST_RDR_TGT_STATUS"/>
+    <relay from="RDR_TGT_TRACKS" to="BCAST_RDR_TGT_TRACKS"/>
+    <relay from="RDR_FUSED_TRACKS" to="BCAST_RDR_FUSED_TRACKS"/>
+    <relay from="FMS_ENERGY" to="BCAST_FMS_ENERGY"/>
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
@@ -1184,7 +1230,62 @@
         <field name="altitude" word="5" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535" doc="Beam height at the bin: range x tan(lowest elevation)"/>
       </section>
     </block>
-    <block id="RDR_TGT_TRACKS" rt="9" desc_sa="10" seg_sa="11" rate="10" title="Targeting radar tracks" payload="TBD-v2" replaces="targeting_radarTrackResponse targeting_radarData"/>
+    <block id="RDR_TGT_TRACKS" rt="9" desc_sa="10" seg_sa="11" rate="25" title="Targeting radar tracks" replaces="targeting_radarTrackResponse targeting_radarData">
+      <doc>targeting_radar._handle_track_request's track data and lock data in one block (v1.10): every track the radar holds that the track filter admits, with the signature analyser's classification and the stealth detector's assessment (target_processor.py), and the lock. Positions are Cartesian metres east, north and up of the aircraft, as the Python's were, velocities relative to the aircraft. The radar associates each detection of RDR_TRAFFIC with the track whose predicted position is nearest within 1 km and starts a new track otherwise; the signal-to-noise ratio is the Python's 30 - 20 log10(range / 1000) dB and a track's confidence snr / 30 limited to 0..1. Republished no more often than every fifteen frames; the five segments take five frames at 25 Hz.</doc>
+      <header words="3">
+        <field name="update_seq" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every track update the block reflects"/>
+        <field name="mode" word="0" bits="7-4" type="enum" enum="targeting_mode" doc="Mode the tracks were made in; NONE with no tracks when the radar is not operating"/>
+        <field name="lock_status" word="0" bits="3-2" type="enum" enum="lock_status"/>
+        <field name="jamming" word="0" bits="1" type="bool" doc="1 = jamming detected on the locked track"/>
+        <field name="spare_0" word="0" bits="0" type="spare"/>
+        <field name="locked_track_id" word="1" bits="15-0" type="uint" doc="0 = no lock"/>
+        <field name="lock_quality" word="2" bits="15-0" type="uint" lsb="1/1000" min="0" max="1" doc="min(1, snr / 30) of the locked track, 0 when negative"/>
+      </header>
+      <section id="track" words="12" max="12" title="Tracks" doc="In track id order">
+        <field name="track_id" word="0" bits="15-0" type="uint" doc="The radar's track number, from 1, kept while the track is held"/>
+        <field name="x" word="1-2" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="East of the aircraft"/>
+        <field name="y" word="3-4" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="North of the aircraft"/>
+        <field name="z" word="5-6" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="Above the aircraft"/>
+        <field name="velocity_east" word="7" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="velocity_north" word="8" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="velocity_up" word="9" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="classification" word="10" bits="15-13" type="enum" enum="target_class" doc="SignatureAnalyzer's class after its speed and altitude overrides"/>
+        <field name="identity" word="10" bits="12-11" type="enum" enum="iff_identity"/>
+        <field name="threat" word="10" bits="10-9" type="enum" enum="threat" doc="radar_data_fusion._assess_threat's rule on this track alone; the track filter selects by it"/>
+        <field name="stealth" word="10" bits="8" type="bool" doc="StealthDetector: P(stealth) above 0.6 and the corrected RCS below 0.1 m2"/>
+        <field name="locked" word="10" bits="7" type="bool" doc="1 = this is the locked track"/>
+        <field name="spare_10" word="10" bits="6-0" type="spare"/>
+        <field name="confidence" word="11" bits="15-8" type="uint" lsb="1/100" min="0" max="1" doc="snr / 30 limited to 0..1 (TargetingRadarTrackData.confidence)"/>
+        <field name="stealth_probability" word="11" bits="7-0" type="uint" lsb="1/100" min="0" max="1" doc="StealthDetector's posterior"/>
+      </section>
+    </block>
+    <block id="RDR_FUSED_TRACKS" rt="9" desc_sa="24" seg_sa="25" rate="25" title="Fused air tracks">
+      <doc>radar_data_fusion.RadarDataFusion's fused track table (v1.10): the targeting radar's tracks (and the AEWC radar's, when it is ported) correlated within 500 m by nearest centroid, heaviest sensor first; merged by sensor weight (targeting 0.8, AEWC 0.7) with a confidence that is the probability union of the sensors, the classification and identity of the heaviest sensor, and the threat of the rule set; track ids carried over from the previous epoch by nearest neighbour within 500 m. An epoch every 25 frames (the Python's 2 Hz). The table is rebuilt from the sensors' current tracks each epoch, so a track a sensor dropped is gone at once; the Python's 30 s ageing never had anything left to age. The five segments take five frames at 25 Hz.</doc>
+      <header words="2">
+        <field name="epoch" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every fusion epoch"/>
+        <field name="hostile_count" word="0" bits="7-0" type="uint" doc="Tracks assessed HOSTILE (RadarDataFusion.get_threat_tracks)"/>
+        <field name="targeting_present" word="1" bits="15" type="bool" doc="1 = the targeting radar was operating this epoch"/>
+        <field name="aewc_present" word="1" bits="14" type="bool" doc="1 = the AEWC radar was operating this epoch"/>
+        <field name="spare_1" word="1" bits="13-0" type="spare"/>
+      </header>
+      <section id="track" words="12" max="12" title="Fused tracks" doc="In track id order">
+        <field name="track_id" word="0" bits="15-0" type="uint" doc="The fused track number, kept while a track within 500 m continues it"/>
+        <field name="x" word="1-2" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="East of the aircraft"/>
+        <field name="y" word="3-4" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="North of the aircraft"/>
+        <field name="z" word="5-6" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="Above the aircraft"/>
+        <field name="velocity_east" word="7" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="velocity_north" word="8" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="velocity_up" word="9" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="classification" word="10" bits="15-13" type="enum" enum="target_class" doc="The heaviest contributing sensor's"/>
+        <field name="identity" word="10" bits="12-11" type="enum" enum="iff_identity" doc="The heaviest contributing sensor's"/>
+        <field name="threat" word="10" bits="10-9" type="enum" enum="threat"/>
+        <field name="from_targeting" word="10" bits="8" type="bool" doc="1 = the targeting radar contributed"/>
+        <field name="from_aewc" word="10" bits="7" type="bool" doc="1 = the AEWC radar contributed"/>
+        <field name="spare_10" word="10" bits="6-0" type="spare"/>
+        <field name="confidence" word="11" bits="15-8" type="uint" lsb="1/100" min="0" max="1" doc="1 - product of (1 - weight) over the contributing sensors"/>
+        <field name="spare_11" word="11" bits="7-0" type="spare"/>
+      </section>
+    </block>
     <block id="RDR_AEWC_SECTOR" rt="9" desc_sa="12" seg_sa="13" rate="10" title="AEWC sector scan" payload="TBD-v2" replaces="aewc_radarSectorScanResponse aewc_radarData"/>
     <block id="RDR_TFR_ELEVATION" rt="9" desc_sa="14" seg_sa="15" rate="25" title="TFR elevation profile" replaces="tfr_radarElevationDataResponse tfr_radarData">
       <doc>The terrain profile the radar assessed, sample by sample with its clearance level and terrain warning, and the path optimiser's altitude commands, as tfr_radar.py's elevation profile and terrain warning messages carried them to the display. Sample i is at ground distance i x range_m / (samples - 1) ahead along the heading; the samples are the profile section's records. The block is republished when a new profile has been assessed and at least 15 frames (0.3 s) have passed since the last one, so a 10-segment block always arrives whole; the guidance message carries the latest assessment every frame. An empty profile with mode NONE is published when the radar stops operating.</doc>
@@ -1214,8 +1315,8 @@
       </section>
     </block>
     <block id="RDR_SAR_IMAGE" rt="9" desc_sa="16" seg_sa="17" rate="1" title="SAR image" payload="TBD-v2" replaces="sar_radarImageResponse sar_radarData"/>
-    <block id="PLANT_TERRAIN" rt="27" desc_sa="4" seg_sa="5" rate="50" title="Terrain profile ahead, from the plant">
-      <doc>What the terrain-following radar's antenna would measure: the terrain elevation at evenly spaced ground distances ahead of the aircraft along its heading, from the aircraft (sample 0) to range_m (the last sample), 100 samples over 10 km as tfr_radar.py's profile was. The plant samples its terrain, a fixed function of position (fmofp_plant.terrain), at the aircraft's position and heading every tenth of a second; sample i is at distance i x range_m / (samples - 1), the samples being this block's elevation records. The four segments take four frames, so a profile is complete at the radar before the next one is published.</doc>
+    <block id="PLANT_TERRAIN" rt="27" desc_sa="4" seg_sa="5" rate="25" title="Terrain profile ahead, from the plant">
+      <doc>What the terrain-following radar's antenna would measure: the terrain elevation at evenly spaced ground distances ahead of the aircraft along its heading, from the aircraft (sample 0) to range_m (the last sample), 100 samples over 10 km as tfr_radar.py's profile was. The plant samples its terrain, a fixed function of position (fmofp_plant.terrain), at the aircraft's position and heading every fifth of a second; sample i is at distance i x range_m / (samples - 1), the samples being this block's elevation records. The four segments take eight frames at 25 Hz, so a profile is complete at the radar before the next one is published (until v1.10 the block was polled every frame and the profile published ten times a second; the targeting blocks needed that bus time).</doc>
       <header words="2">
         <field name="terrain_seq" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every profile"/>
         <field name="spare_0" word="0" bits="7-0" type="spare"/>
@@ -1225,14 +1326,42 @@
         <field name="elevation" word="0" bits="15-0" type="sint" lsb="1/4" units="m" min="-8192" max="8191.75" doc="Terrain height above mean sea level"/>
       </section>
     </block>
-    <block id="RDR_TFR_TERRAIN" rt="9" dir="R" desc_sa="21" seg_sa="22" rate="50" title="Terrain profile as received by the radar" layout_of="PLANT_TERRAIN">
+    <block id="RDR_TFR_TERRAIN" rt="9" dir="R" desc_sa="21" seg_sa="22" rate="25" title="Terrain profile as received by the radar" layout_of="PLANT_TERRAIN">
       <doc>The relayed PLANT_TERRAIN: the bus controller writes the plant's descriptor and segments here in the frames it polls them, and the radar reassembles the profile.</doc>
+    </block>
+    <block id="PLANT_TRAFFIC" rt="27" desc_sa="8" seg_sa="9" rate="25" title="Air traffic around the aircraft, from the plant">
+      <doc>What the targeting and AEWC radars' antennas would measure of the other aircraft (v1.10): for each, the slant range, true azimuth and elevation from the aircraft, its velocity relative to the aircraft, and its radar cross-section. The traffic itself (fmofp_plant.traffic) is targeting_radar._generate_target's five aircraft and aewc_radar._generate_target's seven, moved by their own velocities and accelerations as _update_targets did and replaced when they leave their generator's range (100 km, 400 km); the aircraft's own motion is subtracted, which the Python never did because its targets lived in a frame glued to the aircraft. Nothing here says what an aircraft is: no class, no stealth flag, no identity; the radars assess that from what they measure. Published five times a second; the four segments take four frames at 25 Hz.</doc>
+      <header words="2">
+        <field name="traffic_seq" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every publication"/>
+        <field name="spare_0" word="0" bits="7-0" type="spare"/>
+        <field name="spare_1" word="1" bits="15-0" type="spare"/>
+      </header>
+      <section id="target" words="8" max="12" title="Targets" doc="One per aircraft in the plant's traffic, in the plant's order">
+        <field name="target_id" word="0" bits="15-8" type="uint" doc="The plant's number for the aircraft, for the tests; a radar associates by position, as it would in the air"/>
+        <field name="spare_0" word="0" bits="7-0" type="spare"/>
+        <field name="azimuth" word="1" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True bearing from the aircraft"/>
+        <field name="range" word="2" bits="15-0" type="uint" lsb="1/64" units="km" min="0" max="1023.98" doc="Slant range"/>
+        <field name="elevation" word="3" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-90" max="90" doc="Elevation angle from the aircraft"/>
+        <field name="velocity_east" word="4" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Velocity relative to the aircraft, east"/>
+        <field name="velocity_north" word="5" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Velocity relative to the aircraft, north"/>
+        <field name="velocity_up" word="6" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Velocity relative to the aircraft, up"/>
+        <field name="rcs" word="7" bits="15-0" type="uint" lsb="1/100" units="m2" min="0" max="655.35" doc="Radar cross-section"/>
+      </section>
+    </block>
+    <block id="RDR_TRAFFIC" rt="9" dir="R" desc_sa="8" seg_sa="9" rate="25" title="Air traffic as received by the radar computer" layout_of="PLANT_TRAFFIC">
+      <doc>The relayed PLANT_TRAFFIC, for the targeting radar (and the AEWC radar when it is ported).</doc>
     </block>
     <block id="BCAST_RDR_WX_PRODUCTS" rt="31" dir="R" desc_sa="6" seg_sa="7" rate="25" title="Weather radar products, broadcast to the displays" layout_of="RDR_WX_PRODUCTS" listeners="13 15">
       <doc>The relayed RDR_WX_PRODUCTS, one transfer per segment for every listener. A listener draws a block once it has every segment of a version and the CRC matches; a segment a listener missed (broadcasts are not retried) costs it that version, and the next arrives whole.</doc>
     </block>
     <block id="BCAST_RDR_TFR_ELEVATION" rt="31" dir="R" desc_sa="8" seg_sa="9" rate="25" title="TFR elevation profile, broadcast to the displays" layout_of="RDR_TFR_ELEVATION" listeners="13 15">
       <doc>The relayed RDR_TFR_ELEVATION for the terrain pictures.</doc>
+    </block>
+    <block id="BCAST_RDR_TGT_TRACKS" rt="31" dir="R" desc_sa="20" seg_sa="21" rate="25" title="Targeting radar tracks, broadcast to the displays" layout_of="RDR_TGT_TRACKS" listeners="13">
+      <doc>The relayed RDR_TGT_TRACKS for the MFD's targeting page (v1.10).</doc>
+    </block>
+    <block id="BCAST_RDR_FUSED_TRACKS" rt="31" dir="R" desc_sa="22" seg_sa="23" rate="25" title="Fused air tracks, broadcast to the displays" layout_of="RDR_FUSED_TRACKS" listeners="14 16">
+      <doc>The relayed RDR_FUSED_TRACKS for the tactical situation display's threat picture and the EICAS's hostile track count (v1.10).</doc>
     </block>
   </blocks>
 

@@ -51,10 +51,14 @@ target_link_libraries(fmofp_fms PRIVATE ofp::fms ofp::rt_process ofp::bc ofp::wa
 # radar ported: the sensor model that renders the plant's weather, the signal
 # processing (VIL, rain rate, storm cells, precipitation areas, wind shear,
 # turbulence) and the scan; the clearance assessment, path optimiser and
-# terrain warnings over the plant's terrain profile. fmofp_radar_tool exposes
-# the pure functions on stdin/stdout for the oracle tests.
+# terrain warnings over the plant's terrain profile; the targeting radar's
+# tracks, lock, signature analysis and stealth detection over the plant's
+# traffic, and the cross-radar track fusion. fmofp_radar_tool exposes the pure
+# functions on stdin/stdout for the oracle tests.
 add_library(ofp_radar STATIC radar/src/weather_model.cpp radar/src/weather_products.cpp
-                             radar/src/weather_radar.cpp radar/src/terrain_following.cpp)
+                             radar/src/weather_radar.cpp radar/src/terrain_following.cpp
+                             radar/src/target_processing.cpp radar/src/targeting_radar.cpp
+                             radar/src/track_fusion.cpp)
 add_library(ofp::radar ALIAS ofp_radar)
 add_dependencies(ofp_radar ofp_icd_generate)
 target_include_directories(ofp_radar PUBLIC radar/include)

@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.9 (DRAFT, 2026-11-01). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.10 (DRAFT, 2026-11-01). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -15,7 +15,7 @@
 | 6 | `missionplanning` | Mission planning | existing | Systems/missionPlanning/missionService.py |  |
 | 7 | `nav` | Navigation - GPS position solver and GPS/dead-reckoning fusion | existing | Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py | Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2) |
 | 8 | `powermanagement` | Power management | existing | Systems/powerManagement |  |
-| 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19) and the terrain-following radar in v1.4 (SA 2, 14-15, 20-23); SAR, targeting and AEWC are still Python |
+| 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19), the terrain-following radar in v1.4 (SA 2, 14-15, 20-23) and the targeting radar with the track fusion in v1.10 (SA 4, 8-11, 24-25); SAR and AEWC are still Python |
 | 10 | `sensormanagement` | Sensor management | existing | Systems/sensorManagement |  |
 | 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then) |
 | 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py | Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object |
@@ -30,7 +30,7 @@
 | 21 | `flightsurfaces` | Flight surfaces | new | Systems/flightSurfaces |  |
 | 22 | `defensive` | Defensive systems - RWR, chaff, flare, ECM | new | Systems/defensiveSys |  |
 | 23 | `flightdatamonitoring` | Flight data monitoring | new | Systems/flightDataMonitoring |  |
-| 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD) |
+| 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC) |
 | 31 | `broadcast` | Broadcast address - every terminal that accepts a subaddress hears it | reserved |  | Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7 |
 
 RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
@@ -65,8 +65,8 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`RDR_TFR_STATUS`](#rdr_tfr_status) | 9 | 2 | T | 2 | 5 | Terrain-following radar status | DRAFT |
 | [`RDR_SAR_MODE_CMD`](#rdr_sar_mode_cmd) | 9 | 3 | R | 2 | aperiodic | Synthetic aperture radar mode command | DRAFT |
 | [`RDR_SAR_STATUS`](#rdr_sar_status) | 9 | 3 | T | 2 | 5 | Synthetic aperture radar status | DRAFT |
-| [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd) | 9 | 4 | R | 2 | aperiodic | Targeting radar mode command | DRAFT |
-| [`RDR_TGT_STATUS`](#rdr_tgt_status) | 9 | 4 | T | 2 | 5 | Targeting radar status | DRAFT |
+| [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd) | 9 | 4 | R | 3 | aperiodic | Targeting radar mode command | DRAFT |
+| [`RDR_TGT_STATUS`](#rdr_tgt_status) | 9 | 4 | T | 4 | 5 | Targeting radar status | DRAFT |
 | [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd) | 9 | 5 | R | 4 | aperiodic | AEWC radar mode command | DRAFT |
 | [`RDR_AEWC_STATUS`](#rdr_aewc_status) | 9 | 5 | T | 2 | 5 | AEWC radar status | DRAFT |
 | [`RDR_WX_SCAN`](#rdr_wx_scan) | 9 | 18 | T | 10 | 5 | Weather radar scan summary | DRAFT |
@@ -100,7 +100,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`DSP_RDR_WX_CMD`](#dsp_rdr_wx_cmd) | 15 | 20 | T | 3 | 10 | Radar display command to the weather radar | DRAFT |
 | [`DSP_RDR_TFR_CMD`](#dsp_rdr_tfr_cmd) | 15 | 21 | T | 2 | 10 | Radar display command to the terrain-following radar | DRAFT |
 | [`DSP_RDR_SAR_CMD`](#dsp_rdr_sar_cmd) | 15 | 22 | T | 2 | 10 | Radar display command to the synthetic aperture radar | PROPOSED |
-| [`DSP_RDR_TGT_CMD`](#dsp_rdr_tgt_cmd) | 15 | 23 | T | 2 | 10 | Radar display command to the targeting radar | PROPOSED |
+| [`DSP_RDR_TGT_CMD`](#dsp_rdr_tgt_cmd) | 15 | 23 | T | 3 | 10 | Radar display command to the targeting radar | DRAFT |
 | [`DSP_RDR_AEWC_CMD`](#dsp_rdr_aewc_cmd) | 15 | 24 | T | 4 | 10 | Radar display command to the AEWC radar | PROPOSED |
 | [`DSP_TSD_MODE_CMD`](#dsp_tsd_mode_cmd) | 16 | 15 | R | 1 | aperiodic | Tactical situation display mode command | DRAFT |
 | [`DSP_TSD_STATUS`](#dsp_tsd_status) | 16 | 15 | T | 2 | 1 | Tactical situation display status | DRAFT |
@@ -121,9 +121,11 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) | 31 | 10 | R | 4 | 1 | Flight envelope monitoring, broadcast to the displays | DRAFT |
 | [`BCAST_ENG_ENGINE_STATUS`](#bcast_eng_engine_status) | 31 | 18 | R | 20 | 5 | Engine status, broadcast | DRAFT |
 | [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) | 31 | 19 | R | 7 | 1 | Fuel status, broadcast | DRAFT |
+| [`BCAST_RDR_TGT_STATUS`](#bcast_rdr_tgt_status) | 31 | 24 | R | 4 | 5 | Targeting radar status, broadcast to the displays | DRAFT |
 | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) | 31 | 25 | R | 21 | 10 | FMS flight data, broadcast | DRAFT |
 | [`BCAST_FMS_STATUS`](#bcast_fms_status) | 31 | 26 | R | 3 | 5 | FMS status, broadcast to the displays | DRAFT |
 | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) | 31 | 27 | R | 8 | 10 | Attitude command status, broadcast to the displays | DRAFT |
+| [`BCAST_FMS_ENERGY`](#bcast_fms_energy) | 31 | 28 | R | 6 | 1 | Energy maneuverability, broadcast to the displays | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
 | [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
 
@@ -134,14 +136,19 @@ The descriptor and segment framing is in README.md section 8. A block's payload 
 | ID | RT | Dir | Descriptor SA | Segment SA | Rate (Hz) | Title | Payload |
 |---|---|---|---|---|---|---|---|
 | `RDR_WX_PRODUCTS` | 9 | T | 6 | 7 | 25 | Weather radar products | [header 2 words + 6 sections, at most 548 words](#rdr_wx_products) |
-| `RDR_TGT_TRACKS` | 9 | T | 10 | 11 | 10 | Targeting radar tracks | TBD-v2 |
+| `RDR_TGT_TRACKS` | 9 | T | 10 | 11 | 25 | Targeting radar tracks | [header 3 words + 1 sections, at most 148 words](#rdr_tgt_tracks) |
+| `RDR_FUSED_TRACKS` | 9 | T | 24 | 25 | 25 | Fused air tracks | [header 2 words + 1 sections, at most 147 words](#rdr_fused_tracks) |
 | `RDR_AEWC_SECTOR` | 9 | T | 12 | 13 | 10 | AEWC sector scan | TBD-v2 |
 | `RDR_TFR_ELEVATION` | 9 | T | 14 | 15 | 25 | TFR elevation profile | [header 6 words + 2 sections, at most 304 words](#rdr_tfr_elevation) |
 | `RDR_SAR_IMAGE` | 9 | T | 16 | 17 | 1 | SAR image | TBD-v2 |
-| `PLANT_TERRAIN` | 27 | T | 4 | 5 | 50 | Terrain profile ahead, from the plant | [header 2 words + 1 sections, at most 103 words](#plant_terrain) |
-| `RDR_TFR_TERRAIN` | 9 | R | 21 | 22 | 50 | Terrain profile as received by the radar | as [`PLANT_TERRAIN`](#plant_terrain) (relayed copy) |
+| `PLANT_TERRAIN` | 27 | T | 4 | 5 | 25 | Terrain profile ahead, from the plant | [header 2 words + 1 sections, at most 103 words](#plant_terrain) |
+| `RDR_TFR_TERRAIN` | 9 | R | 21 | 22 | 25 | Terrain profile as received by the radar | as [`PLANT_TERRAIN`](#plant_terrain) (relayed copy) |
+| `PLANT_TRAFFIC` | 27 | T | 8 | 9 | 25 | Air traffic around the aircraft, from the plant | [header 2 words + 1 sections, at most 99 words](#plant_traffic) |
+| `RDR_TRAFFIC` | 9 | R | 8 | 9 | 25 | Air traffic as received by the radar computer | as [`PLANT_TRAFFIC`](#plant_traffic) (relayed copy) |
 | `BCAST_RDR_WX_PRODUCTS` | 31 | R | 6 | 7 | 25 | Weather radar products, broadcast to the displays | as [`RDR_WX_PRODUCTS`](#rdr_wx_products) (relayed copy) |
 | `BCAST_RDR_TFR_ELEVATION` | 31 | R | 8 | 9 | 25 | TFR elevation profile, broadcast to the displays | as [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) (relayed copy) |
+| `BCAST_RDR_TGT_TRACKS` | 31 | R | 20 | 21 | 25 | Targeting radar tracks, broadcast to the displays | as [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) (relayed copy) |
+| `BCAST_RDR_FUSED_TRACKS` | 31 | R | 22 | 23 | 25 | Fused air tracks, broadcast to the displays | as [`RDR_FUSED_TRACKS`](#rdr_fused_tracks) (relayed copy) |
 
 ## Relays (RT-to-RT transfers)
 
@@ -161,11 +168,11 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`DSP_RDR_WX_CMD`](#dsp_rdr_wx_cmd) | [`RDR_WX_MODE_CMD`](#rdr_wx_mode_cmd) | 3 | 10 |
 | [`DSP_RDR_TFR_CMD`](#dsp_rdr_tfr_cmd) | [`RDR_TFR_MODE_CMD`](#rdr_tfr_mode_cmd) | 2 | 10 |
 | [`DSP_RDR_SAR_CMD`](#dsp_rdr_sar_cmd) | [`RDR_SAR_MODE_CMD`](#rdr_sar_mode_cmd) | 2 | 10 |
-| [`DSP_RDR_TGT_CMD`](#dsp_rdr_tgt_cmd) | [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd) | 2 | 10 |
+| [`DSP_RDR_TGT_CMD`](#dsp_rdr_tgt_cmd) | [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd) | 3 | 10 |
 | [`DSP_RDR_AEWC_CMD`](#dsp_rdr_aewc_cmd) | [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd) | 4 | 10 |
 | [`PLANT_SENSORS`](#plant_sensors) | [`RDR_TFR_SENSORS`](#rdr_tfr_sensors) | 11 | 50 |
 | [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | [`FCS_TERRAIN`](#fcs_terrain) | 8 | 10 |
-| [`PLANT_TERRAIN`](#plant_terrain) | `RDR_TFR_TERRAIN` | block: 4 + 32 per frame | 50 |
+| [`PLANT_TERRAIN`](#plant_terrain) | `RDR_TFR_TERRAIN` | block: 4 + 32 per frame | 25 |
 | [`RDR_WX_STATUS`](#rdr_wx_status) | [`BCAST_RDR_WX_STATUS`](#bcast_rdr_wx_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
 | [`RDR_WX_SCAN`](#rdr_wx_scan) | [`BCAST_RDR_WX_SCAN`](#bcast_rdr_wx_scan) (broadcast, heard by RT 13, 14, 15) | 10 | 5 |
 | [`RDR_TFR_STATUS`](#rdr_tfr_status) | [`BCAST_RDR_TFR_STATUS`](#bcast_rdr_tfr_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
@@ -182,6 +189,11 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`ENG_THRUST_CMD`](#eng_thrust_cmd) | [`PLANT_THRUST_CMD`](#plant_thrust_cmd) | 3 | 10 |
 | [`ENG_ENGINE_STATUS`](#eng_engine_status) | [`BCAST_ENG_ENGINE_STATUS`](#bcast_eng_engine_status) (broadcast, heard by RT 5, 13, 14) | 20 | 5 |
 | [`ENG_FUEL_STATUS`](#eng_fuel_status) | [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) (broadcast, heard by RT 13, 14) | 7 | 1 |
+| [`PLANT_TRAFFIC`](#plant_traffic) | `RDR_TRAFFIC` | block: 4 + 32 per frame | 25 |
+| [`RDR_TGT_STATUS`](#rdr_tgt_status) | [`BCAST_RDR_TGT_STATUS`](#bcast_rdr_tgt_status) (broadcast, heard by RT 13, 15) | 4 | 5 |
+| [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) | `BCAST_RDR_TGT_TRACKS` (broadcast, heard by RT 13) | block: 4 + 32 per frame | 25 |
+| [`RDR_FUSED_TRACKS`](#rdr_fused_tracks) | `BCAST_RDR_FUSED_TRACKS` (broadcast, heard by RT 14, 16) | block: 4 + 32 per frame | 25 |
+| [`FMS_ENERGY`](#fms_energy) | [`BCAST_FMS_ENERGY`](#bcast_fms_energy) (broadcast, heard by RT 16) | 6 | 1 |
 
 ## Mode codes
 
@@ -526,6 +538,52 @@ The tanks of FuelManagementSystem.setup_aircraft: Main Left and Main Right 10000
 | 2 | MAIN_RIGHT |  |  |
 | 3 | CENTER |  |  |
 
+### `target_class` (3 bits)
+
+Air target classification: the radar's own assessment (targeting_radar._generate_target's speed and altitude rules refined by target_processor.SignatureAnalyzer), never the truth
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  |  |
+| 1 | FIGHTER |  |  |
+| 2 | BOMBER |  |  |
+| 3 | HIGH_ALT |  |  |
+| 4 | MISSILE |  |  |
+| 5 | HELICOPTER |  |  |
+| 6 | DRONE |  |  |
+| 7 | STEALTH |  | aewc_radar's classification of its stealth targets |
+
+### `iff_identity` (2 bits)
+
+Identity of a track (the radars' identity field, radar_data_fusion.FusedTrack.identity): UNKNOWN until an IFF interrogator exists, as the Python's always was
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  |  |
+| 1 | FRIENDLY |  |  |
+| 2 | HOSTILE |  |  |
+| 3 | NEUTRAL |  |  |
+
+### `threat` (2 bits)
+
+Threat assessment of a track (radar_data_fusion.RadarDataFusion._assess_threat): a hostile or friendly identity decides; otherwise HOSTILE when the radar cross-section is under 3 m2 and the speed over 200 m/s, else UNKNOWN
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  |  |
+| 1 | HOSTILE |  |  |
+| 2 | FRIENDLY |  |  |
+
+### `lock_status` (2 bits)
+
+The targeting radar's lock (targeting_radar._handle_track_request: LOCKED when the lock quality is above 0.5, else ACQUIRING)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | ACQUIRING |  |  |
+| 2 | LOCKED |  |  |
+
 ## Messages
 
 ### TERM_STATUS
@@ -730,7 +788,9 @@ Replaces: `sar_radarCommand`, `sar_radarModeChangeRequest`, `sar_radarImageReque
 
 ### RDR_TGT_STATUS
 
-**Targeting radar status** — RT 9 · SA 4 · transmit (terminal to bus) · 2 words · 5 Hz
+**Targeting radar status** — RT 9 · SA 4 · transmit (terminal to bus) · 4 words · 5 Hz
+
+targeting_radar.get_status(): the state and mode, how many tracks the radar holds, the lock and the jamming flag (v1.10). The tracks themselves are the RDR_TGT_TRACKS block. The radar tracks in every operating mode (the Python answered track requests in any mode but STANDBY) and locks only in TARGET_TRACK.
 
 Replaces: `targeting_radarStatusRequest`, `targeting_radarStatusResponse`, `targeting_radarModeChangeResponse`, `radarStatusRequest`, `radarStatusResponse`
 
@@ -741,12 +801,20 @@ Replaces: `targeting_radarStatusRequest`, `targeting_radarStatusResponse`, `targ
 | 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
 | 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
 | 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
-| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 13-9 | `track_count` | uint | raw counts | Tracks held (saturates at 31) |
+| 1 | 8-7 | `lock_status` | enum | enum `lock_status` |  |
+| 1 | 6 | `jamming` | bool |  | 1 = jamming detected on the locked track (the Python's 5 % per update, drawn from the radar's own generator) |
+| 1 | 5-2 | `track_filter` | enum | enum `track_filter` | The filter in force: which tracks RDR_TGT_TRACKS reports, by threat |
+| 1 | 1 | `spare_1` | spare |  |  |
 | 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+| 2 | 15-0 | `locked_track_id` | uint | raw counts | The locked track; 0 = no lock |
+| 3 | 15-0 | `lock_quality` | uint | LSB 1/1000, range 0 to 1 | min(1, snr / 30) of the locked track (the Python's model), 0 when it is negative |
 
 ### RDR_TGT_MODE_CMD
 
-**Targeting radar mode command** — RT 9 · SA 4 · receive (bus to terminal) · 2 words · aperiodic
+**Targeting radar mode command** — RT 9 · SA 4 · receive (bus to terminal) · 3 words · aperiodic
+
+The mode, the track filter and the lock request in one command (the Python's LOCK_REQUEST was a message of its own; v1.10 folds it in). A command whose requested_state is not NORMAL clears the tracks and the lock, as set_mode(STANDBY) did.
 
 Replaces: `targeting_radarCommand`, `targeting_radarModeChangeRequest`, `targeting_radarTrackRequest`, `radarCommand`
 
@@ -756,7 +824,8 @@ Replaces: `targeting_radarCommand`, `targeting_radarModeChangeRequest`, `targeti
 | 0 | 11-8 | `requested_mode` | enum | enum `targeting_mode` |  |
 | 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
 | 1 | 15-4 | `spare_1` | spare |  |  |
-| 1 | 3-0 | `track_filter` | enum | enum `track_filter` | Which tracks to report (legacy track_type) |
+| 1 | 3-0 | `track_filter` | enum | enum `track_filter` | Which tracks to report (legacy track_type): ALL, or those whose threat is HOSTILE, FRIENDLY or UNKNOWN |
+| 2 | 15-0 | `lock_track_id` | uint | raw counts | In TARGET_TRACK mode: the track to lock on (targeting_radar._handle_lock_request), 0 = release the lock; a track the radar does not hold leaves the lock as it is. Ignored in other modes, where the Python refused lock requests |
 
 ### RDR_AEWC_STATUS
 
@@ -1419,7 +1488,7 @@ Same layout as [`RDR_SAR_MODE_CMD`](#rdr_sar_mode_cmd).
 
 ### DSP_RDR_TGT_CMD
 
-**Radar display command to the targeting radar** — RT 15 · SA 23 · transmit (terminal to bus) · 2 words · 10 Hz · **PROPOSED**
+**Radar display command to the targeting radar** — RT 15 · SA 23 · transmit (terminal to bus) · 3 words · 10 Hz
 
 Relayed into RT 9 SA 4, when that radar is ported.
 
@@ -1508,6 +1577,22 @@ Same layout as [`ENG_ENGINE_STATUS`](#eng_engine_status).
 **Fuel status, broadcast** — RT 31 · SA 19 · receive (bus to terminal) · 7 words · 1 Hz
 
 Same layout as [`ENG_FUEL_STATUS`](#eng_fuel_status).
+
+### BCAST_RDR_TGT_STATUS
+
+**Targeting radar status, broadcast to the displays** — RT 31 · SA 24 · receive (bus to terminal) · 4 words · 5 Hz
+
+The tracks band of the broadcast map, 20-24 (v1.10): the targeting radar's status for the MFD's targeting page and the radar display's control panel, and the two track blocks.
+
+Same layout as [`RDR_TGT_STATUS`](#rdr_tgt_status).
+
+### BCAST_FMS_ENERGY
+
+**Energy maneuverability, broadcast to the displays** — RT 31 · SA 28 · receive (bus to terminal) · 6 words · 1 Hz
+
+The TSD's energy metrics (tsd._poll_data reads get_tactical_status()['energy_metrics']), v1.10.
+
+Same layout as [`FMS_ENERGY`](#fms_energy).
 
 ### PLANT_SENSORS
 
@@ -1963,6 +2048,82 @@ Replaces: `weather_radarVILResponse`, `DISPLAY_VIL_DATA`, `weather_radarData`, `
 | 4 | 12-0 | `spare_4` | spare |  |  |
 | 5 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 | Beam height at the bin: range x tan(lowest elevation) |
 
+### RDR_TGT_TRACKS
+
+**Targeting radar tracks** — RT 9 · descriptor SA 10 · segment SA 11 · 25 Hz · payload at most 148 words
+
+targeting_radar._handle_track_request's track data and lock data in one block (v1.10): every track the radar holds that the track filter admits, with the signature analyser's classification and the stealth detector's assessment (target_processor.py), and the lock. Positions are Cartesian metres east, north and up of the aircraft, as the Python's were, velocities relative to the aircraft. The radar associates each detection of RDR_TRAFFIC with the track whose predicted position is nearest within 1 km and starts a new track otherwise; the signal-to-noise ratio is the Python's 30 - 20 log10(range / 1000) dB and a track's confidence snr / 30 limited to 0..1. Republished no more often than every fifteen frames; the five segments take five frames at 25 Hz.
+
+Replaces: `targeting_radarTrackResponse`, `targeting_radarData`
+
+**Header (3 words)**, followed by one count word per section in the order below.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `update_seq` | uint | raw counts | Increments (mod 256) with every track update the block reflects |
+| 0 | 7-4 | `mode` | enum | enum `targeting_mode` | Mode the tracks were made in; NONE with no tracks when the radar is not operating |
+| 0 | 3-2 | `lock_status` | enum | enum `lock_status` |  |
+| 0 | 1 | `jamming` | bool |  | 1 = jamming detected on the locked track |
+| 0 | 0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `locked_track_id` | uint | raw counts | 0 = no lock |
+| 2 | 15-0 | `lock_quality` | uint | LSB 1/1000, range 0 to 1 | min(1, snr / 30) of the locked track, 0 when negative |
+
+**Section `track` — Tracks**: up to 12 records of 12 words. In track id order
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `track_id` | uint | raw counts | The radar's track number, from 1, kept while the track is held |
+| 1-2 | 31-0 | `x` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | East of the aircraft |
+| 3-4 | 31-0 | `y` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | North of the aircraft |
+| 5-6 | 31-0 | `z` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | Above the aircraft |
+| 7 | 15-0 | `velocity_east` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 8 | 15-0 | `velocity_north` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 9 | 15-0 | `velocity_up` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 10 | 15-13 | `classification` | enum | enum `target_class` | SignatureAnalyzer's class after its speed and altitude overrides |
+| 10 | 12-11 | `identity` | enum | enum `iff_identity` |  |
+| 10 | 10-9 | `threat` | enum | enum `threat` | radar_data_fusion._assess_threat's rule on this track alone; the track filter selects by it |
+| 10 | 8 | `stealth` | bool |  | StealthDetector: P(stealth) above 0.6 and the corrected RCS below 0.1 m2 |
+| 10 | 7 | `locked` | bool |  | 1 = this is the locked track |
+| 10 | 6-0 | `spare_10` | spare |  |  |
+| 11 | 15-8 | `confidence` | uint | LSB 1/100, range 0 to 1 | snr / 30 limited to 0..1 (TargetingRadarTrackData.confidence) |
+| 11 | 7-0 | `stealth_probability` | uint | LSB 1/100, range 0 to 1 | StealthDetector's posterior |
+
+### RDR_FUSED_TRACKS
+
+**Fused air tracks** — RT 9 · descriptor SA 24 · segment SA 25 · 25 Hz · payload at most 147 words
+
+radar_data_fusion.RadarDataFusion's fused track table (v1.10): the targeting radar's tracks (and the AEWC radar's, when it is ported) correlated within 500 m by nearest centroid, heaviest sensor first; merged by sensor weight (targeting 0.8, AEWC 0.7) with a confidence that is the probability union of the sensors, the classification and identity of the heaviest sensor, and the threat of the rule set; track ids carried over from the previous epoch by nearest neighbour within 500 m. An epoch every 25 frames (the Python's 2 Hz). The table is rebuilt from the sensors' current tracks each epoch, so a track a sensor dropped is gone at once; the Python's 30 s ageing never had anything left to age. The five segments take five frames at 25 Hz.
+
+**Header (2 words)**, followed by one count word per section in the order below.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `epoch` | uint | raw counts | Increments (mod 256) with every fusion epoch |
+| 0 | 7-0 | `hostile_count` | uint | raw counts | Tracks assessed HOSTILE (RadarDataFusion.get_threat_tracks) |
+| 1 | 15 | `targeting_present` | bool |  | 1 = the targeting radar was operating this epoch |
+| 1 | 14 | `aewc_present` | bool |  | 1 = the AEWC radar was operating this epoch |
+| 1 | 13-0 | `spare_1` | spare |  |  |
+
+**Section `track` — Fused tracks**: up to 12 records of 12 words. In track id order
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `track_id` | uint | raw counts | The fused track number, kept while a track within 500 m continues it |
+| 1-2 | 31-0 | `x` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | East of the aircraft |
+| 3-4 | 31-0 | `y` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | North of the aircraft |
+| 5-6 | 31-0 | `z` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | Above the aircraft |
+| 7 | 15-0 | `velocity_east` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 8 | 15-0 | `velocity_north` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 9 | 15-0 | `velocity_up` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 10 | 15-13 | `classification` | enum | enum `target_class` | The heaviest contributing sensor's |
+| 10 | 12-11 | `identity` | enum | enum `iff_identity` | The heaviest contributing sensor's |
+| 10 | 10-9 | `threat` | enum | enum `threat` |  |
+| 10 | 8 | `from_targeting` | bool |  | 1 = the targeting radar contributed |
+| 10 | 7 | `from_aewc` | bool |  | 1 = the AEWC radar contributed |
+| 10 | 6-0 | `spare_10` | spare |  |  |
+| 11 | 15-8 | `confidence` | uint | LSB 1/100, range 0 to 1 | 1 - product of (1 - weight) over the contributing sensors |
+| 11 | 7-0 | `spare_11` | spare |  |  |
+
 ### RDR_TFR_ELEVATION
 
 **TFR elevation profile** — RT 9 · descriptor SA 14 · segment SA 15 · 25 Hz · payload at most 304 words
@@ -2006,9 +2167,9 @@ Replaces: `tfr_radarElevationDataResponse`, `tfr_radarData`
 
 ### PLANT_TERRAIN
 
-**Terrain profile ahead, from the plant** — RT 27 · descriptor SA 4 · segment SA 5 · 50 Hz · payload at most 103 words
+**Terrain profile ahead, from the plant** — RT 27 · descriptor SA 4 · segment SA 5 · 25 Hz · payload at most 103 words
 
-What the terrain-following radar's antenna would measure: the terrain elevation at evenly spaced ground distances ahead of the aircraft along its heading, from the aircraft (sample 0) to range_m (the last sample), 100 samples over 10 km as tfr_radar.py's profile was. The plant samples its terrain, a fixed function of position (fmofp_plant.terrain), at the aircraft's position and heading every tenth of a second; sample i is at distance i x range_m / (samples - 1), the samples being this block's elevation records. The four segments take four frames, so a profile is complete at the radar before the next one is published.
+What the terrain-following radar's antenna would measure: the terrain elevation at evenly spaced ground distances ahead of the aircraft along its heading, from the aircraft (sample 0) to range_m (the last sample), 100 samples over 10 km as tfr_radar.py's profile was. The plant samples its terrain, a fixed function of position (fmofp_plant.terrain), at the aircraft's position and heading every fifth of a second; sample i is at distance i x range_m / (samples - 1), the samples being this block's elevation records. The four segments take eight frames at 25 Hz, so a profile is complete at the radar before the next one is published (until v1.10 the block was polled every frame and the profile published ten times a second; the targeting blocks needed that bus time).
 
 **Header (2 words)**, followed by one count word per section in the order below.
 
@@ -2023,6 +2184,34 @@ What the terrain-following radar's antenna would measure: the terrain elevation 
 | Word | Bits | Field | Type | Scaling | Notes |
 |---|---|---|---|---|---|
 | 0 | 15-0 | `elevation` | sint | LSB 1/4 m, range -8192 to 8191.75 | Terrain height above mean sea level |
+
+### PLANT_TRAFFIC
+
+**Air traffic around the aircraft, from the plant** — RT 27 · descriptor SA 8 · segment SA 9 · 25 Hz · payload at most 99 words
+
+What the targeting and AEWC radars' antennas would measure of the other aircraft (v1.10): for each, the slant range, true azimuth and elevation from the aircraft, its velocity relative to the aircraft, and its radar cross-section. The traffic itself (fmofp_plant.traffic) is targeting_radar._generate_target's five aircraft and aewc_radar._generate_target's seven, moved by their own velocities and accelerations as _update_targets did and replaced when they leave their generator's range (100 km, 400 km); the aircraft's own motion is subtracted, which the Python never did because its targets lived in a frame glued to the aircraft. Nothing here says what an aircraft is: no class, no stealth flag, no identity; the radars assess that from what they measure. Published five times a second; the four segments take four frames at 25 Hz.
+
+**Header (2 words)**, followed by one count word per section in the order below.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `traffic_seq` | uint | raw counts | Increments (mod 256) with every publication |
+| 0 | 7-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `spare_1` | spare |  |  |
+
+**Section `target` — Targets**: up to 12 records of 8 words. One per aircraft in the plant's traffic, in the plant's order
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `target_id` | uint | raw counts | The plant's number for the aircraft, for the tests; a radar associates by position, as it would in the air |
+| 0 | 7-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `azimuth` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True bearing from the aircraft |
+| 2 | 15-0 | `range` | uint | LSB 1/64 km, range 0 to 1023.98 | Slant range |
+| 3 | 15-0 | `elevation` | sint | LSB 180/32768 deg, range -90 to 90 | Elevation angle from the aircraft |
+| 4 | 15-0 | `velocity_east` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Velocity relative to the aircraft, east |
+| 5 | 15-0 | `velocity_north` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Velocity relative to the aircraft, north |
+| 6 | 15-0 | `velocity_up` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Velocity relative to the aircraft, up |
+| 7 | 15-0 | `rcs` | uint | LSB 1/100 m2, range 0 to 655.35 | Radar cross-section |
 
 ## Where every legacy message type went
 
