@@ -19,9 +19,9 @@ except ImportError:  # pragma: no cover - depends on the machine
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (AewcMode, ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, ShearSeverity,
+from fmofp_bus.icd.enums import (AewcMode, SarMode, ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, ShearSeverity,
                                  Ssm, TargetingMode, TargetingState, TerminalState, TfrMode, WeaponsState, WeatherMode)
-from fmofp_bus.tests.test_display_feeds import (FakeTerminal, flight_payload, sample_aewc, sample_elevation, sample_fused,
+from fmofp_bus.tests.test_display_feeds import (FakeTerminal, flight_payload, sample_aewc, sample_elevation, sample_fused, sample_sar_image,
                                                 sample_products, sample_tracks)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
@@ -92,6 +92,8 @@ class DisplayWindowsTest(unittest.TestCase):
                                                               mode=TargetingMode.TARGET_SEARCH, track_count=4)))
         terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(state=TerminalState.NORMAL, mode=AewcMode.AEWC_SEARCH,
                                                                 track_count=9, stealth_tracks=2)))
+        terminal.put(m.BcastRdrSarStatus(payload=m.RdrSarStatus(state=TerminalState.NORMAL, mode=SarMode.STRIPMAP,
+                                                              scene_valid=True, nav_valid=True, image_seq=2)))
         window.tick()
         self.app.processEvents()
         active = lit_pixels(window.picture.grab().toImage())
@@ -103,6 +105,7 @@ class DisplayWindowsTest(unittest.TestCase):
         self.assertIn("TFR NORMAL TERRAIN_FOLLOWING", window.status.text())
         self.assertIn("TGT NORMAL TARGET_SEARCH  4 tracks", window.status.text())
         self.assertIn("AEWC NORMAL AEWC_SEARCH  9 tracks (2 stealth)", window.status.text())
+        self.assertIn("SAR NORMAL STRIPMAP  image 2", window.status.text())
         # The control panel sends commands through the terminal.
         window.findChildren(type(window.clearance))  # the spin box exists
         buttons = {button.text(): button for button in window.findChildren(self.app_module.QPushButton)}
@@ -112,8 +115,10 @@ class DisplayWindowsTest(unittest.TestCase):
         window.lock_track.setValue(3)
         buttons["TARGET_TRACK"].click()
         buttons["AEWC_SEARCH"].click()
+        window.sar_resolution.setValue(0.3)
+        buttons["SPOTLIGHT"].click()
         sent = getattr(terminal, "sent", [])
-        self.assertEqual(5, len(sent))
+        self.assertEqual(6, len(sent))
         self.assertEqual((WeatherMode.WINDSHEAR, TerminalState.NORMAL), (sent[0].payload.requested_mode,
                                                                           sent[0].payload.requested_state))
         self.assertEqual((TfrMode.TFR_SEARCH, 1000.0), (sent[1].payload.requested_mode, sent[1].payload.set_clearance))
@@ -122,6 +127,8 @@ class DisplayWindowsTest(unittest.TestCase):
         self.assertEqual((TargetingMode.TARGET_TRACK, 3), (sent[3].payload.requested_mode, sent[3].payload.lock_track_id))
         self.assertEqual((m.DspRdrAewcCmd, AewcMode.AEWC_SEARCH, 90.0), (type(sent[4]), sent[4].payload.requested_mode,
                                                                       sent[4].payload.azimuth_end))
+        self.assertEqual((m.DspRdrSarCmd, SarMode.SPOTLIGHT, 0.3), (type(sent[5]), sent[5].payload.requested_mode,
+                                                                round(sent[5].payload.resolution, 6)))
         window.timer.stop()
         window.close()
 
@@ -290,15 +297,29 @@ class DisplayWindowsTest(unittest.TestCase):
             self.assertAlmostEqual(400.0 / 1.852, mfd._current_radar_display.range_scale)
             self.assertGreater(lit_pixels(mfd.grab().toImage()), standby_aewc, "two targets, one of them a stealth diamond")
 
-            # The SAR radar is not on the bus yet: its standby picture paints.
-            for kind in (kinds.SAR,):
-                mfd.current_radar_type = kind
-                mfd._update_radar_type()
-                window.tick()
-                mfd.update()
-                self.app.processEvents()
-                self.assertFalse(mfd._paint_error, kind.name)
-                self.assertEqual("STANDBY", mfd.radar_data.mode.name, kind.name)
+            # The SAR picture: standby, then an image from the bus, which the display decodes from the PGM bytes.
+            mfd.current_radar_type = kinds.SAR
+            mfd._update_radar_type()
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertEqual("SARRadarDisplay", type(mfd._current_radar_display).__name__)
+            self.assertEqual("STANDBY", mfd.radar_data.mode.name)
+            standby_sar = lit_pixels(mfd.grab().toImage())
+            terminal.put(m.BcastRdrSarStatus(payload=m.RdrSarStatus(state=TerminalState.NORMAL, mode=SarMode.STRIPMAP,
+                                                                  scene_valid=True, nav_valid=True, image_seq=4)))
+            terminal.put_block(b.BcastRdrSarImage, sample_sar_image(), 1)
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertEqual(window._sar_modes.STRIPMAP, mfd.radar_data.mode)
+            self.assertEqual(13 + 4096, len(mfd.radar_data.sar_data["image_data"]))
+            picture = mfd._current_radar_display._current_image
+            self.assertIsNotNone(picture, "QImage.fromData decoded the PGM")
+            self.assertEqual((64, 64), (picture.width(), picture.height()))
+            self.assertGreater(lit_pixels(mfd.grab().toImage()), standby_sar, "the picture of the ground")
 
             # Back to the weather: the picture returns from the bus data at once.
             mfd.current_radar_type = kinds.WEATHER

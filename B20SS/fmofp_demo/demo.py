@@ -16,7 +16,8 @@ the engines' N1 and the fuel, the radars' modes, the terrain clearance and the
 targeting tracks, the navigation fix, and which terminals are answering.
 
 Unless --no-events is given, a short scripted flight runs: the radars are
-switched on (the targeting and AEWC radars search, the targeting radar later
+switched on (the targeting and AEWC radars search, the SAR images the strip
+beside the track and then spotlights the lake, the targeting radar later
 locks on a track), the thrust
 lever moves, the autothrottle holds 500 kt, the flight
 mode changes, one engine is throttled back, fuel is transferred. Each event is
@@ -35,7 +36,8 @@ import time
 from collections import namedtuple
 
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (AewcMode, EngineCommand, EngineSelect, FmsFlightMode, FuelTank, LockStatus, Ssm,
+from fmofp_bus.icd.enums import (AewcMode, EngineCommand, EngineSelect, FmsFlightMode, FuelTank, LockStatus, SarMode,
+                                 Ssm,
                                  TargetingMode, TerminalState, TfrMode, TrackFilter, WeatherMode)
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
@@ -79,6 +81,9 @@ def default_events():
                                requested_mode=AewcMode.AEWC_SEARCH, azimuth_start=0.0, azimuth_end=90.0,
                                elevation=0.0)),
         Event(10.0, "FMS thrust lever to 80 %", m.FmsControlCmd(cmd_seq=201, thrust_present=True, thrust=0.8)),
+        Event(12.0, "SAR on: STRIPMAP at 1 m (the strip 2 km to the right: the road beside the track, then the town)",
+              m.RdrSarModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL, requested_mode=SarMode.STRIPMAP,
+                              resolution=1.0)),
         Event(20.0, "autothrottle engaged: hold 500 kt",
               m.EngCmd(cmd_seq=201, command=EngineCommand.AUTOTHROTTLE_ENGAGE, target_airspeed=500.0)),
         Event(30.0, "flight mode COMBAT", m.FmsFlightModeCmd(cmd_seq=201, flight_mode=FmsFlightMode.COMBAT)),
@@ -95,6 +100,9 @@ def default_events():
         Event(60.0, "weather radar to MAPPING",
               m.RdrWxModeCmd(cmd_seq=202, requested_state=TerminalState.NORMAL,
                              requested_mode=WeatherMode.MAPPING, range_km=200.0, tilt=0.0)),
+        Event(65.0, "SAR to SPOTLIGHT at 0.3 m: the lake abeam, a ship under way (a picture every 3 s)",
+              m.RdrSarModeCmd(cmd_seq=202, requested_state=TerminalState.NORMAL, requested_mode=SarMode.SPOTLIGHT,
+                              resolution=0.3)),
         Event(75.0, "both engines back to 70 %",
               m.EngCmd(cmd_seq=205, command=EngineCommand.SET_THRUST, engine=EngineSelect.ALL, thrust=70.0)),
     ]
@@ -317,6 +325,17 @@ class Dashboard:
             else:
                 text = "AEWC " + ("off" if aewc.state == TerminalState.NORMAL else aewc.state.name)
             parts.append(text)
+        sar = self.latest.get(m.RdrSarStatus)
+        if sar is not None:
+            if sar.state == TerminalState.NORMAL and sar.mode != SarMode.NONE:
+                text = f"SAR {sar.mode.name} img {sar.image_seq}"
+                if not sar.scene_valid:
+                    text += " no scene"
+                if not sar.nav_valid:
+                    text += " no fix"
+            else:
+                text = "SAR " + ("off" if sar.state == TerminalState.NORMAL else sar.state.name)
+            parts.append(text)
         nav = self.latest.get(m.NavSolution)
         if nav is not None and nav.position_ssm == Ssm.NORMAL:
             parts.append(f"nav {nav.latitude:+.4f} {nav.longitude:+.4f} ({nav.sats_used} sats)")
@@ -335,10 +354,12 @@ def banner(args, terminals, events, log_dir, paths):
     print(f"fmofp_demo: {len(terminals)} terminals on port base {args.port_base}, binaries from "
           f"{shown(os.path.dirname(paths['bc']))}, logs in {shown(log_dir)}")
     if not args.no_displays and not args.headless:
-        print("  radar display window: weather picture left, terrain picture right; its WX, TFR, TGT and AEWC buttons set\n"
-              "    the radars' modes, the spinboxes the terrain-following set clearance and the track to lock.\n"
+        print("  radar display window: weather picture left, terrain picture right; its WX, TFR, TGT, AEWC and SAR buttons\n"
+              "    set the radars' modes, the spinboxes the terrain-following set clearance, the track to lock and the\n"
+              "    SAR resolution.\n"
               "  PFD window: attitude, airspeed, altitude and heading from the FMS flight data.\n"
-              "  MFD window: RADAR shows the radars' pictures (Targeting Radar and AEWC Radar: their tracks), SYSTEMS the GCAS alerts,\n"
+              "  MFD window: RADAR shows the radars' pictures (Targeting Radar and AEWC Radar: their tracks; Synthetic\n"
+              "    Aperture: its picture of the ground, a new one every 3 s), SYSTEMS the GCAS alerts,\n"
               "    exceedances and engine\n"
               "    rows, MISSION the position.\n"
               "  EICAS window: the engine readings, the fuel quantity and balance, the FCS alerts and the crew alert\n"
@@ -405,7 +426,9 @@ def main(argv=None):
     parser.add_argument("--headless", action="store_true", help="displays without windows (offscreen Qt)")
     parser.add_argument("--no-displays", action="store_true", help="only the plant, the partitions and the bus")
     parser.add_argument("--no-events", action="store_true", help="no scripted flight")
-    parser.add_argument("--hold", default=None, help="plant quantities held constant, e.g. altitude=5000,speed=450")
+    parser.add_argument("--hold", default="heading=0,speed=450",
+                        help="plant quantities held constant (default heading=0,speed=450: the SAR's ground scene lies "
+                             "along the northbound track from home, the lake abeam at 65 s; give '' to free them)")
     parser.add_argument("--seed", type=int, default=None, help="the plant's random seed")
     parser.add_argument("--log-dir", default=None, help="where the programs' logs go (default: logs/demo)")
     parser.add_argument("--settle", type=float, default=4.0, help="seconds to let the programs start before the bus")

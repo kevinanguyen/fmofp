@@ -33,6 +33,18 @@
 //   aewc_ecm <exceedance_db>                      -> "<jammed> <severity> <jam_type> <mitigation>"
 //   aewc_priority <6 counts> <6 hostile> <6 ages_s> <jammed mask>
 //                                                 -> "order s1..s6 dwell d1..d6 score c1..c6"
+// Synthetic aperture radar (sar_radar.py, sar_processor.py); the tool keeps a ground scene and the last two images:
+//   sar_scene_clear                               -> ok; an empty scene
+//   sar_point <kind> <lat> <lon> <size> <brightness>      -> ok (a point scatterer)
+//   sar_line <kind> <lat1> <lon1> <lat2> <lon2> <width> <brightness> -> ok
+//   sar_area <kind> <lat> <lon> <radius> <brightness>     -> ok
+//   sar_geometry <mode> <resolution> <lat> <lon> <heading> -> "pixel along cross latitude longitude" of the strip
+//   sar_level <mode> <resolution> <lat> <lon> <heading> <row> <col> -> the pixel's level before speckle
+//   sar_render <mode> <resolution> <lat> <lon> <heading> <seed> -> 64 lines of 64 pixels, then "end"
+//   sar_image, then 64 lines of 64 pixels         -> ok; an image given instead of rendered
+//   sar_detect                                    -> ChangeDetector over the previous and the current image:
+//                                                    "n <events> <significant> <regions>", then
+//                                                    "id row col area log_ratio type confidence significant" each, "end"
 // Targeting (target_processor.py) and fusion (radar_data_fusion.py):
 //   signature <rcs> <scintillation> <speed> <altitude> -> "<class> <confidence> <rcs_corrected>"
 //   stealth_reset                                 -> the detector's state for one track back to the prior
@@ -43,6 +55,7 @@
 //                                                 -> "n <count> <hostile>", then "id x y z vx vy vz confidence
 //                                                    class identity threat sources" per track, "end"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <iostream>
@@ -55,6 +68,7 @@
 #include <fmofp/radar/target_processing.hpp>
 #include <fmofp/radar/terrain_following.hpp>
 #include <fmofp/radar/aewc_radar.hpp>
+#include <fmofp/radar/sar_radar.hpp>
 #include <fmofp/radar/track_fusion.hpp>
 #include <fmofp/radar/weather_model.hpp>
 #include <fmofp/radar/weather_products.hpp>
@@ -78,6 +92,10 @@ icd::ClearanceLevel g_master = icd::ClearanceLevel::CLEAR;
 radar::StealthState g_stealth;
 radar::TrackFusion g_fusion;
 std::vector<radar::TrackReport> g_reports;
+icd::PlantGround g_scene;
+radar::SarImage g_sar_previous{};
+radar::SarImage g_sar_current{};
+radar::ChangeDetector g_detector;
 
 // An enumerator by its ICD name, for the enums the tool reads.
 template <typename Enum>
@@ -272,6 +290,63 @@ void do_tfr_warnings() {
 
 }  // namespace
 
+bool read_sar_image(radar::SarImage& out) {
+    std::string line;
+    for (std::size_t row = 0; row < radar::kSarImageSize; ++row) {
+        if (!std::getline(std::cin, line)) {
+            return false;
+        }
+        std::istringstream in(line);
+        for (std::size_t col = 0; col < radar::kSarImageSize; ++col) {
+            unsigned v = 0;
+            if (!(in >> v) || v > 255U) {
+                return false;
+            }
+            out[row * radar::kSarImageSize + col] = static_cast<std::uint8_t>(v);
+        }
+    }
+    return true;
+}
+
+void print_sar_image(const radar::SarImage& image) {
+    for (std::size_t row = 0; row < radar::kSarImageSize; ++row) {
+        for (std::size_t col = 0; col < radar::kSarImageSize; ++col) {
+            std::printf(col == 0 ? "%u" : " %u", static_cast<unsigned>(image[row * radar::kSarImageSize + col]));
+        }
+        std::printf("\n");
+    }
+    std::printf("end\n");
+}
+
+// The strip's geometry from "<mode> <resolution> <lat> <lon> <heading>"; false on a bad line.
+bool read_sar_geometry(std::istringstream& in, std::vector<double>& a, radar::SarGeometry& g, icd::SarMode& mode) {
+    std::string name;
+    if (!(in >> name) || !parse_enum(name, mode) || !read(in, a, 4)) {
+        return false;
+    }
+    g = radar::sar_strip_geometry(mode, a[0], a[1], a[2], a[3]);
+    return true;
+}
+
+void do_sar_detect() {
+    g_detector.init();
+    std::array<radar::ChangeEvent, radar::kChangeMaxEvents> events{};
+    (void)g_detector.process(g_sar_previous, events.data(), events.size());
+    const std::size_t n = g_detector.process(g_sar_current, events.data(), events.size());
+    const std::size_t significant = static_cast<std::size_t>(
+        std::count_if(events.begin(), events.begin() + static_cast<std::ptrdiff_t>(n),
+                      [](const radar::ChangeEvent& e) { return e.significant; }));
+    std::printf("n %u %u %u\n", static_cast<unsigned>(n), static_cast<unsigned>(significant),
+                static_cast<unsigned>(g_detector.regions()));
+    for (std::size_t i = 0; i < n; ++i) {
+        const radar::ChangeEvent& e = events[i];
+        std::printf("%u %u %u %u %.17g %s %.17g %d\n", static_cast<unsigned>(e.id), static_cast<unsigned>(e.row),
+                    static_cast<unsigned>(e.col), static_cast<unsigned>(e.area), e.log_ratio_mean,
+                    icd::to_string(e.type), e.confidence, e.significant ? 1 : 0);
+    }
+    std::printf("end\n");
+}
+
 int main() {
     (void)g_radar.init();
     (void)g_fusion.init();
@@ -343,6 +418,80 @@ int main() {
                 std::printf(" %.17g", s);
             }
             std::printf("\n");
+        } else if (cmd == "sar_scene_clear") {
+            g_scene = icd::PlantGround{};
+            std::printf("ok\n");
+        } else if (cmd == "sar_point" || cmd == "sar_line" || cmd == "sar_area") {
+            std::string name;
+            icd::GroundFeature kind = icd::GroundFeature::NONE;
+            const std::size_t numbers = cmd == "sar_line" ? 6U : 4U;
+            if (!(in >> name) || !parse_enum(name, kind) || !read(in, a, numbers)) {
+                std::printf("error kInvalidArgument\n");
+                continue;
+            }
+            if (cmd == "sar_point" && g_scene.point_count < icd::PlantGround::kMaxPoint) {
+                icd::PlantGroundPoint& p = g_scene.point[g_scene.point_count++];
+                p.kind = kind;
+                p.latitude = a[0];
+                p.longitude = a[1];
+                p.size = a[2];
+                p.brightness = static_cast<std::uint8_t>(a[3]);
+            } else if (cmd == "sar_line" && g_scene.line_count < icd::PlantGround::kMaxLine) {
+                icd::PlantGroundLine& l = g_scene.line[g_scene.line_count++];
+                l.kind = kind;
+                l.latitude_1 = a[0];
+                l.longitude_1 = a[1];
+                l.latitude_2 = a[2];
+                l.longitude_2 = a[3];
+                l.width = a[4];
+                l.brightness = static_cast<std::uint8_t>(a[5]);
+            } else if (cmd == "sar_area" && g_scene.area_count < icd::PlantGround::kMaxArea) {
+                icd::PlantGroundArea& ar = g_scene.area[g_scene.area_count++];
+                ar.kind = kind;
+                ar.latitude = a[0];
+                ar.longitude = a[1];
+                ar.radius = a[2];
+                ar.brightness = static_cast<std::uint8_t>(a[3]);
+            } else {
+                std::printf("error kCapacity\n");
+                continue;
+            }
+            std::printf("ok\n");
+        } else if (cmd == "sar_geometry") {
+            radar::SarGeometry g{};
+            icd::SarMode mode = icd::SarMode::NONE;
+            if (!read_sar_geometry(in, a, g, mode)) {
+                std::printf("error kInvalidArgument\n");
+                continue;
+            }
+            std::printf("%.17g %.17g %.17g %.17g %.17g\n", g.pixel_m, g.centre_along_m, g.centre_cross_m, g.latitude_deg,
+                        g.longitude_deg);
+        } else if (cmd == "sar_level") {
+            radar::SarGeometry g{};
+            icd::SarMode mode = icd::SarMode::NONE;
+            std::vector<double> rc;
+            if (!read_sar_geometry(in, a, g, mode) || !read(in, rc, 2)) {
+                std::printf("error kInvalidArgument\n");
+                continue;
+            }
+            std::printf("%.17g\n", radar::sar_feature_level(g_scene, g, static_cast<std::size_t>(rc[0]),
+                                                            static_cast<std::size_t>(rc[1])));
+        } else if (cmd == "sar_render") {
+            radar::SarGeometry g{};
+            icd::SarMode mode = icd::SarMode::NONE;
+            std::vector<double> seed;
+            if (!read_sar_geometry(in, a, g, mode) || !read(in, seed, 1)) {
+                std::printf("error kInvalidArgument\n");
+                continue;
+            }
+            g_sar_previous = g_sar_current;
+            radar::sar_render(g_scene, g, static_cast<std::uint32_t>(seed[0]), g_sar_current);
+            print_sar_image(g_sar_current);
+        } else if (cmd == "sar_image") {
+            g_sar_previous = g_sar_current;
+            std::printf(read_sar_image(g_sar_current) ? "ok\n" : "error kInvalidArgument\n");
+        } else if (cmd == "sar_detect") {
+            do_sar_detect();
         } else if (cmd == "sigfigs" && read(in, a, 1)) {
             double n = 3.0;
             in >> n;

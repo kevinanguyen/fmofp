@@ -3,7 +3,7 @@
     py -m fmofp_plant [--port-base 51000] [--syncs 0] [--seed N] [--terrain-ft ELEVATION]
                       [--lat 0.0] [--lon 0.0]
                       [--gps-noise-m 3.0] [--gps-clock-bias-us 1.0] [--gps-outage]
-                      [--no-weather] [--no-traffic]
+                      [--no-weather] [--no-traffic] [--no-ground]
                       [--hold altitude=1500,vertical_speed=-4500,...] [--quiet]
 
 PlantModel is Systems/flightControlSys/flightControlComputer.FlightControlComputer's
@@ -23,7 +23,10 @@ at the thrust the engine computer commands (PLANT_THRUST_CMD, relayed from the
 engine terminal's ENG_THRUST_CMD), published as PLANT_ENGINE ten times a second.
 And it flies the air traffic (fmofp_plant.traffic): the aircraft the targeting and
 AEWC radars generated, published as the PLANT_TRAFFIC block five times a second
-as the radars' antennas would measure them.
+as the radars' antennas would measure them. And it holds the ground scene
+(fmofp_plant.ground): the training range the synthetic aperture radar images,
+laid out along the northbound track from home, published as the PLANT_GROUND
+block once a second with its vehicles and ship moving.
 
 --hold freezes named quantities at fixed values, which is how the tests put the
 aircraft into a known situation.
@@ -35,12 +38,13 @@ import random
 import sys
 
 from fmofp_bus.block import BlockPublisher
-from fmofp_bus.icd.blocks import PlantTerrain, PlantTraffic
+from fmofp_bus.icd.blocks import PlantGround, PlantTerrain, PlantTraffic
 from fmofp_bus.icd.enums import GearPosition, Ssm
 from fmofp_bus.icd.messages import PlantGps, PlantSensors, PlantThrustCmd, PlantWeather
 from fmofp_bus.rt_process import RtProcess
 from fmofp_bus.status import Status
 from fmofp_plant.engine import ECU_DT, ECU_HZ, EngineWorld
+from fmofp_plant.ground import GroundScene
 from fmofp_plant.terrain import FlatTerrain, HillTerrain, profile_message
 from fmofp_plant.traffic import TrafficWorld, ownship_enu, ownship_velocity
 from fmofp_plant.weather import WeatherWorld
@@ -60,6 +64,8 @@ ENGINE_HZ = 10  # PLANT_ENGINE's rate; a reading stays current for three periods
 SYNCS_PER_ENGINE = SYNC_HZ // ENGINE_HZ
 TRAFFIC_HZ = 5  # PLANT_TRAFFIC's rate; its four segments take 0.16 s at the block's 25 Hz
 SYNCS_PER_TRAFFIC = SYNC_HZ // TRAFFIC_HZ
+GROUND_HZ = 1  # PLANT_GROUND: the movers have moved; its four segments take 20 frames at the block's 10 Hz
+SYNCS_PER_GROUND = SYNC_HZ // GROUND_HZ
 
 HOLDABLE = ("altitude", "speed", "heading", "pitch", "roll", "vertical_speed", "angle_of_attack", "g_force",
             "flaps", "latitude", "longitude")
@@ -138,7 +144,8 @@ class PlantModel:
     """FlightControlComputer._adjust(), including its clamps and starting state, plus position and GPS."""
 
     def __init__(self, seed=None, terrain=None, latitude=HOME_LATITUDE, longitude=HOME_LONGITUDE,
-                 gps_noise_m=3.0, gps_clock_bias_us=1.0, gps_outage=False, weather=True, traffic=True):
+                 gps_noise_m=3.0, gps_clock_bias_us=1.0, gps_outage=False, weather=True, traffic=True,
+                 ground=True):
         self.rng = random.Random(seed)
         # The weather draws from its own generator so adding it changed nothing else about a seeded run.
         self.weather = WeatherWorld(random.Random(None if seed is None else seed ^ 0x5745)) if weather else None
@@ -150,6 +157,12 @@ class PlantModel:
         # And the traffic from its own.
         self.traffic = TrafficWorld(random.Random(None if seed is None else seed ^ 0x545246)) if traffic else None
         self.traffic_seq = 0
+        # And the ground scene: fixed, laid out around home (a GroundScene of the caller's, True for the default).
+        if isinstance(ground, GroundScene):
+            self.ground = ground
+        else:
+            self.ground = GroundScene(home_latitude=latitude, home_longitude=longitude) if ground else None
+        self.ground_seq = 0
         self.altitude = 10000.0       # feet
         self.speed = 500.0            # knots
         self.heading = 0.0            # degrees true
@@ -219,6 +232,8 @@ class PlantModel:
             self.weather.update(dt)
         if self.traffic is not None:
             self.traffic.update(dt, self.ownship_enu())
+        if self.ground is not None:
+            self.ground.update(dt)
 
     def value(self, name):
         return self.hold.get(name, getattr(self, name))
@@ -266,6 +281,13 @@ class PlantModel:
             return self.traffic.message(self.ownship_enu(), self.ownship_velocity())
         self.traffic_seq = (self.traffic_seq + 1) % 256
         return PlantTraffic(traffic_seq=self.traffic_seq)
+
+    def ground_message(self):
+        """PLANT_GROUND with the movers where they are now; bare ground when the scene is off."""
+        if self.ground is not None:
+            return self.ground.message()
+        self.ground_seq = (self.ground_seq + 1) % 256
+        return PlantGround(scene_seq=self.ground_seq)
 
     def thrust_command(self, words):
         """A PLANT_THRUST_CMD received: the engines take the engine computer's command. True when applied."""
@@ -321,8 +343,8 @@ class PlantModel:
 class PlantTerminal:
     """RT 27 on the bus: walks the model at 10 Hz, publishes PLANT_SENSORS every frame, PLANT_WEATHER once a
     second, PLANT_GPS with a new epoch once a second and its ranges refreshed at the walk rate, the
-    PLANT_TERRAIN block ten times a second and PLANT_ENGINE ten times a second (the engine model steps at 2 Hz),
-    and takes the engine computer's thrust command from PLANT_THRUST_CMD."""
+    PLANT_TERRAIN block ten times a second, PLANT_ENGINE ten times a second (the engine model steps at 2 Hz) and
+    the PLANT_GROUND block once a second, and takes the engine computer's thrust command from PLANT_THRUST_CMD."""
 
     def __init__(self, model, port_base=51000):
         self.model = model
@@ -333,6 +355,7 @@ class PlantTerminal:
         self.thrust_commands = 0
         self.terrain_block = BlockPublisher(PlantTerrain.MAX_PAYLOAD_WORDS)
         self.traffic_block = BlockPublisher(PlantTraffic.MAX_PAYLOAD_WORDS)
+        self.ground_block = BlockPublisher(PlantGround.MAX_PAYLOAD_WORDS)
 
     def init(self):
         status = self.process.init(PLANT_RT, self.port_base)
@@ -345,6 +368,8 @@ class PlantTerminal:
             self.publish_engine()
             self.publish_traffic()
             self.serve_traffic()
+            self.publish_ground()
+            self.serve_ground()
         return status
 
     def _load(self, message):
@@ -396,6 +421,17 @@ class PlantTerminal:
         self.traffic_block.serve(self.process.terminal, PlantTraffic.DESCRIPTOR_SUBADDRESS,
                                  PlantTraffic.SEGMENT_SUBADDRESS)
 
+    def publish_ground(self):
+        status, words = self.model.ground_message().encode()
+        if status not in (Status.OK, Status.CLAMPED):
+            self.publish_failures += 1
+            return
+        if self.ground_block.publish(self.process.terminal, PlantGround.SEGMENT_SUBADDRESS, words) != Status.OK:
+            self.publish_failures += 1
+
+    def serve_ground(self):
+        self.ground_block.serve(self.process.terminal, PlantGround.DESCRIPTOR_SUBADDRESS, PlantGround.SEGMENT_SUBADDRESS)
+
     def poll(self, timeout_s=0.1):
         """One iteration of the loop: handle a datagram, step on sync. Returns True on a sync."""
         self.process.poll(timeout_s)
@@ -404,6 +440,7 @@ class PlantTerminal:
             if self.process.terminal.take_reset_request():
                 self.terrain_block = BlockPublisher(PlantTerrain.MAX_PAYLOAD_WORDS)
                 self.traffic_block = BlockPublisher(PlantTraffic.MAX_PAYLOAD_WORDS)
+                self.ground_block = BlockPublisher(PlantGround.MAX_PAYLOAD_WORDS)
                 self.publish()
                 self.publish_gps()
                 self.publish_weather()
@@ -412,6 +449,8 @@ class PlantTerminal:
                 self.publish_engine()
                 self.publish_traffic()
                 self.serve_traffic()
+                self.publish_ground()
+                self.serve_ground()
             return False
         self.syncs += 1
         self.take_thrust_command()
@@ -431,8 +470,11 @@ class PlantTerminal:
             self.publish_terrain()
         if self.syncs % SYNCS_PER_TRAFFIC == 0:
             self.publish_traffic()
+        if self.syncs % SYNCS_PER_GROUND == 0:
+            self.publish_ground()
         self.serve_terrain()
         self.serve_traffic()
+        self.serve_ground()
         self.publish()
         return True
 
@@ -464,6 +506,7 @@ def main(argv=None):
     parser.add_argument("--gps-outage", action="store_true", help="no satellite is ever visible")
     parser.add_argument("--no-weather", action="store_true", help="a clear sky: PLANT_WEATHER carries no cells or area")
     parser.add_argument("--no-traffic", action="store_true", help="an empty sky: PLANT_TRAFFIC carries no aircraft")
+    parser.add_argument("--no-ground", action="store_true", help="bare ground: PLANT_GROUND carries no features")
     parser.add_argument("--hold", type=parse_hold, default={}, help="name=value,... held constant")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
@@ -471,7 +514,8 @@ def main(argv=None):
     terrain = None if args.terrain_ft is None else FlatTerrain(args.terrain_ft)
     model = PlantModel(seed=args.seed, terrain=terrain, latitude=args.lat, longitude=args.lon,
                        gps_noise_m=args.gps_noise_m, gps_clock_bias_us=args.gps_clock_bias_us,
-                       gps_outage=args.gps_outage, weather=not args.no_weather, traffic=not args.no_traffic)
+                       gps_outage=args.gps_outage, weather=not args.no_weather, traffic=not args.no_traffic,
+                       ground=not args.no_ground)
     model.hold = args.hold
     plant = PlantTerminal(model, args.port_base)
     status = plant.init()

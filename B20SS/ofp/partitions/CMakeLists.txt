@@ -59,7 +59,8 @@ target_link_libraries(fmofp_fms PRIVATE ofp::fms ofp::rt_process ofp::bc ofp::wa
 add_library(ofp_radar STATIC radar/src/weather_model.cpp radar/src/weather_products.cpp
                              radar/src/weather_radar.cpp radar/src/terrain_following.cpp
                              radar/src/target_processing.cpp radar/src/targeting_radar.cpp
-                             radar/src/track_fusion.cpp radar/src/aewc_radar.cpp)
+                             radar/src/track_fusion.cpp radar/src/aewc_radar.cpp
+                             radar/src/sar_radar.cpp)
 add_library(ofp::radar ALIAS ofp_radar)
 add_dependencies(ofp_radar ofp_icd_generate)
 target_include_directories(ofp_radar PUBLIC radar/include)

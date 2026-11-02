@@ -7,8 +7,8 @@ the bridge used to put there. The terrain display draws a dictionary with the
 profile points, the clearance and the altitudes; the targeting and AEWC displays (on
 the MFD's radar page) lists of targets. RadarFeed builds them from
 RDR_WX_PRODUCTS, RDR_WX_SCAN, RDR_WX_STATUS, RDR_TFR_GUIDANCE, RDR_TFR_STATUS,
-RDR_TFR_ELEVATION, RDR_TGT_STATUS, RDR_TGT_TRACKS, RDR_AEWC_STATUS and RDR_AEWC_TRACKS
-as the display terminal hears them: broadcast once to
+RDR_TFR_ELEVATION, RDR_TGT_STATUS, RDR_TGT_TRACKS, RDR_AEWC_STATUS, RDR_AEWC_TRACKS,
+RDR_SAR_STATUS and RDR_SAR_IMAGE as the display terminal hears them: broadcast once to
 address 31 for every display that accepts the subaddress (BCAST_RDR_*, ICD
 v1.7). It knows nothing of Qt or of the display classes: the window applies
 what it returns.
@@ -24,7 +24,8 @@ from collections import namedtuple
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import AewcMode, LockStatus, Ssm, TargetingMode, TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import (AewcMode, LockStatus, SarMode, Ssm, TargetingMode, TerminalState, TfrMode,
+                                 WeatherMode)
 from fmofp_display.terminal import STALE_AFTER_S
 
 NM_PER_KM = 1.0 / 1.852
@@ -86,12 +87,28 @@ AEWC_DRAW_MODE = {
 }
 AEWC_RANGE_NM = 400.0 * NM_PER_KM  # the AEWC radar's maximum range: its picture's range scale
 
+# The MFD's SAR picture (SARRadarDisplay) draws STRIPMAP, SPOTLIGHT and SCANSAR with the image it is given and shows
+# 'SAR STANDBY' for anything else, INTERFEROMETRIC and DOPPLER_BEAM included: the MFD's own enum names them and
+# the display has no drawing for them, as in the Python.
+SAR_DRAW_MODE = {
+    SarMode.NONE: "STANDBY",
+    SarMode.STRIPMAP: "STRIPMAP",
+    SarMode.SPOTLIGHT: "SPOTLIGHT",
+    SarMode.SCANSAR: "SCANSAR",
+    SarMode.INTERFEROMETRIC: "INTERFEROMETRIC",
+    SarMode.DOPPLER_BEAM: "DOPPLER_BEAM",
+}
+SAR_IMAGE_SIZE = 64        # RDR_SAR_IMAGE: 64 rows of 64 pixels
+SAR_IMAGE_PERIOD_S = 3.0   # an image every 150 frames: the full scale of the display's progress bar
+SAR_MIN_RANGE_NM = 5.0     # the picture's range scale shows the footprint's corners at least this far out
+
 # The broadcast messages and blocks every display hears the radars' data in (ICD README section 8).
 RadarSources = namedtuple("RadarSources", "wx_status wx_scan wx_products tfr_status tfr_guidance tfr_elevation "
-                                           "tgt_status tgt_tracks aewc_status aewc_tracks")
+                                           "tgt_status tgt_tracks aewc_status aewc_tracks sar_status sar_image")
 BROADCAST_SOURCES = RadarSources(m.BcastRdrWxStatus, m.BcastRdrWxScan, b.BcastRdrWxProducts, m.BcastRdrTfrStatus,
                                  m.BcastRdrTfrGuidance, b.BcastRdrTfrElevation, m.BcastRdrTgtStatus,
-                                 b.BcastRdrTgtTracks, m.BcastRdrAewcStatus, b.BcastRdrAewcTracks)
+                                 b.BcastRdrTgtTracks, m.BcastRdrAewcStatus, b.BcastRdrAewcTracks,
+                                 m.BcastRdrSarStatus, b.BcastRdrSarImage)
 
 
 def polar_to_nm(azimuth_deg, range_km):
@@ -166,6 +183,29 @@ def aewc_item(track):
             "classification": SYMBOL_CLASS.get(track.classification.name),
             "threat": track.threat.name, "is_stealth": bool(track.stealth), "detected": bool(track.detected),
             "sector": track.sector, "confidence": track.confidence, "snr_db": track.snr}
+
+
+def sar_pgm(image):
+    """The RDR_SAR_IMAGE pixels as the bytes SARRadarDisplay._update_image decodes (QImage.fromData): a binary
+    PGM of the 64 x 64 picture, two pixels per bus word, the even column first."""
+    pixels = bytearray()
+    for p in image.pixel:
+        pixels.append(p.even)
+        pixels.append(p.odd)
+    return b"P5\n%d %d\n255\n" % (SAR_IMAGE_SIZE, SAR_IMAGE_SIZE) + bytes(pixels)
+
+
+def sar_corners_nm(image):
+    """The footprint's corners in nautical miles east and north of the aircraft when the image was formed (the
+    display's corner markers): top-left, top-right, bottom-right, bottom-left, the top being along the heading."""
+    half = SAR_IMAGE_SIZE / 2.0 * image.pixel_size
+    h = math.radians(image.heading)
+    corners = []
+    for along, cross in ((half, -half), (half, half), (-half, half), (-half, -half)):
+        a = image.centre_along + along
+        c = image.centre_cross + cross
+        corners.append(((a * math.sin(h) + c * math.cos(h)) / M_PER_NM, (a * math.cos(h) - c * math.sin(h)) / M_PER_NM))
+    return corners
 
 
 class RadarFeed:
@@ -344,4 +384,52 @@ class RadarFeed:
             text += f" ({s.stealth_tracks} stealth)"
         if s.jammed_sectors:
             text += "  jammed " + ",".join(str(i + 1) for i in range(6) if s.jammed_sectors & (1 << i))
+        return text
+
+    def sar_data(self):
+        """The SAR picture's data: the MFD's draw mode name; the last image as the bytes SARRadarDisplay decodes (a
+        PGM of the 64 x 64 picture) with its resolution, the footprint's corners in nautical miles from the aircraft
+        when the image was formed and a range scale that shows them, and the progress towards the next image; the
+        change regions; the status's flags. The last image stays until the radar replaces it or, out of an operating
+        mode, publishes an empty block (images come every 3 s, longer than a message's staleness)."""
+        status = self.terminal.fresh(self.sources.sar_status)
+        image, _, age = self.terminal.latest_block(self.sources.sar_image)
+        data = {"mode_name": "STANDBY", "image_data": b"", "corner_points": [], "resolution": 0.0,
+                "scan_progress": 0.0, "range_nm": SAR_MIN_RANGE_NM, "image_seq": 0, "pixel_size_m": 0.0,
+                "heading": 0.0, "centre": None, "changes": [], "significant_changes": 0, "scene_valid": False,
+                "nav_valid": False}
+        if status is not None:
+            s = status.payload
+            if s.state == TerminalState.NORMAL:
+                data["mode_name"] = SAR_DRAW_MODE.get(s.mode, "STANDBY")
+            data["scene_valid"] = bool(s.scene_valid)
+            data["nav_valid"] = bool(s.nav_valid)
+            data["image_seq"] = s.image_seq
+        if image is not None and age is not None and image.mode != SarMode.NONE and image.pixel:
+            data["image_data"] = sar_pgm(image)
+            data["resolution"] = image.resolution
+            data["pixel_size_m"] = image.pixel_size
+            data["heading"] = image.heading
+            data["centre"] = (image.centre_latitude, image.centre_longitude)
+            data["corner_points"] = sar_corners_nm(image)
+            data["range_nm"] = max(SAR_MIN_RANGE_NM, 1.2 * max(math.hypot(x, y) for x, y in data["corner_points"]))
+            data["scan_progress"] = min(1.0, age / SAR_IMAGE_PERIOD_S)
+            data["changes"] = [{"row": c.row, "col": c.col, "area": c.area, "type": c.change.name,
+                                "significant": bool(c.significant), "confidence": c.confidence,
+                                "log_ratio": c.log_ratio} for c in image.change]
+            data["significant_changes"] = image.changes
+        return data
+
+    def sar_status_text(self):
+        status = self.terminal.fresh(self.sources.sar_status)
+        if status is None:
+            return "SAR: no data"
+        s = status.payload
+        text = f"SAR {s.state.name} {s.mode.name}"
+        if s.state == TerminalState.NORMAL and s.mode != SarMode.NONE:
+            text += f"  image {s.image_seq}" if s.image_seq else "  imaging"
+            if not s.scene_valid:
+                text += "  no scene"
+            if not s.nav_valid:
+                text += "  no fix"
         return text

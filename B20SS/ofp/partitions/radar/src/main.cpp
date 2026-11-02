@@ -1,18 +1,21 @@
-// The radar computer process: terminal RT 9 on the bus, with the weather radar,
-// the terrain-following radar, the targeting radar, the AEWC radar and the track
-// fusion ported (SAR is still Python).
+// The radar computer process: terminal RT 9 on the bus: the weather radar, the
+// terrain-following radar, the targeting radar, the AEWC radar, the synthetic
+// aperture radar and the track fusion.
 //
 //   fmofp_radar [--port-base 51000] [--syncs 0] [--quiet]
 //
 // Each SYNCHRONIZE_WITH_DATA frame: take what arrived (RDR_WX_MODE_CMD and the
 // relayed RDR_WX_WEATHER; RDR_TFR_MODE_CMD, the relayed RDR_TFR_SENSORS and the
 // descriptor and segments of the relayed RDR_TFR_TERRAIN block; RDR_TGT_MODE_CMD
-// and the relayed RDR_TRAFFIC block, which the AEWC radar reads too; RDR_AEWC_MODE_CMD),
-// step the radars and the fusion, and load
+// and the relayed RDR_TRAFFIC block, which the AEWC radar reads too; RDR_AEWC_MODE_CMD;
+// RDR_SAR_MODE_CMD, the relayed RDR_SAR_SCENE block and the FMS flight data
+// broadcast the computer accepts for the SAR's geometry), step the radars and
+// the fusion, and load
 // the outputs: RDR_WX_STATUS, RDR_WX_SCAN and the RDR_WX_PRODUCTS block;
 // RDR_TFR_STATUS, RDR_TFR_GUIDANCE and the RDR_TFR_ELEVATION block;
 // RDR_TGT_STATUS and the RDR_TGT_TRACKS block; RDR_AEWC_STATUS and the
-// RDR_AEWC_TRACKS block; the RDR_FUSED_TRACKS block;
+// RDR_AEWC_TRACKS block; RDR_SAR_STATUS and the RDR_SAR_IMAGE block; the
+// RDR_FUSED_TRACKS block;
 // TERM_STATUS for the computer as a whole. A block's descriptor and next
 // segment sit on their subaddresses for the bus controller to collect; each
 // time it has read the segment subaddress, the next segment is loaded.
@@ -29,6 +32,7 @@
 #include <fmofp/icd/messages.hpp>
 #include <fmofp/icd/version.hpp>
 #include <fmofp/radar/aewc_radar.hpp>
+#include <fmofp/radar/sar_radar.hpp>
 #include <fmofp/radar/targeting_radar.hpp>
 #include <fmofp/radar/terrain_following.hpp>
 #include <fmofp/radar/track_fusion.hpp>
@@ -48,6 +52,8 @@ using TgtTracks = icd::RdrTgtTracks;
 using FusedTracks = icd::RdrFusedTracks;
 using AewcTracks = icd::RdrAewcTracks;
 using Traffic = icd::RdrTraffic;
+using SarBlock = icd::RdrSarImage;
+using SarScene = icd::RdrSarScene;
 
 constexpr std::uint8_t kRt = icd::RdrWxStatus::kRt;
 
@@ -56,6 +62,7 @@ radar::WeatherRadar g_weather;
 radar::TerrainFollowing g_tfr;
 radar::TargetingRadar g_targeting;
 radar::AewcRadar g_aewc;
+radar::SarRadar g_sar;
 radar::TrackFusion g_fusion;
 std::array<bus::Word, WxProducts::kMaxPayloadWords> g_wx_storage{};
 std::array<bus::Word, WxProducts::kMaxPayloadWords> g_wx_payload{};
@@ -69,6 +76,9 @@ std::array<bus::Word, FusedTracks::kMaxPayloadWords> g_fused_payload{};
 std::array<bus::Word, AewcTracks::kMaxPayloadWords> g_aewc_storage{};
 std::array<bus::Word, AewcTracks::kMaxPayloadWords> g_aewc_payload{};
 std::array<bus::Word, Traffic::kMaxPayloadWords> g_traffic_storage{};
+std::array<bus::Word, SarBlock::kMaxPayloadWords> g_sar_storage{};
+std::array<bus::Word, SarBlock::kMaxPayloadWords> g_sar_payload{};
+std::array<bus::Word, SarScene::kMaxPayloadWords> g_scene_storage{};
 std::array<radar::TrackReport, radar::kFusionMaxReports> g_reports{};
 
 struct Options {
@@ -84,8 +94,10 @@ struct Blocks {
     bus::BlockPublisher tracks;
     bus::BlockPublisher fused;
     bus::BlockPublisher aewc;
+    bus::BlockPublisher sar;
     bus::BlockCollector terrain;
     bus::BlockCollector traffic;
+    bus::BlockCollector scene;
 };
 
 bool parse_number(const char* text, unsigned long max, unsigned long& out) {
@@ -145,7 +157,7 @@ Status load(bus::RemoteTerminal& terminal, const Message& message) {
 }
 
 // Which radar took the most recent command: TERM_STATUS reports its sequence and outcome.
-enum class LastCommand : std::uint8_t { kNone, kWeather, kTfr, kTargeting, kAewc };
+enum class LastCommand : std::uint8_t { kNone, kWeather, kTfr, kTargeting, kAewc, kSar };
 
 // The radar computer's state is the worse of its radars': a radar in trouble
 // shows through; otherwise NORMAL if any is operating normally.
@@ -167,8 +179,10 @@ icd::TerminalState combined_state(icd::TerminalState a, icd::TerminalState b) {
 }
 
 icd::TerminalState combined_state() {
-    return combined_state(combined_state(combined_state(g_weather.state(), g_tfr.state()), g_targeting.state()),
-                          g_aewc.state());
+    return combined_state(
+        combined_state(combined_state(combined_state(g_weather.state(), g_tfr.state()), g_targeting.state()),
+                       g_aewc.state()),
+        g_sar.state());
 }
 
 bus::BitWord combined_bit(const bus::BitWord& a, const bus::BitWord& b) {
@@ -181,12 +195,15 @@ bus::BitWord combined_bit(const bus::BitWord& a, const bus::BitWord& b) {
 }
 
 bus::BitWord combined_bit() {
-    return combined_bit(combined_bit(combined_bit(g_weather.bit(), g_tfr.bit()), g_targeting.bit()), g_aewc.bit());
+    return combined_bit(
+        combined_bit(combined_bit(combined_bit(g_weather.bit(), g_tfr.bit()), g_targeting.bit()), g_aewc.bit()),
+        g_sar.bit());
 }
 
 bool any_degraded() {
     return g_weather.state() == icd::TerminalState::DEGRADED || g_tfr.state() == icd::TerminalState::DEGRADED ||
-           g_targeting.state() == icd::TerminalState::DEGRADED || g_aewc.state() == icd::TerminalState::DEGRADED;
+           g_targeting.state() == icd::TerminalState::DEGRADED || g_aewc.state() == icd::TerminalState::DEGRADED ||
+           g_sar.state() == icd::TerminalState::DEGRADED;
 }
 
 void term_status_command(icd::TermStatus& ts, LastCommand last) {
@@ -199,6 +216,9 @@ void term_status_command(icd::TermStatus& ts, LastCommand last) {
     } else if (last == LastCommand::kAewc) {
         ts.last_cmd_seq = g_aewc.status().last_cmd_seq;
         ts.cmd_rejected = g_aewc.status().cmd_rejected;
+    } else if (last == LastCommand::kSar) {
+        ts.last_cmd_seq = g_sar.status().last_cmd_seq;
+        ts.cmd_rejected = g_sar.status().cmd_rejected;
     } else {
         ts.last_cmd_seq = g_weather.status().last_cmd_seq;
         ts.cmd_rejected = g_weather.status().cmd_rejected;
@@ -213,12 +233,13 @@ Status load_outputs(bus::RemoteTerminal& terminal, LastCommand last, bus::Word l
     result = fmofp::worst(result, load(terminal, g_tfr.guidance()));
     result = fmofp::worst(result, load(terminal, g_targeting.status()));
     result = fmofp::worst(result, load(terminal, g_aewc.status()));
+    result = fmofp::worst(result, load(terminal, g_sar.status()));
 
     const bus::BitWord bit = combined_bit();
     icd::TermStatus ts{};
     ts.state = combined_state();
     ts.healthy = g_weather.status().healthy && g_tfr.status().healthy && g_targeting.status().healthy &&
-                 g_aewc.status().healthy;
+                 g_aewc.status().healthy && g_sar.status().healthy;
     term_status_command(ts, last);
     ts.bit_in_progress = bit.in_progress;
     ts.bit_failed = bit.failed;
@@ -283,6 +304,16 @@ void publish_aewc(const bus::RemoteTerminal& terminal, bus::BlockPublisher& bloc
     (void)block.publish(terminal, AewcTracks::kSegmentSubaddress, g_aewc_payload.data(), length);
 }
 
+void publish_sar(const bus::RemoteTerminal& terminal, bus::BlockPublisher& block) {
+    std::uint16_t length = 0;
+    const Status s =
+        g_sar.image_block().encode(g_sar_payload.data(), static_cast<std::uint16_t>(g_sar_payload.size()), length);
+    if (s != Status::kOk && s != Status::kClamped) {
+        return;
+    }
+    (void)block.publish(terminal, SarBlock::kSegmentSubaddress, g_sar_payload.data(), length);
+}
+
 Status serve_blocks(bus::RemoteTerminal& terminal, Blocks& blocks) {
     Status result = blocks.weather.serve(terminal, WxProducts::kDescriptorSubaddress, WxProducts::kSegmentSubaddress);
     result = fmofp::worst(
@@ -293,6 +324,7 @@ Status serve_blocks(bus::RemoteTerminal& terminal, Blocks& blocks) {
         result, blocks.fused.serve(terminal, FusedTracks::kDescriptorSubaddress, FusedTracks::kSegmentSubaddress));
     result = fmofp::worst(result,
                           blocks.aewc.serve(terminal, AewcTracks::kDescriptorSubaddress, AewcTracks::kSegmentSubaddress));
+    result = fmofp::worst(result, blocks.sar.serve(terminal, SarBlock::kDescriptorSubaddress, SarBlock::kSegmentSubaddress));
     return result;
 }
 
@@ -304,6 +336,9 @@ Status init_blocks(Blocks& blocks) {
     result = fmofp::worst(result,
                           blocks.fused.init(g_fused_storage.data(), static_cast<std::uint16_t>(g_fused_storage.size())));
     result = fmofp::worst(result, blocks.aewc.init(g_aewc_storage.data(), static_cast<std::uint16_t>(g_aewc_storage.size())));
+    result = fmofp::worst(result, blocks.sar.init(g_sar_storage.data(), static_cast<std::uint16_t>(g_sar_storage.size())));
+    result = fmofp::worst(result,
+                          blocks.scene.init(g_scene_storage.data(), static_cast<std::uint16_t>(g_scene_storage.size())));
     result = fmofp::worst(
         result, blocks.terrain.init(g_terrain_storage.data(), static_cast<std::uint16_t>(g_terrain_storage.size())));
     return fmofp::worst(
@@ -312,7 +347,8 @@ Status init_blocks(Blocks& blocks) {
 
 bool init_logic(Blocks& blocks) {
     return g_weather.init() == Status::kOk && g_tfr.init() == Status::kOk && g_targeting.init() == Status::kOk &&
-           g_aewc.init() == Status::kOk && g_fusion.init() == Status::kOk && init_blocks(blocks) == Status::kOk;
+           g_aewc.init() == Status::kOk && g_sar.init() == Status::kOk && g_fusion.init() == Status::kOk &&
+           init_blocks(blocks) == Status::kOk;
 }
 
 void publish_all(bus::RemoteTerminal& terminal, Blocks& blocks) {
@@ -328,6 +364,9 @@ void publish_all(bus::RemoteTerminal& terminal, Blocks& blocks) {
     if (g_aewc.take_tracks_update()) {
         publish_aewc(terminal, blocks.aewc);
     }
+    if (g_sar.take_image_update()) {
+        publish_sar(terminal, blocks.sar);
+    }
     if (g_fusion.take_update()) {
         publish_fused(terminal, blocks.fused);
     }
@@ -342,7 +381,7 @@ void print_frame(bus::Word sync) {
     const icd::RdrTfrGuidance& g = g_tfr.guidance();
     std::printf("radar: major frame %u | weather %s %s, scan %u, max %.1f dBZ, %u cells, block v%u | tfr %s %s, "
                 "%s, min clearance %.0f ft, %u commands | tgt %s %s, %u tracks, lock %u %s | aewc %s %s, %u tracks "
-                "(%u stealth) | fused %u (%u hostile)\n",
+                "(%u stealth) | sar %s %s, image %u | fused %u (%u hostile)\n",
                 major, icd::to_string(g_weather.state()), icd::to_string(g_weather.mode()), scan.scan_id,
                 scan.max_reflectivity, scan.storm_cells, scan.products_version, icd::to_string(g_tfr.state()),
                 icd::to_string(g_tfr.mode()), icd::to_string(g.level), g.min_clearance,
@@ -350,8 +389,9 @@ void print_frame(bus::Word sync) {
                 icd::to_string(g_targeting.mode()), static_cast<unsigned>(g_targeting.held_tracks()),
                 static_cast<unsigned>(g_targeting.locked_track()), icd::to_string(g_targeting.status().lock_status),
                 icd::to_string(g_aewc.state()), icd::to_string(g_aewc.mode()), static_cast<unsigned>(g_aewc.held_tracks()),
-                static_cast<unsigned>(g_aewc.stealth_tracks()), static_cast<unsigned>(g_fusion.count()),
-                static_cast<unsigned>(g_fusion.hostile_count()));
+                static_cast<unsigned>(g_aewc.stealth_tracks()), icd::to_string(g_sar.state()),
+                icd::to_string(g_sar.mode()), static_cast<unsigned>(g_sar.status().image_seq),
+                static_cast<unsigned>(g_fusion.count()), static_cast<unsigned>(g_fusion.hostile_count()));
 }
 
 }  // namespace
@@ -376,6 +416,11 @@ int main(int argc, char** argv) {
         return 1;
     }
     bus::RemoteTerminal& terminal = process.terminal();
+    // The SAR places its pictures by the FMS flight data broadcast (ICD README section 8).
+    if (terminal.accept_broadcast(icd::BcastFmsFlightData::kSubaddress) != Status::kOk) {
+        std::fprintf(stderr, "radar: cannot accept the flight data broadcast\n");
+        return 1;
+    }
     LastCommand last_command = LastCommand::kNone;
     (void)load_outputs(terminal, last_command, 0);
     (void)serve_blocks(terminal, blocks);
@@ -394,6 +439,7 @@ int main(int argc, char** argv) {
                 g_tfr.reset();
                 g_targeting.reset();
                 g_aewc.reset();
+                g_sar.reset();
                 (void)g_fusion.init();
                 (void)init_blocks(blocks);
                 last_command = LastCommand::kNone;
@@ -409,6 +455,7 @@ int main(int argc, char** argv) {
             g_tfr.start_self_test();
             g_targeting.start_self_test();
             g_aewc.start_self_test();
+            g_sar.start_self_test();
         }
         terminal.set_bit(combined_bit());
 
@@ -431,6 +478,11 @@ int main(int argc, char** argv) {
         if (take_fresh(terminal, aewc_cmd)) {
             g_aewc.command_mode(aewc_cmd);
             last_command = LastCommand::kAewc;
+        }
+        icd::RdrSarModeCmd sar_cmd{};
+        if (take_fresh(terminal, sar_cmd)) {
+            g_sar.command_mode(sar_cmd);
+            last_command = LastCommand::kSar;
         }
 
         icd::RdrWxWeather weather{};
@@ -455,6 +507,16 @@ int main(int argc, char** argv) {
         }
         g_targeting.step(have_traffic ? &traffic : nullptr, frame);
         g_aewc.step(have_traffic ? &traffic : nullptr, frame);
+
+        icd::PlantGround scene{};
+        bool have_scene = false;
+        if (blocks.scene.collect(terminal, SarScene::kDescriptorSubaddress, SarScene::kSegmentSubaddress)) {
+            have_scene = SarScene::Layout::decode(blocks.scene.receiver().payload(),
+                                                  blocks.scene.receiver().length(), scene) == Status::kOk;
+        }
+        icd::BcastFmsFlightData flight{};
+        const bool have_flight = take_fresh(terminal, flight);
+        g_sar.step(have_scene ? &scene : nullptr, have_flight ? &flight.payload : nullptr, frame);
         std::size_t reports = radar::targeting_reports(g_targeting, g_reports.data(), g_reports.size());
         reports += radar::aewc_reports(g_aewc, g_reports.data() + reports, g_reports.size() - reports);
         g_fusion.step(g_reports.data(), reports, g_targeting.operating(), g_aewc.operating(), frame);
@@ -473,10 +535,12 @@ int main(int argc, char** argv) {
 
     const bus::RtCounters& c = terminal.counters();
     std::printf("radar: syncs=%lu commands=%u receives=%u transmits=%u message_errors=%u scans=%u profiles=%u "
-                "terrain_blocks=%u traffic_blocks=%u track_updates=%u aewc_updates=%u fusion_epochs=%u state=%s\n",
+                "terrain_blocks=%u traffic_blocks=%u track_updates=%u aewc_updates=%u sar_images=%u scene_blocks=%u "
+                "fusion_epochs=%u state=%s\n",
                 syncs, c.commands, c.receives, c.transmits, c.message_errors, g_weather.scans_completed(),
                 g_tfr.profiles_assessed(), blocks.terrain.receiver().completed_blocks(),
-                blocks.traffic.receiver().completed_blocks(), g_targeting.updates(), g_aewc.updates(),
-                static_cast<unsigned>(g_fusion.epochs()), icd::to_string(combined_state()));
+                blocks.traffic.receiver().completed_blocks(), g_targeting.updates(), g_aewc.updates(), g_sar.images(),
+                blocks.scene.receiver().completed_blocks(), static_cast<unsigned>(g_fusion.epochs()),
+                icd::to_string(combined_state()));
     return 0;
 }

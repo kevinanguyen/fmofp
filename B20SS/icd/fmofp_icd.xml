@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="12" status="DRAFT" date="2026-11-01">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="13" status="DRAFT" date="2026-11-01">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -260,6 +260,23 @@
       <value name="POWER" value="3"/>
       <value name="SKIP" value="4"/>
     </enum>
+    <enum id="ground_feature" bits="4" doc="What a feature of the plant's ground scene is (fmofp_plant.ground, PLANT_GROUND): point scatterers (a building, a vehicle, a ship), linear features (a road, a river) and areas (a lake, a forest, a town). The synthetic aperture radar's picture sees only their backscatter; the kind is for the tests and the readers of the block">
+      <value name="NONE" value="0"/>
+      <value name="BUILDING" value="1"/>
+      <value name="VEHICLE" value="2"/>
+      <value name="SHIP" value="3"/>
+      <value name="ROAD" value="4"/>
+      <value name="RIVER" value="5"/>
+      <value name="LAKE" value="6"/>
+      <value name="FOREST" value="7"/>
+      <value name="URBAN" value="8"/>
+    </enum>
+    <enum id="change_type" bits="2" doc="sar_processor.ChangeDetector's change_type: the sign of a region's mean log-ratio between two SAR images">
+      <value name="NONE" value="0" doc="No change event"/>
+      <value name="ADDITION" value="1" doc="Mean log-ratio above 0.3: a new bright return"/>
+      <value name="REMOVAL" value="2" doc="Mean log-ratio below -0.3: a return that went away"/>
+      <value name="CHANGE" value="3" doc="In between"/>
+    </enum>
   </enums>
 
   <terminals>
@@ -272,7 +289,7 @@
     <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
     <terminal rt="7" id="nav" name="Navigation - GPS position solver and GPS/dead-reckoning fusion" status="existing" source="Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py" note="Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2)"/>
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
-    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19), the terrain-following radar in v1.4 (SA 2, 14-15, 20-23) and the targeting radar with the track fusion in v1.10 (SA 4, 8-11, 24-25); SAR and AEWC are still Python"/>
+    <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19), the terrain-following radar in v1.4 (SA 2, 14-15, 20-23) the targeting radar with the track fusion in v1.10 (SA 4, 8-11, 24-25), the AEWC radar in v1.12 (SA 5, 12-13) and the synthetic aperture radar in v1.13 (SA 3, 16-17, 26-27). The radar computer listens to the FMS flight data broadcast (31/25) for the synthetic aperture radar's imaging geometry"/>
     <terminal rt="10" id="sensormanagement" name="Sensor management" status="existing" source="Systems/sensorManagement"/>
     <terminal rt="11" id="pfd" name="Primary flight display" status="changed" source="Interfaces/userInterface/displays/pfd.py" note="Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then)"/>
     <terminal rt="12" id="flightmanagementsystem" name="Flight management system" status="existing" source="Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py" note="Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object"/>
@@ -287,7 +304,7 @@
     <terminal rt="21" id="flightsurfaces" name="Flight surfaces" status="new" source="Systems/flightSurfaces"/>
     <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
     <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
-    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC)"/>
+    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC). From v1.13 it also holds the ground scene the synthetic aperture radar images (PLANT_GROUND): roads, a river, a town with its buildings, forests, a lake, and the vehicles and the ship that move"/>
     <terminal rt="31" id="broadcast" name="Broadcast address - every terminal that accepts a subaddress hears it" status="reserved" note="Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7"/>
   </terminals>
 
@@ -399,16 +416,20 @@
       <doc>The terrain-following radar needs the aircraft's altitude for the clearance assessment and its airspeed for the path optimiser's rate limiting; tfr_radar.py used a fixed 1000 m and 250 m/s ("FMS would supply real value").</doc>
     </message>
     <message id="RDR_SAR_STATUS" rt="9" sa="3" dir="T" words="2" rate="5" title="Synthetic aperture radar status" replaces="sar_radarStatusRequest sar_radarStatusResponse sar_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <doc>sar_radar.get_status(): the state and mode, and from v1.13 whether the radar has what it images with (the plant's ground scene, RDR_SAR_SCENE) and where it is (the position and heading of the FMS flight data broadcast), and the number of the last image it published (RDR_SAR_IMAGE). A mode change is in transition until the first image in the new mode is published, 150 frames after the command at the earliest.</doc>
       <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="mode" word="0" bits="11-8" type="enum" enum="sar_mode" doc="Operating mode; NONE unless state is NORMAL"/>
       <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
       <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
       <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
-      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="scene_valid" word="1" bits="13" type="bool" doc="1 = a ground scene has been received (PLANT_GROUND, relayed as RDR_SAR_SCENE)"/>
+      <field name="nav_valid" word="1" bits="12" type="bool" doc="1 = the FMS flight data broadcast gave a position and a heading within the last 15 frames"/>
+      <field name="image_seq" word="1" bits="11-4" type="uint" doc="The sequence number of the last image published, 1-255; 0 before the first"/>
+      <field name="spare_1" word="1" bits="3-1" type="spare"/>
       <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
     </message>
     <message id="RDR_SAR_MODE_CMD" rt="9" sa="3" dir="R" words="2" rate="aperiodic" title="Synthetic aperture radar mode command" replaces="sar_radarCommand sar_radarModeChangeRequest sar_radarImageRequest radarCommand">
-      <doc>The legacy image_type is dropped: the SAR operating mode (STRIPMAP, SPOTLIGHT, ...) already selects the image type.</doc>
+      <doc>The legacy image_type is dropped: the SAR operating mode (STRIPMAP, SPOTLIGHT, ...) already selects the image type. The resolution is the size of a native pixel (sar_radar.resolution, 1.0 m); the picture on the bus is sixteen native pixels to a pixel (RDR_SAR_IMAGE), so a finer resolution is a smaller patch of ground seen more closely. SPOTLIGHT stares at the patch abeam to the right of the aircraft when the mode is commanded (a designated point is backlog, README section 12); the other modes image the strip beside the track as the aircraft moves.</doc>
       <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="requested_mode" word="0" bits="11-8" type="enum" enum="sar_mode"/>
       <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
@@ -823,8 +844,8 @@
     <message id="DSP_RDR_TFR_CMD" rt="15" sa="21" dir="T" words="2" rate="10" title="Radar display command to the terrain-following radar" layout_of="RDR_TFR_MODE_CMD">
       <doc>Relayed into RT 9 SA 2.</doc>
     </message>
-    <message id="DSP_RDR_SAR_CMD" rt="15" sa="22" dir="T" words="2" rate="10" title="Radar display command to the synthetic aperture radar" status="PROPOSED" layout_of="RDR_SAR_MODE_CMD">
-      <doc>Relayed into RT 9 SA 3, when that radar is ported.</doc>
+    <message id="DSP_RDR_SAR_CMD" rt="15" sa="22" dir="T" words="2" rate="10" title="Radar display command to the synthetic aperture radar" layout_of="RDR_SAR_MODE_CMD">
+      <doc>Relayed into RT 9 SA 3 (v1.13): the radar display window's SAR buttons with its resolution spinbox.</doc>
     </message>
     <message id="DSP_RDR_TGT_CMD" rt="15" sa="23" dir="T" words="3" rate="10" title="Radar display command to the targeting radar" layout_of="RDR_TGT_MODE_CMD">
       <doc>Relayed into RT 9 SA 4, when that radar is ported.</doc>
@@ -846,8 +867,8 @@
       <doc>The MFD's systems page rows and the EICAS's FCS rows and alert list (v1.9); any display that shows the alerts later (HUD) adds itself to the listeners.</doc>
     </message>
     <message id="BCAST_FCS_PERF_STATUS" rt="31" sa="10" dir="R" words="4" rate="1" title="Flight envelope monitoring, broadcast to the displays" layout_of="FCS_PERF_STATUS" listeners="13 14"/>
-    <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast" layout_of="FMS_FLIGHT_DATA" listeners="3 11 13 14 16">
-      <doc>What the PFD draws and the MFD's mission page reads; the HUD will listen too. From v1.8 the engine computer (RT 3) listens as well: its autothrottle holds the airspeed in it.</doc>
+    <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast" layout_of="FMS_FLIGHT_DATA" listeners="3 9 11 13 14 16">
+      <doc>What the PFD draws and the MFD's mission page reads; the HUD will listen too. From v1.8 the engine computer (RT 3) listens as well: its autothrottle holds the airspeed in it. From v1.13 the radar computer (RT 9) listens: the synthetic aperture radar places its pictures by the position and heading in it.</doc>
     </message>
     <message id="BCAST_FMS_STATUS" rt="31" sa="26" dir="R" words="3" rate="5" title="FMS status, broadcast to the displays" layout_of="FMS_STATUS" listeners="11 14 16"/>
     <message id="BCAST_FMS_ATTITUDE_STATUS" rt="31" sa="27" dir="R" words="8" rate="10" title="Attitude command status, broadcast to the displays" layout_of="FMS_ATTITUDE_STATUS" listeners="11 16"/>
@@ -860,6 +881,9 @@
     </message>
     <message id="BCAST_RDR_AEWC_STATUS" rt="31" sa="11" dir="R" words="3" rate="5" title="AEWC radar status, broadcast to the displays" layout_of="RDR_AEWC_STATUS" listeners="13 15">
       <doc>The MFD's AEWC page and the radar display's status line (v1.12). Subaddress 11 is a display's own number (the PFD's), which only bars the PFD from listening; neither listener has a receive of its own there.</doc>
+    </message>
+    <message id="BCAST_RDR_SAR_STATUS" rt="31" sa="15" dir="R" words="2" rate="5" title="Synthetic aperture radar status, broadcast to the displays" layout_of="RDR_SAR_STATUS" listeners="13 15">
+      <doc>The MFD's SAR page and the radar display's status line (v1.13). Subaddress 15 is the TSD's own number, which only bars the TSD from listening; neither listener has a receive of its own there.</doc>
     </message>
     <message id="BCAST_FMS_ENERGY" rt="31" sa="28" dir="R" words="6" rate="1" title="Energy maneuverability, broadcast to the displays" layout_of="FMS_ENERGY" listeners="16">
       <doc>The TSD's energy metrics (tsd._poll_data reads get_tactical_status()['energy_metrics']), v1.10.</doc>
@@ -1180,6 +1204,9 @@
     <relay from="FMS_ENERGY" to="BCAST_FMS_ENERGY"/>
     <relay from="RDR_AEWC_STATUS" to="BCAST_RDR_AEWC_STATUS"/>
     <relay from="RDR_AEWC_TRACKS" to="BCAST_RDR_AEWC_TRACKS"/>
+    <relay from="PLANT_GROUND" to="RDR_SAR_SCENE"/>
+    <relay from="RDR_SAR_STATUS" to="BCAST_RDR_SAR_STATUS"/>
+    <relay from="RDR_SAR_IMAGE" to="BCAST_RDR_SAR_IMAGE"/>
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
@@ -1379,7 +1406,35 @@
         <field name="spare_2" word="2" bits="13-0" type="spare"/>
       </section>
     </block>
-    <block id="RDR_SAR_IMAGE" rt="9" desc_sa="16" seg_sa="17" rate="1" title="SAR image" payload="TBD-v2" replaces="sar_radarImageResponse sar_radarData"/>
+    <block id="RDR_SAR_IMAGE" rt="9" desc_sa="16" seg_sa="17" rate="25" title="SAR image" replaces="sar_radarImageResponse sar_radarData">
+      <doc>sar_radar._generate_imagery_data's product, made of the plant's ground scene instead of the Python's random bars (v1.13): a 64 x 64 picture of the ground, two pixels per word. The Python formed a 1024 x 1024 image at `resolution` metres per pixel; the bus carries it reduced sixteen-fold on each side (sixty-four-fold in SCANSAR, which trades resolution for swath), so a picture pixel is pixel_size metres of ground and a building shows as the fraction of its pixel it covers. The picture's top edge is farthest along the heading and its columns run to the right of the track. STRIPMAP and SCANSAR picture the strip whose near edge is 2 km to the right of the aircraft, SPOTLIGHT the same patch frozen where the aircraft was when the mode was commanded; INTERFEROMETRIC and DOPPLER_BEAM, which the Python drew as noise, picture the strip. Open ground is 60, speckled (four looks); a lake 6, a road 20, a forest 110, a town 150, a building 220-240, before speckle. An image every 150 frames while the radar operates with a scene and a fix; its sixty-seven segments take 134 frames at 25 Hz. The change regions are sar_processor.ChangeDetector's events against the previous image of the same mode (the log-ratio image, a CFAR threshold of the local mean plus three local standard deviations over an 11 x 11 window, opened and closed, 4-connected regions of at least 10 pixels), the first five of its up to 32; the detector's reference is dropped on a mode change, as its docstring asked and the Python never did. Empty (mode NONE, no pixels) when the radar is not operating.</doc>
+      <header words="10">
+        <field name="image_seq" word="0" bits="15-8" type="uint" doc="The image's number, 1-255 round and round; 0 with no pixels when the radar is not operating"/>
+        <field name="mode" word="0" bits="7-4" type="enum" enum="sar_mode" doc="The mode the image was made in"/>
+        <field name="changes" word="0" bits="3-0" type="uint" doc="Significant change regions against the previous image of the same mode (area over 50 pixels, confidence over 0.6), saturating at 15"/>
+        <field name="resolution" word="1" bits="15-0" type="uint" lsb="1/100" units="m" min="0" max="655.35" doc="The commanded resolution: a native pixel"/>
+        <field name="pixel_size" word="2" bits="15-0" type="uint" lsb="1/100" units="m" min="0" max="655.35" doc="Ground per picture pixel: 16 native pixels, 64 in SCANSAR"/>
+        <field name="centre_latitude" word="3-4" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="Of the picture's centre, WGS-84"/>
+        <field name="centre_longitude" word="5-6" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999" doc="Of the picture's centre"/>
+        <field name="heading" word="7" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="The picture's up direction: the aircraft's true heading when the image was formed (frozen for a spotlight)"/>
+        <field name="centre_along" word="8" bits="15-0" type="sint" lsb="1" units="m" min="-32768" max="32767" doc="Of the picture's centre from the aircraft along the heading, when the image was formed"/>
+        <field name="centre_cross" word="9" bits="15-0" type="sint" lsb="1" units="m" min="-32768" max="32767" doc="Of the picture's centre from the aircraft to the right of the heading"/>
+      </header>
+      <section id="pixel" words="1" max="2048" title="Pixels" doc="64 rows of 64, row 0 at the top (farthest along the heading), two pixels per word, the even-numbered column in the high byte; 0 no return, 255 saturated">
+        <field name="even" word="0" bits="15-8" type="uint" doc="Column 2n of the row"/>
+        <field name="odd" word="0" bits="7-0" type="uint" doc="Column 2n+1"/>
+      </section>
+      <section id="change" words="3" max="5" title="Change regions" doc="ChangeDetector.process's events in label order, the first five">
+        <field name="row" word="0" bits="15-8" type="uint" doc="Centroid row (the integer part of the mean)"/>
+        <field name="col" word="0" bits="7-0" type="uint" doc="Centroid column"/>
+        <field name="area" word="1" bits="15-4" type="uint" doc="Changed pixels in the region"/>
+        <field name="change" word="1" bits="3-2" type="enum" enum="change_type"/>
+        <field name="significant" word="1" bits="1" type="bool" doc="1 = area over 50 and confidence over 0.6 (ChangeEvent.is_significant)"/>
+        <field name="spare_1" word="1" bits="0" type="spare"/>
+        <field name="confidence" word="2" bits="15-8" type="uint" lsb="1/100" min="0" max="1" doc="min(0.95, 0.5 + 0.3 x |mean log-ratio| + 0.05 x log10 area)"/>
+        <field name="log_ratio" word="2" bits="7-0" type="sint" lsb="1/16" min="-8" max="7.9375" doc="The region's mean log-ratio"/>
+      </section>
+    </block>
     <block id="PLANT_TERRAIN" rt="27" desc_sa="4" seg_sa="5" rate="25" title="Terrain profile ahead, from the plant">
       <doc>What the terrain-following radar's antenna would measure: the terrain elevation at evenly spaced ground distances ahead of the aircraft along its heading, from the aircraft (sample 0) to range_m (the last sample), 100 samples over 10 km as tfr_radar.py's profile was. The plant samples its terrain, a fixed function of position (fmofp_plant.terrain), at the aircraft's position and heading every fifth of a second; sample i is at distance i x range_m / (samples - 1), the samples being this block's elevation records. The four segments take eight frames at 25 Hz, so a profile is complete at the radar before the next one is published (until v1.10 the block was polled every frame and the profile published ten times a second; the targeting blocks needed that bus time).</doc>
       <header words="2">
@@ -1414,7 +1469,44 @@
       </section>
     </block>
     <block id="RDR_TRAFFIC" rt="9" dir="R" desc_sa="8" seg_sa="9" rate="25" title="Air traffic as received by the radar computer" layout_of="PLANT_TRAFFIC">
-      <doc>The relayed PLANT_TRAFFIC, for the targeting radar (and the AEWC radar when it is ported).</doc>
+      <doc>The relayed PLANT_TRAFFIC, for the targeting and AEWC radars.</doc>
+    </block>
+    <block id="PLANT_GROUND" rt="27" desc_sa="10" seg_sa="11" rate="10" title="Ground scene for the synthetic aperture radar, from the plant">
+      <doc>The ground the synthetic aperture radar images (v1.13): the plant's training range (fmofp_plant.ground), laid out along the northbound track from home, as point scatterers (buildings, the vehicles on the roads and the ship on the lake: a square of `size` on a side at a `brightness`), linear features (roads and a river: lines of a `width`) and areas (a lake, forests, a town: discs). Positions are WGS-84, so the radar places them against the navigation it is given; what a feature is does not reach the picture, only its backscatter. The vehicles and the ship move at the plant's walk rate; published once a second (its four segments take 20 frames at 10 Hz).</doc>
+      <header words="2">
+        <field name="scene_seq" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every publication"/>
+        <field name="spare_0" word="0" bits="7-0" type="spare"/>
+        <field name="spare_1" word="1" bits="15-0" type="spare"/>
+      </header>
+      <section id="point" words="6" max="10" title="Point scatterers" doc="Buildings, vehicles and ships: a square of `size` on a side">
+        <field name="kind" word="0" bits="15-12" type="enum" enum="ground_feature"/>
+        <field name="brightness" word="0" bits="11-4" type="uint" doc="Mean backscatter before speckle, 0-255; open ground is 60"/>
+        <field name="spare_0" word="0" bits="3-0" type="spare"/>
+        <field name="latitude" word="1-2" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="WGS-84, north positive"/>
+        <field name="longitude" word="3-4" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999" doc="East positive"/>
+        <field name="size" word="5" bits="15-0" type="uint" lsb="1/4" units="m" min="0" max="16383.75" doc="Side of the square"/>
+      </section>
+      <section id="line" words="10" max="3" title="Linear features" doc="Roads and rivers, between two points">
+        <field name="kind" word="0" bits="15-12" type="enum" enum="ground_feature"/>
+        <field name="brightness" word="0" bits="11-4" type="uint" doc="Mean backscatter before speckle, 0-255"/>
+        <field name="spare_0" word="0" bits="3-0" type="spare"/>
+        <field name="latitude_1" word="1-2" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="One end"/>
+        <field name="longitude_1" word="3-4" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999"/>
+        <field name="latitude_2" word="5-6" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="The other end"/>
+        <field name="longitude_2" word="7-8" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999"/>
+        <field name="width" word="9" bits="15-0" type="uint" lsb="1/4" units="m" min="0" max="16383.75"/>
+      </section>
+      <section id="area" words="6" max="4" title="Areas" doc="Lakes, forests and towns: a disc">
+        <field name="kind" word="0" bits="15-12" type="enum" enum="ground_feature"/>
+        <field name="brightness" word="0" bits="11-4" type="uint" doc="Mean backscatter before speckle, 0-255"/>
+        <field name="spare_0" word="0" bits="3-0" type="spare"/>
+        <field name="latitude" word="1-2" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="Of the centre"/>
+        <field name="longitude" word="3-4" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999"/>
+        <field name="radius" word="5" bits="15-0" type="uint" lsb="1/4" units="m" min="0" max="16383.75"/>
+      </section>
+    </block>
+    <block id="RDR_SAR_SCENE" rt="9" dir="R" desc_sa="26" seg_sa="27" rate="10" title="Ground scene as received by the radar computer" layout_of="PLANT_GROUND">
+      <doc>The relayed PLANT_GROUND, for the synthetic aperture radar (v1.13).</doc>
     </block>
     <block id="BCAST_RDR_WX_PRODUCTS" rt="31" dir="R" desc_sa="6" seg_sa="7" rate="25" title="Weather radar products, broadcast to the displays" layout_of="RDR_WX_PRODUCTS" listeners="13 15">
       <doc>The relayed RDR_WX_PRODUCTS, one transfer per segment for every listener. A listener draws a block once it has every segment of a version and the CRC matches; a segment a listener missed (broadcasts are not retried) costs it that version, and the next arrives whole.</doc>
@@ -1427,6 +1519,9 @@
     </block>
     <block id="BCAST_RDR_AEWC_TRACKS" rt="31" dir="R" desc_sa="16" seg_sa="17" rate="10" title="AEWC tracks and sectors, broadcast to the displays" layout_of="RDR_AEWC_TRACKS" listeners="13">
       <doc>The MFD's AEWC page (v1.12). Subaddresses 16-17 are the SMS's and the HUD's own numbers, which only bars those two from listening.</doc>
+    </block>
+    <block id="BCAST_RDR_SAR_IMAGE" rt="31" dir="R" desc_sa="13" seg_sa="14" rate="25" title="SAR image, broadcast to the displays" layout_of="RDR_SAR_IMAGE" listeners="13">
+      <doc>The MFD's SAR page (v1.13). Subaddresses 13-14 are the EICAS's and the radar display's own numbers, which only bars those two from listening; the MFD has no receive of its own there.</doc>
     </block>
     <block id="BCAST_RDR_FUSED_TRACKS" rt="31" dir="R" desc_sa="22" seg_sa="23" rate="25" title="Fused air tracks, broadcast to the displays" layout_of="RDR_FUSED_TRACKS" listeners="14 16">
       <doc>The relayed RDR_FUSED_TRACKS for the tactical situation display's threat picture and the EICAS's hostile track count (v1.10).</doc>

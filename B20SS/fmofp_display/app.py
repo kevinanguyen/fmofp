@@ -23,7 +23,8 @@ from PyQt6.QtWidgets import QApplication, QHBoxLayout, QLabel, QPushButton, QSpi
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import AewcMode, TargetingMode, TerminalState, TfrMode, TrackFilter, WeatherMode
+from fmofp_bus.icd.enums import (AewcMode, SarMode, TargetingMode, TerminalState, TfrMode, TrackFilter,
+                                 WeatherMode)
 from fmofp_bus.status import Status
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
@@ -50,7 +51,7 @@ def bootstrap():
 def radar_terminal(port_base):
     return TerminalProcess(RADAR_RT, port_base, m.DspRadarStatus, m.DspRadarModeCmd,
                            receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance,
-                                     m.BcastRdrTgtStatus, m.BcastRdrAewcStatus),
+                                     m.BcastRdrTgtStatus, m.BcastRdrAewcStatus, m.BcastRdrSarStatus),
                            blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation))
 
 
@@ -82,6 +83,12 @@ def aewc_command(terminal, state, mode, azimuth_start=0.0, azimuth_end=90.0, ele
                            azimuth_start=float(azimuth_start), azimuth_end=float(azimuth_end),
                            elevation=float(elevation))
     return m.DspRdrAewcCmd(payload=cmd)
+
+
+def sar_command(terminal, state, mode, resolution_m=1.0):
+    cmd = m.RdrSarModeCmd(cmd_seq=terminal.next_command_seq(), requested_state=state, requested_mode=mode,
+                          resolution=float(resolution_m))
+    return m.DspRdrSarCmd(payload=cmd)
 
 
 class RadarPicture(QWidget):
@@ -167,6 +174,7 @@ class RadarWindow(QWidget):
         layout.addLayout(self._terrain_controls())
         layout.addLayout(self._targeting_controls())
         layout.addLayout(self._aewc_controls())
+        layout.addLayout(self._sar_controls())
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(TICK_MS)
@@ -251,13 +259,39 @@ class RadarWindow(QWidget):
         row.addStretch(1)
         return row
 
+    def _sar_controls(self):
+        """The synthetic aperture radar's buttons and its resolution; its picture is the MFD's radar page."""
+        from PyQt6.QtWidgets import QDoubleSpinBox
+        row = QHBoxLayout()
+        row.addWidget(QLabel("SAR:"))
+        self.sar_resolution = QDoubleSpinBox()
+        self.sar_resolution.setRange(0.1, 10.0)
+        self.sar_resolution.setSingleStep(0.1)
+        self.sar_resolution.setDecimals(1)
+        self.sar_resolution.setValue(1.0)
+        self.sar_resolution.setSuffix(" m")
+        standby = QPushButton("STANDBY")
+        standby.clicked.connect(lambda: self.terminal.send(sar_command(self.terminal, TerminalState.STANDBY,
+                                                                       SarMode.NONE, self.sar_resolution.value())))
+        row.addWidget(standby)
+        for mode in (SarMode.STRIPMAP, SarMode.SPOTLIGHT, SarMode.SCANSAR):
+            button = QPushButton(mode.name)
+            button.clicked.connect(lambda _=False, mode=mode: self.terminal.send(
+                sar_command(self.terminal, TerminalState.NORMAL, mode, self.sar_resolution.value())))
+            row.addWidget(button)
+        row.addWidget(QLabel("resolution"))
+        row.addWidget(self.sar_resolution)
+        row.addStretch(1)
+        return row
+
     def tick(self):
         self.feed.update()
         self.picture.apply()
         self.terminal.take_mode_request()  # the radar picture has no lighting modes; the status reports it
         self.status.setText(f"RT {self.terminal.rt} {self.terminal.state.name}  frames {self.terminal.syncs}  |  "
                             f"{self.feed.weather_status_text()}  |  {self.feed.tfr_status_text()}  |  "
-                            f"{self.feed.targeting_status_text()}  |  {self.feed.aewc_status_text()}")
+                            f"{self.feed.targeting_status_text()}  |  {self.feed.aewc_status_text()}  |  "
+                            f"{self.feed.sar_status_text()}")
 
 
 def make_pfd(feed):
@@ -309,9 +343,9 @@ def mfd_terminal(port_base):
                            receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance,
                                      m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus, m.BcastFmsFlightData,
                                      m.BcastEngEngineStatus, m.BcastEngFuelStatus, m.BcastRdrTgtStatus,
-                                     m.BcastRdrAewcStatus),
+                                     m.BcastRdrAewcStatus, m.BcastRdrSarStatus),
                            blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation, b.BcastRdrTgtTracks,
-                                   b.BcastRdrAewcTracks))
+                                   b.BcastRdrAewcTracks, b.BcastRdrSarImage))
 
 
 # The getters mfd.py imports inside its page functions and eicas.py inside its poll, and the feed attribute each
@@ -453,8 +487,8 @@ class MfdWindow(QWidget):
         bootstrap()
         from FMOFP.Interfaces.userInterface.displays.radar.radar_display_data_coordinator import (
             get_radar_display_data_coordinator)
-        from FMOFP.Systems.radarManagement.radar_enums import (aewc_radarMode, targeting_radarMode, tfr_radarMode,
-                                                               weather_radarMode)
+        from FMOFP.Systems.radarManagement.radar_enums import (aewc_radarMode, sar_radarMode, targeting_radarMode,
+                                                               tfr_radarMode, weather_radarMode)
         self.terminal = terminal
         self.systems = systems_feed if systems_feed is not None else SystemsFeed(terminal)
         self.radar = radar_feed if radar_feed is not None else RadarFeed(terminal, get_radar_display_data_coordinator())
@@ -470,6 +504,7 @@ class MfdWindow(QWidget):
         self._terrain_modes = tfr_radarMode
         self._targeting_modes = targeting_radarMode
         self._aewc_modes = aewc_radarMode
+        self._sar_modes = sar_radarMode
         self._radar_display_seen = None
         self._weather_mode_name = None
         layout = QVBoxLayout(self)
@@ -526,6 +561,14 @@ class MfdWindow(QWidget):
             display.range_scale = aewc["range_nm"]
             self.mfd.radar_data.mode = self._aewc_modes[aewc["mode_name"]]
             self.mfd.radar_data.aewc_tracks = aewc["targets"]
+        elif kind == self._radar_types.SAR:
+            sar = self.radar.sar_data()
+            display.range_scale = sar["range_nm"]
+            self.mfd.radar_data.mode = self._sar_modes[sar["mode_name"]]
+            # _get_radar_data merges this dictionary into the picture's data when it is truthy.
+            self.mfd.radar_data.sar_data = ({"image_data": sar["image_data"], "corner_points": sar["corner_points"],
+                                             "resolution": sar["resolution"], "scan_progress": sar["scan_progress"]}
+                                            if sar["image_data"] else None)
 
     def closeEvent(self, event):
         self.mfd.stop()

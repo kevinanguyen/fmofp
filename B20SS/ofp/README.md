@@ -71,11 +71,11 @@ window reads a mirror.
 
 ## Running the partitions
 
-Flight control, navigation, flight management, the weather radar, the
-terrain-following radar, the targeting and AEWC radars with the track fusion and
-engine management on the bus, fed by the Python plant model (the simulated aircraft,
-its weather, its terrain, its two engines and the air traffic around it,
-RT 27). From `B20SS/`:
+Flight control, navigation, flight management, the five radars (weather,
+terrain-following, synthetic aperture, targeting and AEWC) with the track fusion
+and engine management on the bus, fed by the Python plant model (the simulated
+aircraft, its weather, its terrain, its two engines, the air traffic around it and
+the ground beneath it, RT 27). From `B20SS/`:
 
 ```bash
 py -m fmofp_plant --port-base 53000                 # the aircraft; add --hold altitude=150 to test ALT LOW
@@ -107,7 +107,11 @@ radar scanning, and `RDR_WX_SCAN` then reports what each 1.2 s sweep found; a
 `RDR_TFR_MODE_CMD` (RT 9, SA 2) for NORMAL and TERRAIN_FOLLOWING with a set
 clearance starts the terrain-following radar assessing each profile the plant
 publishes, and `RDR_TFR_GUIDANCE` reports the clearance and the first altitude
-command ten times a second. The engine computer needs no command: the FMS
+command ten times a second; a `RDR_SAR_MODE_CMD` (RT 9, SA 3) for NORMAL and
+STRIPMAP at a resolution starts the synthetic aperture radar picturing the
+strip 2 km to the right of the track from the plant's ground scene, an image
+every 3 s (`RDR_SAR_IMAGE`), once the FMS flight data broadcast has given it a
+position. The engine computer needs no command: the FMS
 thrust lever (50 % until an `FMS_CONTROL_CMD` moves it) reaches it as
 `ENG_FMS_CONTROL`, it commands the plant's engines (`ENG_THRUST_CMD`, relayed
 as `PLANT_THRUST_CMD`), their measurements come back as `ENG_ENGINE_IN`, and
@@ -135,10 +139,11 @@ ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --port-base 53000 -
 **The displays.** Five of the PyQt6 displays run as their own bus terminals
 (`B20SS/fmofp_display`): the radar display, RT 15, which shows the weather and
 terrain-following radars' pictures and commands the weather, terrain-following,
-targeting and AEWC radars; the primary
+targeting, AEWC and synthetic aperture radars; the primary
 flight display, RT 11, which reads the FMS's flight data; the multi-function
 display, RT 13, whose radar page mirrors the radars' pictures from the same
-broadcasts and draws the targeting and AEWC radars' tracks, whose systems page shows the flight computer's GCAS alerts and
+broadcasts, draws the targeting and AEWC radars' tracks and the SAR's picture of
+the ground, whose systems page shows the flight computer's GCAS alerts and
 envelope exceedances and the engine computer's readings, and whose mission
 page shows the FMS position (its communications and mission rows wait for
 those terminals); and the EICAS, RT 14, which shows the engine computer's
@@ -166,7 +171,7 @@ exceedances and the FMS's flight data once each, to address 31; every display
 accepts the subaddresses it draws and ignores the rest (ICD README section 8),
 so another display costs the bus nothing for data it already broadcasts. The
 radar display's mode buttons load `DSP_RDR_WX_CMD` / `DSP_RDR_TFR_CMD` /
-`DSP_RDR_TGT_CMD` / `DSP_RDR_AEWC_CMD` on its own subaddresses, which the
+`DSP_RDR_TGT_CMD` / `DSP_RDR_AEWC_CMD` / `DSP_RDR_SAR_CMD` on its own subaddresses, which the
 controller relays into the radar every 100 ms. The
 display classes under `FMOFP/Interfaces/userInterface/displays` are unchanged:
 a feed turns the bus words into the dictionaries they always drew. The MFD's
@@ -207,7 +212,13 @@ detector, the threat rule and a fusion epoch against the original Python through
 `fmofp_radar_tool`, and `test_plant_traffic.py` the plant's traffic against the
 radars' generators; `test_aewc_oracle.py` checks the AEWC's radar equation, sectors,
 priorities and electronic protection the same way, and `test_targeting_e2e.py`
-runs both radars and checks the fused tracks carry both.
+runs both radars and checks the fused tracks carry both. `test_sar_e2e.py` runs
+the plant over a scene of its own with the flight control, navigation, flight
+management and radar partitions and checks the strip picture (the road in it),
+two spotlight pictures of one patch with the ship three pixels further on, and
+standby's empty block; `test_sar_oracle.py` checks the change detector against
+`sar_processor.py` event for event and the picture's geometry and levels through
+`fmofp_radar_tool`, and `test_plant_ground.py` the plant's training range.
 `test_display_e2e.py` runs the five display terminals headless beside the
 whole set of partitions and checks that the radars' products and the FMS's
 flight data arrive at the displays by broadcast, that the flight computer's

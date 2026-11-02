@@ -24,13 +24,15 @@ import unittest
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
 from fmofp_bus.command_word import BROADCAST_RT
-from fmofp_bus.icd.enums import (AewcMode, FmsFlightMode, GcasStatus, Ssm, TargetingMode, TerminalState, TfrMode,
+from fmofp_bus.icd.enums import (AewcMode, FmsFlightMode, GcasStatus, SarMode, Ssm, TargetingMode, TerminalState,
+                                 TfrMode,
                                  WeatherMode)
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 from fmofp_bus.tests._support import binary_env, needs
 from fmofp_bus.tests.test_display_feeds import FakeCoordinator
-from fmofp_display.app import (aewc_command, eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, targeting_command,
+from fmofp_display.app import (aewc_command, eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, sar_command,
+                               targeting_command,
                                tfr_command, tsd_terminal, weather_command)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
@@ -38,7 +40,7 @@ from fmofp_display.systems_feed import SystemsFeed
 from fmofp_plant.plant import PlantModel, PlantTerminal
 
 PORT_BASE = 61000
-FRAMES = 260
+FRAMES = 420  # the SAR's first picture: a fix, 150 frames of integration, 134 frames of segments
 SYNC_MODE_CODE = 17
 BINARIES = ("FMOFP_FCS", "FMOFP_NAV", "FMOFP_FMS", "FMOFP_RADAR", "FMOFP_ENGINE")
 
@@ -160,6 +162,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.radar_display.send(tfr_command(self.radar_display, TerminalState.NORMAL, TfrMode.TERRAIN_FOLLOWING, 984))
         self.radar_display.send(targeting_command(self.radar_display, TerminalState.NORMAL, TargetingMode.TARGET_SEARCH))
         self.radar_display.send(aewc_command(self.radar_display, TerminalState.NORMAL, AewcMode.AEWC_SEARCH))
+        self.radar_display.send(sar_command(self.radar_display, TerminalState.NORMAL, SarMode.STRIPMAP, 1.0))
         records, output = self.run_bus()
         framed = self.by_frame(records)
         self.assertGreaterEqual(framed[-1][0], FRAMES - 2)
@@ -232,7 +235,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # copy written into any display.
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
-        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28}, broadcast)
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28}, broadcast)
         for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT, m.DspTsdStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}
@@ -326,6 +329,19 @@ class DisplaysEndToEndTest(unittest.TestCase):
                             for tr in aewc["targets"]))
         self.assertIn(aewc["priority_sector"], range(1, 7))
         self.assertIn("AEWC NORMAL AEWC_SEARCH", mfd_feed.aewc_status_text())
+        # The SAR, commanded from the radar display too: its first picture of the plant's ground reaches the MFD.
+        sar_status = self.radar_display.fresh(m.BcastRdrSarStatus, stale_after_s=60.0)
+        self.assertIsNotNone(sar_status)
+        self.assertEqual((TerminalState.NORMAL, SarMode.STRIPMAP, 5, False, True, True),
+                         (sar_status.payload.state, sar_status.payload.mode, sar_status.payload.last_cmd_seq,
+                          sar_status.payload.cmd_rejected, sar_status.payload.scene_valid, sar_status.payload.nav_valid))
+        self.assertGreaterEqual(sar_status.payload.image_seq, 1, "an image by frame 400")
+        sar = mfd_feed.sar_data()
+        self.assertEqual("STRIPMAP", sar["mode_name"])
+        self.assertEqual(13 + 4096, len(sar["image_data"]), "a 64 x 64 PGM at the MFD")
+        self.assertEqual((1.0, 16.0, 4), (sar["resolution"], sar["pixel_size_m"], len(sar["corner_points"])))
+        self.assertIn("SAR NORMAL STRIPMAP  image", mfd_feed.sar_status_text())
+        self.assertIsNone(self.tsd.fresh(m.BcastRdrSarStatus, stale_after_s=60.0), "not among the TSD's receives")
         tsd = SystemsFeed(self.tsd, stale_after_s=60.0)
         fused = tsd.fusion.get_fused_tracks()
         self.assertGreaterEqual(len(fused), 1, "no fused tracks block at the TSD")

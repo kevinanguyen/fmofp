@@ -12,18 +12,18 @@ from fmofp_bus.status import Status
 class GeneratedMessagesTest(unittest.TestCase):
     def test_version_and_table(self):
         self.assertEqual(1, m.ICD_MAJOR)
-        self.assertEqual(12, m.ICD_MINOR)
-        self.assertEqual(31, len(m.RELAYS))
+        self.assertEqual(13, m.ICD_MINOR)
+        self.assertEqual(32, len(m.RELAYS))
         self.assertEqual(("PLANT_SENSORS", "FCS_SENSORS", 27, 1, 5, 13, 11, 50, ()), tuple(m.RELAYS[0]))
         broadcast = [r for r in m.RELAYS if r.to_rt == 31]
-        self.assertEqual(14, len(broadcast))
+        self.assertEqual(15, len(broadcast))
         self.assertEqual((13, 15), next(r.listeners for r in broadcast if r.to_id == "BCAST_RDR_WX_STATUS"))
-        self.assertEqual((3, 11, 13, 14, 16), next(r.listeners for r in broadcast if r.to_id == "BCAST_FMS_FLIGHT_DATA"),
-                         "the engine computer, the EICAS and the TSD listen too")
+        self.assertEqual((3, 9, 11, 13, 14, 16), next(r.listeners for r in broadcast if r.to_id == "BCAST_FMS_FLIGHT_DATA"),
+                         "the engine computer, the radar computer, the EICAS and the TSD listen too")
         self.assertEqual((5, 13, 14), next(r.listeners for r in broadcast if r.to_id == "BCAST_ENG_ENGINE_STATUS"))
         self.assertEqual((13, 14, 15), next(r.listeners for r in broadcast if r.to_id == "BCAST_RDR_WX_SCAN"))
-        self.assertEqual(5, len([r for r in b.BLOCK_RELAYS if r.to_rt == 31]))
-        self.assertEqual(90, len(m.MESSAGES))
+        self.assertEqual(6, len([r for r in b.BLOCK_RELAYS if r.to_rt == 31]))
+        self.assertEqual(91, len(m.MESSAGES))
         self.assertIs(m.FcsAttitude, m.MESSAGE_CLASSES["FCS_ATTITUDE"])
         self.assertEqual(m.EVERY_TERMINAL, m.TermStatus.RT)
 

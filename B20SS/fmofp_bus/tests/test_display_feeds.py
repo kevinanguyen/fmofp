@@ -5,13 +5,13 @@ import unittest
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (AewcMode, ClearanceLevel, CountermeasuresState, EcmMitigation, FmsFlightMode, GcasStatus,
-                                 IffIdentity, JamType, LockStatus, PathReason, PrecipType, ShearSeverity, Ssm, TargetClass,
-                                 TargetingMode, TargetingState, TerminalState, TfrMode, Threat, TurbulenceCategory,
-                                 WeaponsState, WeatherMode)
+from fmofp_bus.icd.enums import (AewcMode, ChangeType, ClearanceLevel, CountermeasuresState, EcmMitigation,
+                                 FmsFlightMode, GcasStatus, IffIdentity, JamType, LockStatus, PathReason, PrecipType,
+                                 SarMode, ShearSeverity, Ssm, TargetClass, TargetingMode, TargetingState, TerminalState,
+                                 TfrMode, Threat, TurbulenceCategory, WeaponsState, WeatherMode)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import (BROADCAST_SOURCES, SYMBOL_CLASS, RadarFeed, aewc_item, cell_velocity_nm_s,
-                                      polar_to_nm, targeting_item, weather_items)
+                                      polar_to_nm, sar_corners_nm, sar_pgm, targeting_item, weather_items)
 from fmofp_display.systems_feed import LIMITS, FusedTrackView, SystemsFeed, TerrainClearance, WeatherSeverity
 
 
@@ -124,6 +124,18 @@ def sample_aewc(mode=AewcMode.AEWC_SEARCH):
                                       mitigation=EcmMitigation.FREQ_AGILITY if i == 3 else EcmMitigation.NONE,
                                       severity=0.2 if i == 3 else 0.0) for i in range(6)]
     return t
+
+
+def sample_sar_image(mode=SarMode.STRIPMAP, heading=0.0, image_seq=4):
+    """An RDR_SAR_IMAGE block: the strip 2.5 km east of a northbound aircraft at 0 N 0 E, pixels a gradient
+    (column c of row r is (r * 64 + c) % 256), and one significant change region."""
+    img = b.RdrSarImage(image_seq=image_seq, mode=mode, changes=1, resolution=1.0, pixel_size=16.0,
+                        centre_latitude=0.0, centre_longitude=2512.0 / 111195.0, heading=heading, centre_along=0.0,
+                        centre_cross=2512.0)
+    img.pixel = [b.RdrSarImagePixel(even=(2 * k) % 256, odd=(2 * k + 1) % 256) for k in range(2048)]
+    img.change = [b.RdrSarImageChange(row=10, col=20, area=57, change=ChangeType.ADDITION, significant=True,
+                                      confidence=0.95, log_ratio=3.375)]
+    return img
 
 
 class WeatherItemsTest(unittest.TestCase):
@@ -655,6 +667,78 @@ class TsdFeedTest(unittest.TestCase):
     def test_the_services_not_on_the_bus_yet(self):
         self.assertEqual({"route": []}, self.feed.mission.get_nav_data())
         self.assertEqual([], self.feed.defensive.get_rwr_contacts())
+
+
+class SarFeedTest(unittest.TestCase):
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = RadarFeed(self.terminal, FakeCoordinator(), clock=lambda: 1000.0)
+
+    def status(self, mode=SarMode.STRIPMAP, scene_valid=True, nav_valid=True, image_seq=4):
+        return m.BcastRdrSarStatus(payload=m.RdrSarStatus(state=TerminalState.NORMAL, mode=mode, scene_valid=scene_valid,
+                                                          nav_valid=nav_valid, image_seq=image_seq))
+
+    def test_no_data_is_standby(self):
+        data = self.feed.sar_data()
+        self.assertEqual(("STANDBY", b"", [], 5.0, 0), (data["mode_name"], data["image_data"], data["corner_points"],
+                                                     data["range_nm"], data["image_seq"]))
+        self.assertEqual("SAR: no data", self.feed.sar_status_text())
+
+    def test_the_image_becomes_the_pgm_the_display_decodes(self):
+        self.terminal.put(self.status())
+        self.terminal.put_block(b.BcastRdrSarImage, sample_sar_image(), 3, age=1.5)
+        data = self.feed.sar_data()
+        self.assertEqual("STRIPMAP", data["mode_name"])
+        pgm = data["image_data"]
+        header = b"P5\n64 64\n255\n"
+        self.assertTrue(pgm.startswith(header))
+        self.assertEqual(len(header) + 4096, len(pgm))
+        self.assertEqual([0, 1, 2, 3], list(pgm[len(header):len(header) + 4]), "row 0: the even column first")
+        self.assertEqual(255, pgm[len(header) + 255])
+        self.assertEqual((1.0, 16.0, 0.0, 4), (data["resolution"], data["pixel_size_m"], data["heading"],
+                                                 data["image_seq"]))
+        self.assertAlmostEqual(0.5, data["scan_progress"], msg="1.5 s into the 3 s to the next image")
+        corners = data["corner_points"]
+        self.assertEqual(4, len(corners))
+        self.assertAlmostEqual(2000.0 / 1852.0, corners[0][0], msg="top-left: the near edge, 2 km east")
+        self.assertAlmostEqual(512.0 / 1852.0, corners[0][1], msg="half the picture ahead")
+        self.assertAlmostEqual(3024.0 / 1852.0, corners[2][0], msg="bottom-right: the far edge")
+        self.assertAlmostEqual(-512.0 / 1852.0, corners[2][1])
+        self.assertEqual(5.0, data["range_nm"], "1.2 x 1.66 nm is under the 5 nm floor")
+        self.assertEqual([{"row": 10, "col": 20, "area": 57, "type": "ADDITION", "significant": True,
+                           "confidence": 0.95, "log_ratio": 3.375}], data["changes"], "log_ratio in 1/16 steps")
+        self.assertEqual(1, data["significant_changes"])
+        self.assertEqual("SAR NORMAL STRIPMAP  image 4", self.feed.sar_status_text())
+
+    def test_the_corners_turn_with_the_heading(self):
+        east = sar_corners_nm(sample_sar_image(heading=90.0))
+        # Heading east: the strip lies to the south; the top of the picture is east.
+        self.assertAlmostEqual(512.0 / 1852.0, east[0][0])
+        self.assertAlmostEqual(-2000.0 / 1852.0, east[0][1])
+        self.assertAlmostEqual(-3024.0 / 1852.0, east[2][1])
+        wide = sample_sar_image(mode=SarMode.SCANSAR)
+        wide.pixel_size = 640.0
+        wide.centre_cross = 2000.0 + 32.0 * 640.0
+        self.terminal.put(self.status(mode=SarMode.SCANSAR))
+        self.terminal.put_block(b.BcastRdrSarImage, wide, 1)
+        data = self.feed.sar_data()
+        self.assertEqual("SCANSAR", data["mode_name"])
+        self.assertGreater(data["range_nm"], 25.0, "the range scale shows the 43 km far edge")
+
+    def test_an_empty_block_and_a_waiting_radar(self):
+        self.terminal.put(self.status(scene_valid=False, nav_valid=False, image_seq=0))
+        self.terminal.put_block(b.BcastRdrSarImage, b.RdrSarImage(), 2)
+        data = self.feed.sar_data()
+        self.assertEqual(("STRIPMAP", b"", False, False), (data["mode_name"], data["image_data"], data["scene_valid"],
+                                                          data["nav_valid"]))
+        self.assertEqual("SAR NORMAL STRIPMAP  imaging  no scene  no fix", self.feed.sar_status_text())
+        self.terminal.put(self.status(mode=SarMode.INTERFEROMETRIC))
+        self.assertEqual("INTERFEROMETRIC", self.feed.sar_data()["mode_name"], "the MFD's enum has it; it draws standby")
+        self.terminal.put(m.BcastRdrSarStatus(payload=m.RdrSarStatus(state=TerminalState.STANDBY, mode=SarMode.NONE,
+                                                                      image_seq=4)))
+        self.assertEqual("STANDBY", self.feed.sar_data()["mode_name"])
+        self.assertEqual("SAR STANDBY NONE", self.feed.sar_status_text())
+        self.assertEqual(sar_pgm(sample_sar_image())[:3], b"P5\n")
 
 
 if __name__ == "__main__":
