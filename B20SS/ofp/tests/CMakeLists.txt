@@ -22,6 +22,7 @@ add_executable(ofp_tests
     target_processing_test.cpp
     targeting_radar_test.cpp
     track_fusion_test.cpp
+    aewc_radar_test.cpp
     engine_management_test.cpp
     icd_messages_test.cpp)
 add_dependencies(ofp_tests ofp_icd_generate)

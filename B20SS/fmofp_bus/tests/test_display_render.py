@@ -19,9 +19,9 @@ except ImportError:  # pragma: no cover - depends on the machine
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, ShearSeverity, Ssm,
-                                 TargetingMode, TargetingState, TerminalState, TfrMode, WeaponsState, WeatherMode)
-from fmofp_bus.tests.test_display_feeds import (FakeTerminal, flight_payload, sample_elevation, sample_fused,
+from fmofp_bus.icd.enums import (AewcMode, ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, ShearSeverity,
+                                 Ssm, TargetingMode, TargetingState, TerminalState, TfrMode, WeaponsState, WeatherMode)
+from fmofp_bus.tests.test_display_feeds import (FakeTerminal, flight_payload, sample_aewc, sample_elevation, sample_fused,
                                                 sample_products, sample_tracks)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
@@ -90,6 +90,8 @@ class DisplayWindowsTest(unittest.TestCase):
         terminal.put_block(b.BcastRdrTfrElevation, sample_elevation(), 2)
         terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(state=TerminalState.NORMAL,
                                                               mode=TargetingMode.TARGET_SEARCH, track_count=4)))
+        terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(state=TerminalState.NORMAL, mode=AewcMode.AEWC_SEARCH,
+                                                                track_count=9, stealth_tracks=2)))
         window.tick()
         self.app.processEvents()
         active = lit_pixels(window.picture.grab().toImage())
@@ -100,6 +102,7 @@ class DisplayWindowsTest(unittest.TestCase):
         self.assertIn("WX NORMAL SURVEILLANCE", window.status.text())
         self.assertIn("TFR NORMAL TERRAIN_FOLLOWING", window.status.text())
         self.assertIn("TGT NORMAL TARGET_SEARCH  4 tracks", window.status.text())
+        self.assertIn("AEWC NORMAL AEWC_SEARCH  9 tracks (2 stealth)", window.status.text())
         # The control panel sends commands through the terminal.
         window.findChildren(type(window.clearance))  # the spin box exists
         buttons = {button.text(): button for button in window.findChildren(self.app_module.QPushButton)}
@@ -108,14 +111,17 @@ class DisplayWindowsTest(unittest.TestCase):
         buttons["TARGET_SEARCH"].click()
         window.lock_track.setValue(3)
         buttons["TARGET_TRACK"].click()
+        buttons["AEWC_SEARCH"].click()
         sent = getattr(terminal, "sent", [])
-        self.assertEqual(4, len(sent))
+        self.assertEqual(5, len(sent))
         self.assertEqual((WeatherMode.WINDSHEAR, TerminalState.NORMAL), (sent[0].payload.requested_mode,
                                                                           sent[0].payload.requested_state))
         self.assertEqual((TfrMode.TFR_SEARCH, 1000.0), (sent[1].payload.requested_mode, sent[1].payload.set_clearance))
         self.assertEqual((m.DspRdrTgtCmd, TargetingMode.TARGET_SEARCH, 0), (type(sent[2]), sent[2].payload.requested_mode,
                                                                           sent[2].payload.lock_track_id))
         self.assertEqual((TargetingMode.TARGET_TRACK, 3), (sent[3].payload.requested_mode, sent[3].payload.lock_track_id))
+        self.assertEqual((m.DspRdrAewcCmd, AewcMode.AEWC_SEARCH, 90.0), (type(sent[4]), sent[4].payload.requested_mode,
+                                                                      sent[4].payload.azimuth_end))
         window.timer.stop()
         window.close()
 
@@ -261,8 +267,31 @@ class DisplayWindowsTest(unittest.TestCase):
             self.assertAlmostEqual(100.0 / 1.852, mfd._current_radar_display.range_scale)
             self.assertGreater(lit_pixels(mfd.grab().toImage()), standby_targets, "two targets and their labels")
 
-            # The other two radars are not on the bus yet: their standby pictures paint.
-            for kind in (kinds.SAR, kinds.AEWC):
+            # The AEWC picture: standby, then its tracks (a conventional one and a stealth one) from the bus.
+            mfd.current_radar_type = kinds.AEWC
+            mfd._update_radar_type()
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertEqual("AEWCRadarDisplay", type(mfd._current_radar_display).__name__)
+            self.assertEqual("STANDBY", mfd.radar_data.mode.name)
+            standby_aewc = lit_pixels(mfd.grab().toImage())
+            terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(state=TerminalState.NORMAL,
+                                                                    mode=AewcMode.AEWC_SEARCH, track_count=2,
+                                                                    stealth_tracks=1)))
+            terminal.put_block(b.BcastRdrAewcTracks, sample_aewc(), 1)
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertEqual(window._aewc_modes.AEWC_SEARCH, mfd.radar_data.mode)
+            self.assertEqual([False, True], [target["is_stealth"] for target in mfd.radar_data.aewc_tracks])
+            self.assertAlmostEqual(400.0 / 1.852, mfd._current_radar_display.range_scale)
+            self.assertGreater(lit_pixels(mfd.grab().toImage()), standby_aewc, "two targets, one of them a stealth diamond")
+
+            # The SAR radar is not on the bus yet: its standby picture paints.
+            for kind in (kinds.SAR,):
                 mfd.current_radar_type = kind
                 mfd._update_radar_type()
                 window.tick()

@@ -4,10 +4,11 @@ The weather radar display (Interfaces/userInterface/displays/radar) draws from
 the RadarDisplayDataCoordinator's stores: lists of dictionaries with a
 `position` in nautical miles from the aircraft (x east, y north) and the fields
 the bridge used to put there. The terrain display draws a dictionary with the
-profile points, the clearance and the altitudes; the targeting display (on the
-MFD's radar page) a list of targets. RadarFeed builds them from
+profile points, the clearance and the altitudes; the targeting and AEWC displays (on
+the MFD's radar page) lists of targets. RadarFeed builds them from
 RDR_WX_PRODUCTS, RDR_WX_SCAN, RDR_WX_STATUS, RDR_TFR_GUIDANCE, RDR_TFR_STATUS,
-RDR_TFR_ELEVATION, RDR_TGT_STATUS and RDR_TGT_TRACKS as the display terminal hears them: broadcast once to
+RDR_TFR_ELEVATION, RDR_TGT_STATUS, RDR_TGT_TRACKS, RDR_AEWC_STATUS and RDR_AEWC_TRACKS
+as the display terminal hears them: broadcast once to
 address 31 for every display that accepts the subaddress (BCAST_RDR_*, ICD
 v1.7). It knows nothing of Qt or of the display classes: the window applies
 what it returns.
@@ -23,7 +24,7 @@ from collections import namedtuple
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import LockStatus, Ssm, TargetingMode, TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import AewcMode, LockStatus, Ssm, TargetingMode, TerminalState, TfrMode, WeatherMode
 from fmofp_display.terminal import STALE_AFTER_S
 
 NM_PER_KM = 1.0 / 1.852
@@ -71,12 +72,26 @@ SYMBOL_CLASS = {"FIGHTER": "FIXED_WING", "BOMBER": "FIXED_WING", "HIGH_ALT": "FI
 M_PER_NM = 1852.0
 TARGETING_RANGE_NM = 100.0 * NM_PER_KM  # the targeting radar's maximum range: the picture's range scale
 
+# The MFD's AEWC picture (AEWCRadarDisplay) draws SEARCH, TRACK and GROUND_MAPPING pictures; its ground-mapping
+# drawing does not exist in aewc_radar_display.py (the call would raise), so the search picture stands in for it.
+AEWC_DRAW_MODE = {
+    AewcMode.NONE: "STANDBY",
+    AewcMode.AEWC_SEARCH: "SEARCH",
+    AewcMode.AEWC_SURVEILLANCE: "SEARCH",
+    AewcMode.SECTOR_SCAN: "SEARCH",
+    AewcMode.STEALTH_DETECTION: "SEARCH",
+    AewcMode.ELECTRONIC_PROTECTION: "SEARCH",
+    AewcMode.AEWC_TRACK: "TRACK",
+    AewcMode.GROUND_MAPPING: "SEARCH",
+}
+AEWC_RANGE_NM = 400.0 * NM_PER_KM  # the AEWC radar's maximum range: its picture's range scale
+
 # The broadcast messages and blocks every display hears the radars' data in (ICD README section 8).
 RadarSources = namedtuple("RadarSources", "wx_status wx_scan wx_products tfr_status tfr_guidance tfr_elevation "
-                                           "tgt_status tgt_tracks")
+                                           "tgt_status tgt_tracks aewc_status aewc_tracks")
 BROADCAST_SOURCES = RadarSources(m.BcastRdrWxStatus, m.BcastRdrWxScan, b.BcastRdrWxProducts, m.BcastRdrTfrStatus,
                                  m.BcastRdrTfrGuidance, b.BcastRdrTfrElevation, m.BcastRdrTgtStatus,
-                                 b.BcastRdrTgtTracks)
+                                 b.BcastRdrTgtTracks, m.BcastRdrAewcStatus, b.BcastRdrAewcTracks)
 
 
 def polar_to_nm(azimuth_deg, range_km):
@@ -139,6 +154,18 @@ def targeting_item(track):
             "classification": SYMBOL_CLASS.get(track.classification.name),
             "threat": track.threat.name, "locked": bool(track.locked), "stealth": bool(track.stealth),
             "confidence": track.confidence}
+
+
+def aewc_item(track):
+    """One RDR_AEWC_TRACKS record as AEWCRadarDisplay reads it: targeting_item's shape plus is_stealth (its purple
+    diamond), the detection flag, the sector and the signal-to-noise ratio."""
+    return {"id": track.track_id,
+            "position": (track.x / M_PER_NM, track.y / M_PER_NM, track.z / M_PER_NM),
+            "velocity": (track.velocity_east, track.velocity_north, track.velocity_up),
+            "identity": None if track.identity.name == "UNKNOWN" else track.identity.name,
+            "classification": SYMBOL_CLASS.get(track.classification.name),
+            "threat": track.threat.name, "is_stealth": bool(track.stealth), "detected": bool(track.detected),
+            "sector": track.sector, "confidence": track.confidence, "snr_db": track.snr}
 
 
 class RadarFeed:
@@ -281,4 +308,40 @@ class RadarFeed:
             text += f"  lock {s.locked_track_id} {s.lock_status.name}"
         if s.jamming:
             text += "  JAMMING"
+        return text
+
+    def aewc_data(self):
+        """The AEWC picture's data: the MFD's draw mode name, the targets as AEWCRadarDisplay draws them, the range
+        scale (the radar's 400 km), the counts, the jammed and priority sectors, and the six sectors of the last block."""
+        status = self.terminal.fresh(self.sources.aewc_status)
+        tracks, _, age = self.terminal.latest_block(self.sources.aewc_tracks)
+        data = {"mode_name": "STANDBY", "targets": [], "range_nm": AEWC_RANGE_NM, "track_count": 0, "stealth_tracks": 0,
+                "jammed_sectors": [], "priority_sector": 0, "sectors": []}
+        if status is not None:
+            s = status.payload
+            if s.state == TerminalState.NORMAL:
+                data["mode_name"] = AEWC_DRAW_MODE.get(s.mode, "STANDBY")
+            data["track_count"] = s.track_count
+            data["stealth_tracks"] = s.stealth_tracks
+            data["jammed_sectors"] = [i + 1 for i in range(6) if s.jammed_sectors & (1 << i)]
+            data["priority_sector"] = s.priority_sector
+        if tracks is not None and age is not None and age <= STALE_AFTER_S:
+            data["targets"] = [aewc_item(t) for t in tracks.track]
+            data["sectors"] = [{"azimuth_start": sec.azimuth_start, "active_tracks": sec.active_tracks,
+                                "jammed": bool(sec.jammed), "scan_progress": sec.scan_progress,
+                                "dwell_fraction": sec.dwell_fraction, "priority_score": sec.priority_score,
+                                "jam_type": sec.jam_type.name, "mitigation": sec.mitigation.name,
+                                "severity": sec.severity} for sec in tracks.sector]
+        return data
+
+    def aewc_status_text(self):
+        status = self.terminal.fresh(self.sources.aewc_status)
+        if status is None:
+            return "AEWC: no data"
+        s = status.payload
+        text = f"AEWC {s.state.name} {s.mode.name}  {s.track_count} tracks"
+        if s.stealth_tracks:
+            text += f" ({s.stealth_tracks} stealth)"
+        if s.jammed_sectors:
+            text += "  jammed " + ",".join(str(i + 1) for i in range(6) if s.jammed_sectors & (1 << i))
         return text

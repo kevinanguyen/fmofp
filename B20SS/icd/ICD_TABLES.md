@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.11 (DRAFT, 2026-11-01). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.12 (DRAFT, 2026-11-01). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -68,7 +68,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd) | 9 | 4 | R | 3 | aperiodic | Targeting radar mode command | DRAFT |
 | [`RDR_TGT_STATUS`](#rdr_tgt_status) | 9 | 4 | T | 4 | 5 | Targeting radar status | DRAFT |
 | [`RDR_AEWC_MODE_CMD`](#rdr_aewc_mode_cmd) | 9 | 5 | R | 4 | aperiodic | AEWC radar mode command | DRAFT |
-| [`RDR_AEWC_STATUS`](#rdr_aewc_status) | 9 | 5 | T | 2 | 5 | AEWC radar status | DRAFT |
+| [`RDR_AEWC_STATUS`](#rdr_aewc_status) | 9 | 5 | T | 3 | 5 | AEWC radar status | DRAFT |
 | [`RDR_WX_SCAN`](#rdr_wx_scan) | 9 | 18 | T | 10 | 5 | Weather radar scan summary | DRAFT |
 | [`RDR_WX_WEATHER`](#rdr_wx_weather) | 9 | 19 | R | 32 | 1 | Weather truth, for the radar's sensor model | DRAFT |
 | [`RDR_TFR_GUIDANCE`](#rdr_tfr_guidance) | 9 | 20 | T | 8 | 10 | Terrain-following guidance | DRAFT |
@@ -101,7 +101,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`DSP_RDR_TFR_CMD`](#dsp_rdr_tfr_cmd) | 15 | 21 | T | 2 | 10 | Radar display command to the terrain-following radar | DRAFT |
 | [`DSP_RDR_SAR_CMD`](#dsp_rdr_sar_cmd) | 15 | 22 | T | 2 | 10 | Radar display command to the synthetic aperture radar | PROPOSED |
 | [`DSP_RDR_TGT_CMD`](#dsp_rdr_tgt_cmd) | 15 | 23 | T | 3 | 10 | Radar display command to the targeting radar | DRAFT |
-| [`DSP_RDR_AEWC_CMD`](#dsp_rdr_aewc_cmd) | 15 | 24 | T | 4 | 10 | Radar display command to the AEWC radar | PROPOSED |
+| [`DSP_RDR_AEWC_CMD`](#dsp_rdr_aewc_cmd) | 15 | 24 | T | 4 | 10 | Radar display command to the AEWC radar | DRAFT |
 | [`DSP_TSD_MODE_CMD`](#dsp_tsd_mode_cmd) | 16 | 15 | R | 1 | aperiodic | Tactical situation display mode command | DRAFT |
 | [`DSP_TSD_STATUS`](#dsp_tsd_status) | 16 | 15 | T | 2 | 1 | Tactical situation display status | DRAFT |
 | [`DSP_SMS_MODE_CMD`](#dsp_sms_mode_cmd) | 17 | 16 | R | 1 | aperiodic | Stores management display mode command | DRAFT |
@@ -119,6 +119,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`BCAST_RDR_TFR_GUIDANCE`](#bcast_rdr_tfr_guidance) | 31 | 4 | R | 8 | 10 | Terrain-following guidance, broadcast to the displays | DRAFT |
 | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) | 31 | 5 | R | 4 | 5 | GCAS alerts, broadcast to the displays | DRAFT |
 | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) | 31 | 10 | R | 4 | 1 | Flight envelope monitoring, broadcast to the displays | DRAFT |
+| [`BCAST_RDR_AEWC_STATUS`](#bcast_rdr_aewc_status) | 31 | 11 | R | 3 | 5 | AEWC radar status, broadcast to the displays | DRAFT |
 | [`BCAST_ENG_ENGINE_STATUS`](#bcast_eng_engine_status) | 31 | 18 | R | 20 | 5 | Engine status, broadcast | DRAFT |
 | [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) | 31 | 19 | R | 7 | 1 | Fuel status, broadcast | DRAFT |
 | [`BCAST_RDR_TGT_STATUS`](#bcast_rdr_tgt_status) | 31 | 24 | R | 4 | 5 | Targeting radar status, broadcast to the displays | DRAFT |
@@ -138,7 +139,7 @@ The descriptor and segment framing is in README.md section 8. A block's payload 
 | `RDR_WX_PRODUCTS` | 9 | T | 6 | 7 | 25 | Weather radar products | [header 2 words + 6 sections, at most 548 words](#rdr_wx_products) |
 | `RDR_TGT_TRACKS` | 9 | T | 10 | 11 | 25 | Targeting radar tracks | [header 3 words + 1 sections, at most 148 words](#rdr_tgt_tracks) |
 | `RDR_FUSED_TRACKS` | 9 | T | 24 | 25 | 25 | Fused air tracks | [header 2 words + 1 sections, at most 147 words](#rdr_fused_tracks) |
-| `RDR_AEWC_SECTOR` | 9 | T | 12 | 13 | 10 | AEWC sector scan | TBD-v2 |
+| `RDR_AEWC_TRACKS` | 9 | T | 12 | 13 | 10 | AEWC tracks and sector scan | [header 3 words + 2 sections, at most 173 words](#rdr_aewc_tracks) |
 | `RDR_TFR_ELEVATION` | 9 | T | 14 | 15 | 25 | TFR elevation profile | [header 6 words + 2 sections, at most 304 words](#rdr_tfr_elevation) |
 | `RDR_SAR_IMAGE` | 9 | T | 16 | 17 | 1 | SAR image | TBD-v2 |
 | `PLANT_TERRAIN` | 27 | T | 4 | 5 | 25 | Terrain profile ahead, from the plant | [header 2 words + 1 sections, at most 103 words](#plant_terrain) |
@@ -148,6 +149,7 @@ The descriptor and segment framing is in README.md section 8. A block's payload 
 | `BCAST_RDR_WX_PRODUCTS` | 31 | R | 6 | 7 | 25 | Weather radar products, broadcast to the displays | as [`RDR_WX_PRODUCTS`](#rdr_wx_products) (relayed copy) |
 | `BCAST_RDR_TFR_ELEVATION` | 31 | R | 8 | 9 | 25 | TFR elevation profile, broadcast to the displays | as [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) (relayed copy) |
 | `BCAST_RDR_TGT_TRACKS` | 31 | R | 20 | 21 | 25 | Targeting radar tracks, broadcast to the displays | as [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) (relayed copy) |
+| `BCAST_RDR_AEWC_TRACKS` | 31 | R | 16 | 17 | 10 | AEWC tracks and sectors, broadcast to the displays | as [`RDR_AEWC_TRACKS`](#rdr_aewc_tracks) (relayed copy) |
 | `BCAST_RDR_FUSED_TRACKS` | 31 | R | 22 | 23 | 25 | Fused air tracks, broadcast to the displays | as [`RDR_FUSED_TRACKS`](#rdr_fused_tracks) (relayed copy) |
 
 ## Relays (RT-to-RT transfers)
@@ -194,6 +196,8 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) | `BCAST_RDR_TGT_TRACKS` (broadcast, heard by RT 13) | block: 4 + 32 per frame | 25 |
 | [`RDR_FUSED_TRACKS`](#rdr_fused_tracks) | `BCAST_RDR_FUSED_TRACKS` (broadcast, heard by RT 14, 16) | block: 4 + 32 per frame | 25 |
 | [`FMS_ENERGY`](#fms_energy) | [`BCAST_FMS_ENERGY`](#bcast_fms_energy) (broadcast, heard by RT 16) | 6 | 1 |
+| [`RDR_AEWC_STATUS`](#rdr_aewc_status) | [`BCAST_RDR_AEWC_STATUS`](#bcast_rdr_aewc_status) (broadcast, heard by RT 13, 15) | 3 | 5 |
+| [`RDR_AEWC_TRACKS`](#rdr_aewc_tracks) | `BCAST_RDR_AEWC_TRACKS` (broadcast, heard by RT 13) | block: 4 + 32 per frame | 10 |
 
 ## Mode codes
 
@@ -584,6 +588,30 @@ The targeting radar's lock (targeting_radar._handle_track_request: LOCKED when t
 | 1 | ACQUIRING |  |  |
 | 2 | LOCKED |  |  |
 
+### `jam_type` (3 bits)
+
+ElectronicProtection's jammer type from the receiver noise exceedance over the thermal floor (aewc_processor.py): DECEPTIVE from 6 dB, SWEEP above 10, SPOT above 20, CONTINUOUS above 30
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  | No jamming in the sector |
+| 1 | DECEPTIVE |  |  |
+| 2 | SWEEP |  |  |
+| 3 | SPOT |  |  |
+| 4 | CONTINUOUS |  |  |
+
+### `ecm_mitigation` (3 bits)
+
+ElectronicProtection's mitigation by severity (exceedance / 40 dB): FREQ_AGILITY under 0.4, BEAM_NOTCH under 0.7, POWER under 0.9, SKIP beyond
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | FREQ_AGILITY |  |  |
+| 2 | BEAM_NOTCH |  |  |
+| 3 | POWER |  |  |
+| 4 | SKIP |  |  |
+
 ## Messages
 
 ### TERM_STATUS
@@ -829,7 +857,9 @@ Replaces: `targeting_radarCommand`, `targeting_radarModeChangeRequest`, `targeti
 
 ### RDR_AEWC_STATUS
 
-**AEWC radar status** — RT 9 · SA 5 · transmit (terminal to bus) · 2 words · 5 Hz
+**AEWC radar status** — RT 9 · SA 5 · transmit (terminal to bus) · 3 words · 5 Hz
+
+aewc_radar.get_status(): the state and mode, how many tracks the radar holds and how many of them it takes for stealth aircraft, which sectors the electronic protection flags as jammed and which sector the priority manager puts first (v1.12). The tracks and the sectors themselves are the RDR_AEWC_TRACKS block. The radar tracks in every operating mode, as the Python answered track requests in any mode but STANDBY.
 
 Replaces: `aewc_radarStatusRequest`, `aewc_radarStatusResponse`, `aewc_radarModeChangeResponse`, `radarStatusRequest`, `radarStatusResponse`
 
@@ -840,8 +870,13 @@ Replaces: `aewc_radarStatusRequest`, `aewc_radarStatusResponse`, `aewc_radarMode
 | 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last command processed (see Command sequence rule) |
 | 1 | 15 | `cmd_rejected` | bool |  | 1 = the last command was rejected |
 | 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
-| 1 | 13-1 | `spare_1` | spare |  |  |
+| 1 | 13-9 | `track_count` | uint | raw counts | Tracks held (saturates at 31) |
+| 1 | 8-5 | `stealth_tracks` | uint | raw counts | Of them, tracks with a cross-section under 0.1 m2 (saturates at 15) |
+| 1 | 4-1 | `spare_1` | spare |  |  |
 | 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+| 2 | 15-10 | `jammed_sectors` | uint | raw counts | Bit n = sector n+1 flagged as jammed by the electronic protection |
+| 2 | 9-7 | `priority_sector` | uint | raw counts | The sector the priority manager scans first, 1-6; 0 before the first update |
+| 2 | 6-0 | `spare_2` | spare |  |  |
 
 ### RDR_AEWC_MODE_CMD
 
@@ -1496,7 +1531,7 @@ Same layout as [`RDR_TGT_MODE_CMD`](#rdr_tgt_mode_cmd).
 
 ### DSP_RDR_AEWC_CMD
 
-**Radar display command to the AEWC radar** — RT 15 · SA 24 · transmit (terminal to bus) · 4 words · 10 Hz · **PROPOSED**
+**Radar display command to the AEWC radar** — RT 15 · SA 24 · transmit (terminal to bus) · 4 words · 10 Hz
 
 Relayed into RT 9 SA 5, when that radar is ported.
 
@@ -1585,6 +1620,14 @@ Same layout as [`ENG_FUEL_STATUS`](#eng_fuel_status).
 The tracks band of the broadcast map, 20-24 (v1.10): the targeting radar's status for the MFD's targeting page and the radar display's control panel, and the two track blocks.
 
 Same layout as [`RDR_TGT_STATUS`](#rdr_tgt_status).
+
+### BCAST_RDR_AEWC_STATUS
+
+**AEWC radar status, broadcast to the displays** — RT 31 · SA 11 · receive (bus to terminal) · 3 words · 5 Hz
+
+The MFD's AEWC page and the radar display's status line (v1.12). Subaddress 11 is a display's own number (the PFD's), which only bars the PFD from listening; neither listener has a receive of its own there.
+
+Same layout as [`RDR_AEWC_STATUS`](#rdr_aewc_status).
 
 ### BCAST_FMS_ENERGY
 
@@ -2124,6 +2167,61 @@ radar_data_fusion.RadarDataFusion's fused track table (v1.10): the targeting rad
 | 11 | 15-8 | `confidence` | uint | LSB 1/100, range 0 to 1 | 1 - product of (1 - weight) over the contributing sensors |
 | 11 | 7-0 | `spare_11` | spare |  |  |
 
+### RDR_AEWC_TRACKS
+
+**AEWC tracks and sector scan** — RT 9 · descriptor SA 12 · segment SA 13 · 10 Hz · payload at most 173 words
+
+aewc_radar._handle_track_request's track data and _handle_sector_scan_request's sector data in one block (v1.12): every track the radar holds, classified by its own rule (a cross-section under 0.1 m2 STEALTH, else a speed over 400 m/s FIGHTER, else more than 30 km above or below the aircraft HIGH_ALT, else UNKNOWN), with the signal-to-noise ratio of its radar equation and the confidence snr / 30; and the six 60-degree sectors (azimuth counter-clockwise from east, as the Python measured it) with their scan progress, the tracks detected in each, the priority manager's score and dwell share and the electronic protection's assessment. Positions are Cartesian metres east, north and up of the aircraft. Republished no more often than every 35 frames: its six segments take 30 frames at 10 Hz.
+
+Replaces: `aewc_radarSectorScanResponse`, `aewc_radarData`
+
+**Header (3 words)**, followed by one count word per section in the order below.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `update_seq` | uint | raw counts | Increments (mod 256) with every track update the block reflects |
+| 0 | 7-4 | `mode` | enum | enum `aewc_mode` | Mode the tracks were made in; NONE with no tracks when the radar is not operating |
+| 0 | 3-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `scan_azimuth_start` | sint | LSB 180/32768 deg, range -180 to 179.9945 | The commanded sector's start (RDR_AEWC_MODE_CMD), relative to the nose |
+| 2 | 15-0 | `scan_azimuth_end` | sint | LSB 180/32768 deg, range -180 to 179.9945 | The commanded sector's end |
+
+**Section `track` — Tracks**: up to 12 records of 12 words. In track id order
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `track_id` | uint | raw counts | The radar's track number, from 1, kept while the track is held |
+| 1-2 | 31-0 | `x` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | East of the aircraft |
+| 3-4 | 31-0 | `y` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | North of the aircraft |
+| 5-6 | 31-0 | `z` | sint | LSB 1/16 m, range -134217728 to 134217727.9375 | Above the aircraft |
+| 7 | 15-0 | `velocity_east` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 8 | 15-0 | `velocity_north` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 9 | 15-0 | `velocity_up` | sint | LSB 1/8 m/s, range -4096 to 4095.875 | Relative to the aircraft |
+| 10 | 15-13 | `classification` | enum | enum `target_class` | The AEWC's own rule: STEALTH, FIGHTER, HIGH_ALT or UNKNOWN |
+| 10 | 12-11 | `identity` | enum | enum `iff_identity` |  |
+| 10 | 10-9 | `threat` | enum | enum `threat` | radar_data_fusion._assess_threat's rule on this track alone |
+| 10 | 8 | `stealth` | bool |  | 1 = a cross-section under 0.1 m2, the generator's stealth band |
+| 10 | 7 | `detected` | bool |  | 1 = the last detection succeeded; a stealth track is detected with probability 0.2 x snr / 30, and a missed one keeps its track but leaves the sector counts |
+| 10 | 6-4 | `sector` | uint | raw counts | The sector of a detected track, 1-6; 0 when not detected or outside the elevation coverage |
+| 10 | 3-0 | `spare_10` | spare |  |  |
+| 11 | 15-8 | `confidence` | uint | LSB 1/100, range 0 to 1 | snr / 30 limited to 1 (AEWCRadarTrackData.track_confidence) |
+| 11 | 7-0 | `snr` | uint | LSB 1/2 dB, range 0 to 127.5 | aewc_radar._calculate_snr, never negative |
+
+**Section `sector` — Sectors**: up to 6 records of 4 words. SECTOR_1 to SECTOR_6: 0-60, 60-120, ... degrees counter-clockwise from east, -15 to 45 degrees of elevation
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-7 | `azimuth_start` | uint | LSB 1 deg, range 0 to 511 | The sector's first azimuth; it spans 60 degrees |
+| 0 | 6-2 | `active_tracks` | uint | raw counts | Tracks detected in the sector at the last update |
+| 0 | 1 | `jammed` | bool |  | 1 = the electronic protection flags the sector as jammed |
+| 0 | 0 | `spare_a` | spare |  |  |
+| 1 | 15-8 | `scan_progress` | uint | LSB 1/100, range 0 to 0.99 | Advances a tenth every second, round and round |
+| 1 | 7-0 | `dwell_fraction` | uint | LSB 1/100, range 0 to 1 | SectorPriorityManager's share of the radar's time, at least 0.05 |
+| 2 | 15-0 | `priority_score` | uint | LSB 1/10, range 0 to 6553.5 | tracks + 3 x hostile + 0.5 x seconds since the sector was last scanned (never, as in the Python) + 2 when jammed |
+| 3 | 15-13 | `jam_type` | enum | enum `jam_type` |  |
+| 3 | 12-10 | `mitigation` | enum | enum `ecm_mitigation` |  |
+| 3 | 9-3 | `severity` | uint | LSB 1/100, range 0 to 1 | min(1, exceedance / 40 dB) |
+| 3 | 2-0 | `spare_b` | spare |  |  |
+
 ### RDR_TFR_ELEVATION
 
 **TFR elevation profile** — RT 9 · descriptor SA 14 · segment SA 15 · 25 Hz · payload at most 304 words
@@ -2220,11 +2318,11 @@ All 89 `MESSAGE_SCHEMAS` types from `FMOFP/MIL_STD_1553B/message_schemas.py`.
 | Legacy type | Now |
 |---|---|
 | `aewc_radarCommand` | RDR_AEWC_MODE_CMD |
-| `aewc_radarData` | block RDR_AEWC_SECTOR |
+| `aewc_radarData` | block RDR_AEWC_TRACKS |
 | `aewc_radarModeChangeRequest` | RDR_AEWC_MODE_CMD |
 | `aewc_radarModeChangeResponse` | RDR_AEWC_STATUS |
 | `aewc_radarSectorScanRequest` | RDR_AEWC_MODE_CMD |
-| `aewc_radarSectorScanResponse` | block RDR_AEWC_SECTOR |
+| `aewc_radarSectorScanResponse` | block RDR_AEWC_TRACKS |
 | `aewc_radarStatusRequest` | RDR_AEWC_STATUS |
 | `aewc_radarStatusResponse` | RDR_AEWC_STATUS |
 | `bitCommand` | mode code 3 |

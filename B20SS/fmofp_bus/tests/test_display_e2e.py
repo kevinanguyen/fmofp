@@ -24,13 +24,14 @@ import unittest
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
 from fmofp_bus.command_word import BROADCAST_RT
-from fmofp_bus.icd.enums import FmsFlightMode, GcasStatus, Ssm, TargetingMode, TerminalState, TfrMode, WeatherMode
+from fmofp_bus.icd.enums import (AewcMode, FmsFlightMode, GcasStatus, Ssm, TargetingMode, TerminalState, TfrMode,
+                                 WeatherMode)
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 from fmofp_bus.tests._support import binary_env, needs
 from fmofp_bus.tests.test_display_feeds import FakeCoordinator
-from fmofp_display.app import (eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, targeting_command, tfr_command,
-                               tsd_terminal, weather_command)
+from fmofp_display.app import (aewc_command, eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, targeting_command,
+                               tfr_command, tsd_terminal, weather_command)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
@@ -158,6 +159,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.radar_display.send(weather_command(self.radar_display, TerminalState.NORMAL, WeatherMode.SURVEILLANCE))
         self.radar_display.send(tfr_command(self.radar_display, TerminalState.NORMAL, TfrMode.TERRAIN_FOLLOWING, 984))
         self.radar_display.send(targeting_command(self.radar_display, TerminalState.NORMAL, TargetingMode.TARGET_SEARCH))
+        self.radar_display.send(aewc_command(self.radar_display, TerminalState.NORMAL, AewcMode.AEWC_SEARCH))
         records, output = self.run_bus()
         framed = self.by_frame(records)
         self.assertGreaterEqual(framed[-1][0], FRAMES - 2)
@@ -230,7 +232,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # copy written into any display.
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
-        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28}, broadcast)
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28}, broadcast)
         for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT, m.DspTsdStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}
@@ -309,11 +311,28 @@ class DisplaysEndToEndTest(unittest.TestCase):
             self.assertLessEqual(math.hypot(target["position"][0], target["position"][1]), targeting["range_nm"] + 1e-6)
             self.assertIn(target["classification"], ("FIXED_WING", "ROTARY_WING", None))
         self.assertIn("TGT NORMAL TARGET_SEARCH", mfd_feed.targeting_status_text())
+        # The AEWC radar, commanded from the radar display too: every aircraft within 400 km, its sectors, at the MFD.
+        aewc_status = self.radar_display.fresh(m.BcastRdrAewcStatus, stale_after_s=60.0)
+        self.assertIsNotNone(aewc_status)
+        self.assertEqual((TerminalState.NORMAL, AewcMode.AEWC_SEARCH, 4, False),
+                         (aewc_status.payload.state, aewc_status.payload.mode, aewc_status.payload.last_cmd_seq,
+                          aewc_status.payload.cmd_rejected))
+        self.assertGreaterEqual(aewc_status.payload.track_count, 7, "the plant's seven far aircraft at least")
+        aewc = mfd_feed.aewc_data()
+        self.assertEqual("SEARCH", aewc["mode_name"])
+        self.assertGreaterEqual(len(aewc["targets"]), 7, "no AEWC block at the MFD")
+        self.assertEqual(6, len(aewc["sectors"]))
+        self.assertTrue(all(math.hypot(tr["position"][0], tr["position"][1]) <= aewc["range_nm"] + 1e-6
+                            for tr in aewc["targets"]))
+        self.assertIn(aewc["priority_sector"], range(1, 7))
+        self.assertIn("AEWC NORMAL AEWC_SEARCH", mfd_feed.aewc_status_text())
         tsd = SystemsFeed(self.tsd, stale_after_s=60.0)
         fused = tsd.fusion.get_fused_tracks()
         self.assertGreaterEqual(len(fused), 1, "no fused tracks block at the TSD")
         threats = [track.to_tsd_dict() for track in fused]
-        self.assertTrue(all(0.0 <= t["bearing"] < 360.0 and 0.0 < t["range_nm"] <= 60.0 for t in threats), threats)
+        self.assertTrue(all(0.0 <= t["bearing"] < 360.0 and 0.0 < t["range_nm"] <= 400.0 / 1.852 + 1.0 for t in threats), threats)
+        self.assertTrue(any(t["sources"] == ["targeting_radar", "aewc_radar"] for t in threats), "near aircraft, seen by both")
+        self.assertTrue(any(t["sources"] == ["aewc_radar"] for t in threats), "far aircraft, seen by the AEWC alone")
         self.assertEqual(tsd.fused_summary()[1], len([t for t in threats if t["hostile"]]))
         tactical = tsd.fms_control.get_tactical_status()
         self.assertIn("energy_metrics", tactical, "BCAST_FMS_ENERGY reached the TSD")

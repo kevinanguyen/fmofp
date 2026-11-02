@@ -26,6 +26,13 @@
 //   tfr_reset                                     -> the latch back to CLEAR
 //   tfr_path <altitude_m> <speed_mps> <clearance_m> -> "distance altitude reason" per command, "end"
 //   tfr_warnings                                  -> "i distance warning" per sample, "end"
+// AEWC (aewc_radar.py, aewc_processor.py):
+//   aewc_snr <rcs> <range_m>                      -> the radar equation's SNR in dB (0 when negative)
+//   aewc_sector <x> <y> <z>                       -> the sector 1-6 of a position, 0 outside the elevation band
+//   aewc_class <speed> <z> <stealth 0|1>          -> the classification
+//   aewc_ecm <exceedance_db>                      -> "<jammed> <severity> <jam_type> <mitigation>"
+//   aewc_priority <6 counts> <6 hostile> <6 ages_s> <jammed mask>
+//                                                 -> "order s1..s6 dwell d1..d6 score c1..c6"
 // Targeting (target_processor.py) and fusion (radar_data_fusion.py):
 //   signature <rcs> <scintillation> <speed> <altitude> -> "<class> <confidence> <rcs_corrected>"
 //   stealth_reset                                 -> the detector's state for one track back to the prior
@@ -36,6 +43,7 @@
 //                                                 -> "n <count> <hostile>", then "id x y z vx vy vz confidence
 //                                                    class identity threat sources" per track, "end"
 
+#include <array>
 #include <cstdio>
 #include <iostream>
 #include <sstream>
@@ -46,6 +54,7 @@
 #include <fmofp/icd/blocks.hpp>
 #include <fmofp/radar/target_processing.hpp>
 #include <fmofp/radar/terrain_following.hpp>
+#include <fmofp/radar/aewc_radar.hpp>
 #include <fmofp/radar/track_fusion.hpp>
 #include <fmofp/radar/weather_model.hpp>
 #include <fmofp/radar/weather_products.hpp>
@@ -299,6 +308,41 @@ int main() {
             std::printf("ok\n");
         } else if (cmd == "fusion" && read(in, a, 1)) {
             do_fusion(static_cast<std::size_t>(a[0]));
+        } else if (cmd == "aewc_snr" && read(in, a, 2)) {
+            std::printf("%.17g\n", radar::aewc_snr_db(a[0], a[1]));
+        } else if (cmd == "aewc_sector" && read(in, a, 3)) {
+            const std::array<double, 3> position{a[0], a[1], a[2]};
+            std::printf("%u\n", static_cast<unsigned>(radar::aewc_sector_of(position)));
+        } else if (cmd == "aewc_class" && read(in, a, 3)) {
+            std::printf("%s\n", icd::to_string(radar::aewc_classify(a[0], a[1], a[2] != 0.0)));
+        } else if (cmd == "aewc_ecm" && read(in, a, 1)) {
+            const radar::EcmAssessment e = radar::ecm_assess(a[0]);
+            std::printf("%d %.17g %s %s\n", e.jammed ? 1 : 0, e.severity, icd::to_string(e.jam_type),
+                        icd::to_string(e.mitigation));
+        } else if (cmd == "aewc_priority" && read(in, a, 19)) {
+            std::array<std::uint8_t, radar::kAewcSectorCount> tracks{};
+            std::array<std::uint8_t, radar::kAewcSectorCount> hostile{};
+            std::array<double, radar::kAewcSectorCount> ages{};
+            for (std::size_t i = 0; i < radar::kAewcSectorCount; ++i) {
+                tracks[i] = static_cast<std::uint8_t>(a[i]);
+                hostile[i] = static_cast<std::uint8_t>(a[radar::kAewcSectorCount + i]);
+                ages[i] = a[2 * radar::kAewcSectorCount + i];
+            }
+            const radar::SectorPriorities p =
+                radar::aewc_priorities(tracks, hostile, ages, static_cast<std::uint8_t>(a[3 * radar::kAewcSectorCount]));
+            std::printf("order");
+            for (std::uint8_t index : p.order) {
+                std::printf(" %u", static_cast<unsigned>(index) + 1U);
+            }
+            std::printf(" dwell");
+            for (double d : p.dwell) {
+                std::printf(" %.17g", d);
+            }
+            std::printf(" score");
+            for (double s : p.score) {
+                std::printf(" %.17g", s);
+            }
+            std::printf("\n");
         } else if (cmd == "sigfigs" && read(in, a, 1)) {
             double n = 3.0;
             in >> n;

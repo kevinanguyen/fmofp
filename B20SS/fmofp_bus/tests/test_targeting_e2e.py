@@ -23,7 +23,7 @@ import unittest
 from fmofp_bus.block import blocks_from_records
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import LockStatus, TargetingMode, TerminalState, Threat, TrackFilter
+from fmofp_bus.icd.enums import AewcMode, LockStatus, TargetClass, TargetingMode, TerminalState, Threat, TrackFilter
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 from fmofp_bus.tests._support import binary_env, needs
@@ -39,6 +39,8 @@ PLANT_RT = m.PlantSensors.RT
 SCRIPT = [
     (5, m.RdrTgtModeCmd(cmd_seq=1, requested_state=TerminalState.NORMAL, requested_mode=TargetingMode.TARGET_SEARCH,
                         track_filter=TrackFilter.ALL)),
+    (8, m.RdrAewcModeCmd(cmd_seq=1, requested_state=TerminalState.NORMAL, requested_mode=AewcMode.AEWC_SEARCH,
+                         azimuth_start=0.0, azimuth_end=90.0, elevation=0.0)),
     (120, m.RdrTgtModeCmd(cmd_seq=2, requested_state=TerminalState.NORMAL, requested_mode=TargetingMode.TARGET_TRACK,
                           track_filter=TrackFilter.ALL, lock_track_id=1)),
     (240, m.RdrTgtModeCmd(cmd_seq=3, requested_state=TerminalState.STANDBY, requested_mode=TargetingMode.NONE)),
@@ -236,7 +238,32 @@ class TargetingEndToEndTest(unittest.TestCase):
         self.assertEqual(TargetingMode.NONE, blocks[-1].mode)
         self.assertEqual(0, len(blocks[-1].track))
 
-        # The fusion: one fused track per targeting track (nothing else contributes yet), confidence 0.8.
+        # The AEWC radar: every aircraft within 400 km (the far ones at SNR 0), its six sectors, its block.
+        aewc = self.transmitted(framed, m.RdrAewcStatus, 100, 240)
+        a = aewc[-1][1]
+        self.assertEqual((TerminalState.NORMAL, AewcMode.AEWC_SEARCH, 1, False), (a.state, a.mode, a.last_cmd_seq,
+                                                                                  a.cmd_rejected))
+        self.assertGreaterEqual(a.track_count, 7, "the plant's seven far aircraft at least")
+        self.assertIn(a.priority_sector, range(1, 7))
+        aewc_blocks = self.decoded_blocks(records, RADAR_RT, b.RdrAewcTracks)
+        self.assertGreaterEqual(len(aewc_blocks), 3, "empty, then the search picture every 35 frames")
+        aewc_searching = [blk for blk in aewc_blocks if blk.mode == AewcMode.AEWC_SEARCH]
+        self.assertGreaterEqual(len(aewc_searching), 2)
+        every_position = [position_of(r) for t in traffic for r in t.target]
+        for blk in aewc_searching:
+            self.assertEqual([0.0, 60.0, 120.0, 180.0, 240.0, 300.0], [s.azimuth_start for s in blk.sector])
+            self.assertTrue(all(s.dwell_fraction >= 0.05 for s in blk.sector))
+            self.assertGreaterEqual(len(blk.track), 7)
+            for tr in blk.track:
+                nearest = min(math.dist((tr.x, tr.y, tr.z), p) for p in every_position)
+                self.assertLess(nearest, 60.0, "a track sits on one of the plant's aircraft")
+                self.assertEqual(tr.stealth, tr.classification == TargetClass.STEALTH)
+                self.assertAlmostEqual(min(1.0, tr.snr / 30.0), tr.confidence, delta=0.011)
+                self.assertEqual(tr.detected or tr.sector == 0, True, "an undetected track is in no sector")
+        self.assertEqual(sum(1 for tr in aewc_searching[-1].track if tr.stealth), a.stealth_tracks)
+
+        # The fusion: the targeting radar's tracks (weight 0.8) and the AEWC's (0.7), merged where they are the same
+        # aircraft (confidence 0.94), each alone elsewhere.
         fused = self.decoded_blocks(records, RADAR_RT, b.RdrFusedTracks)
         self.assertGreaterEqual(len(fused), 6, "an epoch every half second")
         epochs = [f.epoch for f in fused]
@@ -244,18 +271,21 @@ class TargetingEndToEndTest(unittest.TestCase):
         present = [f for f in fused if f.targeting_present]
         self.assertGreaterEqual(len(present), 4)
         for f in present:
-            self.assertFalse(f.aewc_present)
+            self.assertTrue(f.aewc_present, "both radars were operating")
             self.assertEqual(sum(1 for tr in f.track if tr.threat == Threat.HOSTILE), f.hostile_count)
             for tr in f.track:
-                self.assertAlmostEqual(0.8, tr.confidence, delta=0.006)
-                self.assertTrue(tr.from_targeting)
-                self.assertFalse(tr.from_aewc)
-                nearest = min(math.dist((tr.x, tr.y, tr.z), p) for p in all_positions)
+                self.assertIn(round(tr.confidence, 2), (0.7, 0.8, 0.94), "one sensor's weight or the union of both")
+                self.assertTrue(tr.from_targeting or tr.from_aewc)
+                self.assertEqual(round(tr.confidence, 2) == 0.94, tr.from_targeting and tr.from_aewc)
+                nearest = min(math.dist((tr.x, tr.y, tr.z), p) for p in every_position)
                 self.assertLess(nearest, 60.0)
+        self.assertTrue(any(tr.from_targeting and tr.from_aewc for f in present for tr in f.track),
+                        "the near aircraft are seen by both radars and merge")
         counts = [len(f.track) for f in present]
         self.assertGreaterEqual(max(counts), 1)
         self.assertFalse(fused[-1].targeting_present, "standby: the sensor no longer contributes")
-        self.assertEqual(0, len(fused[-1].track))
+        self.assertTrue(fused[-1].aewc_present)
+        self.assertTrue(all(tr.from_aewc and not tr.from_targeting for tr in fused[-1].track), "only the AEWC's remain")
 
         term = self.transmitted(framed, m.TermStatus, 160, 240, rt=RADAR_RT)[-1][1]
         self.assertEqual(TerminalState.NORMAL, term.state)

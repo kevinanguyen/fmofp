@@ -7,6 +7,7 @@
 
 #include <fmofp/bus/status.hpp>
 #include <fmofp/icd/blocks.hpp>
+#include <fmofp/radar/aewc_radar.hpp>
 #include <fmofp/radar/targeting_radar.hpp>
 
 // The cross-radar track fusion, ported from
@@ -29,7 +30,7 @@ constexpr double kFusionWeightAewc = 0.7;          // _W_AEWC
 constexpr std::uint32_t kFusionEpochFrames = 25;   // UPDATE_HZ 2 at 50 frames a second
 constexpr std::uint8_t kSensorTargeting = 1U;      // TrackReport::sensor and FusedTrack::sources bits
 constexpr std::uint8_t kSensorAewc = 2U;
-constexpr std::size_t kFusionMaxReports = 2 * kTgtMaxTracks;  // the targeting radar's tracks and, later, the AEWC's
+constexpr std::size_t kFusionMaxReports = kTgtMaxTracks + kAewcMaxTracks;  // both radars' tracks
 constexpr std::size_t kFusionMaxTracks = icd::RdrFusedTracks::kMaxTrack;
 
 // RadarDataFusion._collect_reports' entry for one radar track.
@@ -56,6 +57,9 @@ struct FusedTrack {
 
 // The targeting radar's held tracks as reports (weight 0.8). Returns how many were written.
 [[nodiscard]] std::size_t targeting_reports(const TargetingRadar& radar, TrackReport* out, std::size_t capacity) noexcept;
+
+// The AEWC radar's held tracks as reports (weight 0.7). Returns how many were written.
+[[nodiscard]] std::size_t aewc_reports(const AewcRadar& radar, TrackReport* out, std::size_t capacity) noexcept;
 
 class TrackFusion {
 public:

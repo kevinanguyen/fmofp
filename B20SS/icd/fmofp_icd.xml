@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="11" status="DRAFT" date="2026-11-01">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="12" status="DRAFT" date="2026-11-01">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -246,6 +246,20 @@
       <value name="ACQUIRING" value="1"/>
       <value name="LOCKED" value="2"/>
     </enum>
+    <enum id="jam_type" bits="3" doc="ElectronicProtection's jammer type from the receiver noise exceedance over the thermal floor (aewc_processor.py): DECEPTIVE from 6 dB, SWEEP above 10, SPOT above 20, CONTINUOUS above 30">
+      <value name="NONE" value="0" doc="No jamming in the sector"/>
+      <value name="DECEPTIVE" value="1"/>
+      <value name="SWEEP" value="2"/>
+      <value name="SPOT" value="3"/>
+      <value name="CONTINUOUS" value="4"/>
+    </enum>
+    <enum id="ecm_mitigation" bits="3" doc="ElectronicProtection's mitigation by severity (exceedance / 40 dB): FREQ_AGILITY under 0.4, BEAM_NOTCH under 0.7, POWER under 0.9, SKIP beyond">
+      <value name="NONE" value="0"/>
+      <value name="FREQ_AGILITY" value="1"/>
+      <value name="BEAM_NOTCH" value="2"/>
+      <value name="POWER" value="3"/>
+      <value name="SKIP" value="4"/>
+    </enum>
   </enums>
 
   <terminals>
@@ -425,14 +439,20 @@
       <field name="track_filter" word="1" bits="3-0" type="enum" doc="Which tracks to report (legacy track_type): ALL, or those whose threat is HOSTILE, FRIENDLY or UNKNOWN" enum="track_filter"/>
       <field name="lock_track_id" word="2" bits="15-0" type="uint" doc="In TARGET_TRACK mode: the track to lock on (targeting_radar._handle_lock_request), 0 = release the lock; a track the radar does not hold leaves the lock as it is. Ignored in other modes, where the Python refused lock requests"/>
     </message>
-    <message id="RDR_AEWC_STATUS" rt="9" sa="5" dir="T" words="2" rate="5" title="AEWC radar status" replaces="aewc_radarStatusRequest aewc_radarStatusResponse aewc_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+    <message id="RDR_AEWC_STATUS" rt="9" sa="5" dir="T" words="3" rate="5" title="AEWC radar status" replaces="aewc_radarStatusRequest aewc_radarStatusResponse aewc_radarModeChangeResponse radarStatusRequest radarStatusResponse">
+      <doc>aewc_radar.get_status(): the state and mode, how many tracks the radar holds and how many of them it takes for stealth aircraft, which sectors the electronic protection flags as jammed and which sector the priority manager puts first (v1.12). The tracks and the sectors themselves are the RDR_AEWC_TRACKS block. The radar tracks in every operating mode, as the Python answered track requests in any mode but STANDBY.</doc>
       <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
       <field name="mode" word="0" bits="11-8" type="enum" enum="aewc_mode" doc="Operating mode; NONE unless state is NORMAL"/>
       <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last command processed (see Command sequence rule)"/>
       <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last command was rejected"/>
       <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
-      <field name="spare_1" word="1" bits="13-1" type="spare"/>
+      <field name="track_count" word="1" bits="13-9" type="uint" doc="Tracks held (saturates at 31)"/>
+      <field name="stealth_tracks" word="1" bits="8-5" type="uint" doc="Of them, tracks with a cross-section under 0.1 m2 (saturates at 15)"/>
+      <field name="spare_1" word="1" bits="4-1" type="spare"/>
       <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+      <field name="jammed_sectors" word="2" bits="15-10" type="uint" doc="Bit n = sector n+1 flagged as jammed by the electronic protection"/>
+      <field name="priority_sector" word="2" bits="9-7" type="uint" doc="The sector the priority manager scans first, 1-6; 0 before the first update"/>
+      <field name="spare_2" word="2" bits="6-0" type="spare"/>
     </message>
     <message id="RDR_AEWC_MODE_CMD" rt="9" sa="5" dir="R" words="4" rate="aperiodic" title="AEWC radar mode command" replaces="aewc_radarCommand aewc_radarModeChangeRequest aewc_radarSectorScanRequest radarCommand">
       <doc>The legacy sector_type and sector_parameters became these three fields, taken from the sector scan request in Interfaces/predefinedMessages/aewc_radar_messages.py.</doc>
@@ -809,7 +829,7 @@
     <message id="DSP_RDR_TGT_CMD" rt="15" sa="23" dir="T" words="3" rate="10" title="Radar display command to the targeting radar" layout_of="RDR_TGT_MODE_CMD">
       <doc>Relayed into RT 9 SA 4, when that radar is ported.</doc>
     </message>
-    <message id="DSP_RDR_AEWC_CMD" rt="15" sa="24" dir="T" words="4" rate="10" title="Radar display command to the AEWC radar" status="PROPOSED" layout_of="RDR_AEWC_MODE_CMD">
+    <message id="DSP_RDR_AEWC_CMD" rt="15" sa="24" dir="T" words="4" rate="10" title="Radar display command to the AEWC radar" layout_of="RDR_AEWC_MODE_CMD">
       <doc>Relayed into RT 9 SA 5, when that radar is ported.</doc>
     </message>
 
@@ -837,6 +857,9 @@
     <message id="BCAST_ENG_FUEL_STATUS" rt="31" sa="19" dir="R" words="7" rate="1" title="Fuel status, broadcast" layout_of="ENG_FUEL_STATUS" listeners="13 14"/>
     <message id="BCAST_RDR_TGT_STATUS" rt="31" sa="24" dir="R" words="4" rate="5" title="Targeting radar status, broadcast to the displays" layout_of="RDR_TGT_STATUS" listeners="13 15">
       <doc>The tracks band of the broadcast map, 20-24 (v1.10): the targeting radar's status for the MFD's targeting page and the radar display's control panel, and the two track blocks.</doc>
+    </message>
+    <message id="BCAST_RDR_AEWC_STATUS" rt="31" sa="11" dir="R" words="3" rate="5" title="AEWC radar status, broadcast to the displays" layout_of="RDR_AEWC_STATUS" listeners="13 15">
+      <doc>The MFD's AEWC page and the radar display's status line (v1.12). Subaddress 11 is a display's own number (the PFD's), which only bars the PFD from listening; neither listener has a receive of its own there.</doc>
     </message>
     <message id="BCAST_FMS_ENERGY" rt="31" sa="28" dir="R" words="6" rate="1" title="Energy maneuverability, broadcast to the displays" layout_of="FMS_ENERGY" listeners="16">
       <doc>The TSD's energy metrics (tsd._poll_data reads get_tactical_status()['energy_metrics']), v1.10.</doc>
@@ -1155,6 +1178,8 @@
     <relay from="RDR_TGT_TRACKS" to="BCAST_RDR_TGT_TRACKS"/>
     <relay from="RDR_FUSED_TRACKS" to="BCAST_RDR_FUSED_TRACKS"/>
     <relay from="FMS_ENERGY" to="BCAST_FMS_ENERGY"/>
+    <relay from="RDR_AEWC_STATUS" to="BCAST_RDR_AEWC_STATUS"/>
+    <relay from="RDR_AEWC_TRACKS" to="BCAST_RDR_AEWC_TRACKS"/>
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
@@ -1286,7 +1311,47 @@
         <field name="spare_11" word="11" bits="7-0" type="spare"/>
       </section>
     </block>
-    <block id="RDR_AEWC_SECTOR" rt="9" desc_sa="12" seg_sa="13" rate="10" title="AEWC sector scan" payload="TBD-v2" replaces="aewc_radarSectorScanResponse aewc_radarData"/>
+    <block id="RDR_AEWC_TRACKS" rt="9" desc_sa="12" seg_sa="13" rate="10" title="AEWC tracks and sector scan" replaces="aewc_radarSectorScanResponse aewc_radarData">
+      <doc>aewc_radar._handle_track_request's track data and _handle_sector_scan_request's sector data in one block (v1.12): every track the radar holds, classified by its own rule (a cross-section under 0.1 m2 STEALTH, else a speed over 400 m/s FIGHTER, else more than 30 km above or below the aircraft HIGH_ALT, else UNKNOWN), with the signal-to-noise ratio of its radar equation and the confidence snr / 30; and the six 60-degree sectors (azimuth counter-clockwise from east, as the Python measured it) with their scan progress, the tracks detected in each, the priority manager's score and dwell share and the electronic protection's assessment. Positions are Cartesian metres east, north and up of the aircraft. Republished no more often than every 35 frames: its six segments take 30 frames at 10 Hz.</doc>
+      <header words="3">
+        <field name="update_seq" word="0" bits="15-8" type="uint" doc="Increments (mod 256) with every track update the block reflects"/>
+        <field name="mode" word="0" bits="7-4" type="enum" enum="aewc_mode" doc="Mode the tracks were made in; NONE with no tracks when the radar is not operating"/>
+        <field name="spare_0" word="0" bits="3-0" type="spare"/>
+        <field name="scan_azimuth_start" word="1" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="The commanded sector's start (RDR_AEWC_MODE_CMD), relative to the nose"/>
+        <field name="scan_azimuth_end" word="2" bits="15-0" type="sint" lsb="180/32768" units="deg" min="-180" max="179.9945" doc="The commanded sector's end"/>
+      </header>
+      <section id="track" words="12" max="12" title="Tracks" doc="In track id order">
+        <field name="track_id" word="0" bits="15-0" type="uint" doc="The radar's track number, from 1, kept while the track is held"/>
+        <field name="x" word="1-2" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="East of the aircraft"/>
+        <field name="y" word="3-4" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="North of the aircraft"/>
+        <field name="z" word="5-6" bits="31-0" type="sint" lsb="1/16" units="m" min="-134217728" max="134217727.9375" doc="Above the aircraft"/>
+        <field name="velocity_east" word="7" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="velocity_north" word="8" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="velocity_up" word="9" bits="15-0" type="sint" lsb="1/8" units="m/s" min="-4096" max="4095.875" doc="Relative to the aircraft"/>
+        <field name="classification" word="10" bits="15-13" type="enum" enum="target_class" doc="The AEWC's own rule: STEALTH, FIGHTER, HIGH_ALT or UNKNOWN"/>
+        <field name="identity" word="10" bits="12-11" type="enum" enum="iff_identity"/>
+        <field name="threat" word="10" bits="10-9" type="enum" enum="threat" doc="radar_data_fusion._assess_threat's rule on this track alone"/>
+        <field name="stealth" word="10" bits="8" type="bool" doc="1 = a cross-section under 0.1 m2, the generator's stealth band"/>
+        <field name="detected" word="10" bits="7" type="bool" doc="1 = the last detection succeeded; a stealth track is detected with probability 0.2 x snr / 30, and a missed one keeps its track but leaves the sector counts"/>
+        <field name="sector" word="10" bits="6-4" type="uint" doc="The sector of a detected track, 1-6; 0 when not detected or outside the elevation coverage"/>
+        <field name="spare_10" word="10" bits="3-0" type="spare"/>
+        <field name="confidence" word="11" bits="15-8" type="uint" lsb="1/100" min="0" max="1" doc="snr / 30 limited to 1 (AEWCRadarTrackData.track_confidence)"/>
+        <field name="snr" word="11" bits="7-0" type="uint" lsb="1/2" units="dB" min="0" max="127.5" doc="aewc_radar._calculate_snr, never negative"/>
+      </section>
+      <section id="sector" words="4" max="6" title="Sectors" doc="SECTOR_1 to SECTOR_6: 0-60, 60-120, ... degrees counter-clockwise from east, -15 to 45 degrees of elevation">
+        <field name="azimuth_start" word="0" bits="15-7" type="uint" lsb="1" units="deg" min="0" max="511" doc="The sector's first azimuth; it spans 60 degrees"/>
+        <field name="active_tracks" word="0" bits="6-2" type="uint" doc="Tracks detected in the sector at the last update"/>
+        <field name="jammed" word="0" bits="1" type="bool" doc="1 = the electronic protection flags the sector as jammed"/>
+        <field name="spare_a" word="0" bits="0" type="spare"/>
+        <field name="scan_progress" word="1" bits="15-8" type="uint" lsb="1/100" min="0" max="0.99" doc="Advances a tenth every second, round and round"/>
+        <field name="dwell_fraction" word="1" bits="7-0" type="uint" lsb="1/100" min="0" max="1" doc="SectorPriorityManager's share of the radar's time, at least 0.05"/>
+        <field name="priority_score" word="2" bits="15-0" type="uint" lsb="1/10" min="0" max="6553.5" doc="tracks + 3 x hostile + 0.5 x seconds since the sector was last scanned (never, as in the Python) + 2 when jammed"/>
+        <field name="jam_type" word="3" bits="15-13" type="enum" enum="jam_type"/>
+        <field name="mitigation" word="3" bits="12-10" type="enum" enum="ecm_mitigation"/>
+        <field name="severity" word="3" bits="9-3" type="uint" lsb="1/100" min="0" max="1" doc="min(1, exceedance / 40 dB)"/>
+        <field name="spare_b" word="3" bits="2-0" type="spare"/>
+      </section>
+    </block>
     <block id="RDR_TFR_ELEVATION" rt="9" desc_sa="14" seg_sa="15" rate="25" title="TFR elevation profile" replaces="tfr_radarElevationDataResponse tfr_radarData">
       <doc>The terrain profile the radar assessed, sample by sample with its clearance level and terrain warning, and the path optimiser's altitude commands, as tfr_radar.py's elevation profile and terrain warning messages carried them to the display. Sample i is at ground distance i x range_m / (samples - 1) ahead along the heading; the samples are the profile section's records. The block is republished when a new profile has been assessed and at least 15 frames (0.3 s) have passed since the last one, so a 10-segment block always arrives whole; the guidance message carries the latest assessment every frame. An empty profile with mode NONE is published when the radar stops operating.</doc>
       <header words="6">
@@ -1359,6 +1424,9 @@
     </block>
     <block id="BCAST_RDR_TGT_TRACKS" rt="31" dir="R" desc_sa="20" seg_sa="21" rate="25" title="Targeting radar tracks, broadcast to the displays" layout_of="RDR_TGT_TRACKS" listeners="13">
       <doc>The relayed RDR_TGT_TRACKS for the MFD's targeting page (v1.10).</doc>
+    </block>
+    <block id="BCAST_RDR_AEWC_TRACKS" rt="31" dir="R" desc_sa="16" seg_sa="17" rate="10" title="AEWC tracks and sectors, broadcast to the displays" layout_of="RDR_AEWC_TRACKS" listeners="13">
+      <doc>The MFD's AEWC page (v1.12). Subaddresses 16-17 are the SMS's and the HUD's own numbers, which only bars those two from listening.</doc>
     </block>
     <block id="BCAST_RDR_FUSED_TRACKS" rt="31" dir="R" desc_sa="22" seg_sa="23" rate="25" title="Fused air tracks, broadcast to the displays" layout_of="RDR_FUSED_TRACKS" listeners="14 16">
       <doc>The relayed RDR_FUSED_TRACKS for the tactical situation display's threat picture and the EICAS's hostile track count (v1.10).</doc>

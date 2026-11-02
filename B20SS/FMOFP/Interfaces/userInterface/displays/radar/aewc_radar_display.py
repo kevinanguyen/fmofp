@@ -176,7 +176,11 @@ class AEWCRadarDisplay(TargetingRadarDisplay):
                 self._draw_stealth_symbol(painter, screen_pos)
             else:
                 # Use standard target drawing for non-stealth targets
-                super()._draw_target(painter, rect, target)
+                # TargetingRadarDisplay._draw_target takes the centre and the radius, not the rectangle: passed as
+                # written this raised TypeError on every conventional target and the base class drew its error
+                # message instead of the picture, so the AEWC page could never show one (found when the AEWC radar
+                # went on the bus, ICD v1.12).
+                super()._draw_target(painter, rect.center(), min(rect.width(), rect.height()) / 3, target)
                 
         except Exception as e:
             logger.error(f"Error drawing target: {str(e)}")

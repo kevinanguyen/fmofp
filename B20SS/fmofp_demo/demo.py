@@ -16,7 +16,8 @@ the engines' N1 and the fuel, the radars' modes, the terrain clearance and the
 targeting tracks, the navigation fix, and which terminals are answering.
 
 Unless --no-events is given, a short scripted flight runs: the radars are
-switched on (the targeting radar searches, later locks on a track), the thrust
+switched on (the targeting and AEWC radars search, the targeting radar later
+locks on a track), the thrust
 lever moves, the autothrottle holds 500 kt, the flight
 mode changes, one engine is throttled back, fuel is transferred. Each event is
 announced as it happens. The radar display window's own buttons keep working
@@ -34,8 +35,8 @@ import time
 from collections import namedtuple
 
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (EngineCommand, EngineSelect, FmsFlightMode, FuelTank, LockStatus, Ssm, TargetingMode,
-                                 TerminalState, TfrMode, TrackFilter, WeatherMode)
+from fmofp_bus.icd.enums import (AewcMode, EngineCommand, EngineSelect, FmsFlightMode, FuelTank, LockStatus, Ssm,
+                                 TargetingMode, TerminalState, TfrMode, TrackFilter, WeatherMode)
 from fmofp_bus.monitor import Monitor
 from fmofp_bus.status import Status
 
@@ -73,6 +74,10 @@ def default_events():
         Event(6.0, "targeting radar on: TARGET_SEARCH (the plant flies twelve aircraft around us)",
               m.RdrTgtModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL,
                               requested_mode=TargetingMode.TARGET_SEARCH, track_filter=TrackFilter.ALL)),
+        Event(8.0, "AEWC radar on: AEWC_SEARCH (the far aircraft, out to 400 km)",
+              m.RdrAewcModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL,
+                               requested_mode=AewcMode.AEWC_SEARCH, azimuth_start=0.0, azimuth_end=90.0,
+                               elevation=0.0)),
         Event(10.0, "FMS thrust lever to 80 %", m.FmsControlCmd(cmd_seq=201, thrust_present=True, thrust=0.8)),
         Event(20.0, "autothrottle engaged: hold 500 kt",
               m.EngCmd(cmd_seq=201, command=EngineCommand.AUTOTHROTTLE_ENGAGE, target_airspeed=500.0)),
@@ -301,6 +306,17 @@ class Dashboard:
             else:
                 text = "TGT " + ("off" if tgt.state == TerminalState.NORMAL else tgt.state.name)
             parts.append(text)
+        aewc = self.latest.get(m.RdrAewcStatus)
+        if aewc is not None:
+            if aewc.state == TerminalState.NORMAL and aewc.mode != AewcMode.NONE:
+                text = f"AEWC {aewc.track_count} trk"
+                if aewc.stealth_tracks:
+                    text += f" ({aewc.stealth_tracks} stealth)"
+                if aewc.jammed_sectors:
+                    text += " JAM"
+            else:
+                text = "AEWC " + ("off" if aewc.state == TerminalState.NORMAL else aewc.state.name)
+            parts.append(text)
         nav = self.latest.get(m.NavSolution)
         if nav is not None and nav.position_ssm == Ssm.NORMAL:
             parts.append(f"nav {nav.latitude:+.4f} {nav.longitude:+.4f} ({nav.sats_used} sats)")
@@ -319,10 +335,10 @@ def banner(args, terminals, events, log_dir, paths):
     print(f"fmofp_demo: {len(terminals)} terminals on port base {args.port_base}, binaries from "
           f"{shown(os.path.dirname(paths['bc']))}, logs in {shown(log_dir)}")
     if not args.no_displays and not args.headless:
-        print("  radar display window: weather picture left, terrain picture right; its WX, TFR and TGT buttons set\n"
+        print("  radar display window: weather picture left, terrain picture right; its WX, TFR, TGT and AEWC buttons set\n"
               "    the radars' modes, the spinboxes the terrain-following set clearance and the track to lock.\n"
               "  PFD window: attitude, airspeed, altitude and heading from the FMS flight data.\n"
-              "  MFD window: RADAR shows the radars' pictures (Targeting Radar: the tracks), SYSTEMS the GCAS alerts,\n"
+              "  MFD window: RADAR shows the radars' pictures (Targeting Radar and AEWC Radar: their tracks), SYSTEMS the GCAS alerts,\n"
               "    exceedances and engine\n"
               "    rows, MISSION the position.\n"
               "  EICAS window: the engine readings, the fuel quantity and balance, the FCS alerts and the crew alert\n"

@@ -37,6 +37,25 @@ std::size_t targeting_reports(const TargetingRadar& radar, TrackReport* out, std
     return n;
 }
 
+std::size_t aewc_reports(const AewcRadar& radar, TrackReport* out, std::size_t capacity) noexcept {
+    std::size_t n = 0;
+    for (std::size_t s = 0; s < kAewcMaxTracks && n < capacity; ++s) {
+        const AewcTrack& source = radar.slot(s);
+        if (!source.held) {
+            continue;
+        }
+        TrackReport& report = out[n++];
+        report.position = source.position;
+        report.velocity = source.velocity;
+        report.classification = source.classification;
+        report.identity = source.identity;
+        report.rcs = source.rcs;
+        report.weight = kFusionWeightAewc;
+        report.sensor = kSensorAewc;
+    }
+    return n;
+}
+
 Status TrackFusion::init() noexcept {
     std::fill(tracks_.begin(), tracks_.end(), FusedTrack{});
     std::fill(previous_.begin(), previous_.end(), FusedTrack{});

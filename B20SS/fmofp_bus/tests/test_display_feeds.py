@@ -5,12 +5,13 @@ import unittest
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, IffIdentity, LockStatus,
-                                 PathReason, PrecipType, ShearSeverity, Ssm, TargetClass, TargetingMode, TargetingState,
-                                 TerminalState, TfrMode, Threat, TurbulenceCategory, WeaponsState, WeatherMode)
+from fmofp_bus.icd.enums import (AewcMode, ClearanceLevel, CountermeasuresState, EcmMitigation, FmsFlightMode, GcasStatus,
+                                 IffIdentity, JamType, LockStatus, PathReason, PrecipType, ShearSeverity, Ssm, TargetClass,
+                                 TargetingMode, TargetingState, TerminalState, TfrMode, Threat, TurbulenceCategory,
+                                 WeaponsState, WeatherMode)
 from fmofp_display.flight_feed import FlightDataFeed
-from fmofp_display.radar_feed import (BROADCAST_SOURCES, SYMBOL_CLASS, RadarFeed, cell_velocity_nm_s, polar_to_nm,
-                                      targeting_item, weather_items)
+from fmofp_display.radar_feed import (BROADCAST_SOURCES, SYMBOL_CLASS, RadarFeed, aewc_item, cell_velocity_nm_s,
+                                      polar_to_nm, targeting_item, weather_items)
 from fmofp_display.systems_feed import LIMITS, FusedTrackView, SystemsFeed, TerrainClearance, WeatherSeverity
 
 
@@ -103,6 +104,26 @@ def sample_fused(epoch=3):
                                      identity=IffIdentity.UNKNOWN, threat=Threat.UNKNOWN, from_targeting=True,
                                      confidence=0.8)]
     return f
+
+
+def sample_aewc(mode=AewcMode.AEWC_SEARCH):
+    """An RDR_AEWC_TRACKS block: a conventional fighter 100 nm north-east (no echo at that range in the Python's
+    arithmetic) and a stealth aircraft 10 nm east, and six sectors with the first busy and the fourth jammed."""
+    t = b.RdrAewcTracks(update_seq=3, mode=mode, scan_azimuth_start=-30.0, scan_azimuth_end=60.0)
+    t.track = [b.RdrAewcTracksTrack(track_id=1, x=130968.0, y=130968.0, z=9000.0, velocity_north=-450.0,
+                                    classification=TargetClass.FIGHTER, identity=IffIdentity.UNKNOWN,
+                                    threat=Threat.UNKNOWN, detected=True, sector=1, confidence=0.0, snr=0.0),
+               b.RdrAewcTracksTrack(track_id=2, x=18520.0, y=0.0, z=0.0, velocity_north=250.0,
+                                    classification=TargetClass.STEALTH, identity=IffIdentity.UNKNOWN,
+                                    threat=Threat.HOSTILE, stealth=True, detected=False, sector=0, confidence=0.3,
+                                    snr=9.0)]
+    t.sector = [b.RdrAewcTracksSector(azimuth_start=60.0 * i, active_tracks=1 if i == 0 else 0, jammed=(i == 3),
+                                      scan_progress=0.3, dwell_fraction=0.25 if i == 0 else 0.15,
+                                      priority_score=12.0 if i == 0 else 5.0,
+                                      jam_type=JamType.DECEPTIVE if i == 3 else JamType.NONE,
+                                      mitigation=EcmMitigation.FREQ_AGILITY if i == 3 else EcmMitigation.NONE,
+                                      severity=0.2 if i == 3 else 0.0) for i in range(6)]
+    return t
 
 
 class WeatherItemsTest(unittest.TestCase):
@@ -521,6 +542,58 @@ class TargetingFeedTest(unittest.TestCase):
                                                   identity=IffIdentity.HOSTILE, threat=Threat.HOSTILE, stealth=True))
         self.assertEqual((9, (-1.0, 1.0, 0.0), None, "HOSTILE", True),
                          (item["id"], item["position"], item["classification"], item["identity"], item["stealth"]))
+
+
+class AewcFeedTest(unittest.TestCase):
+    """The MFD's AEWC picture: RDR_AEWC_STATUS and the RDR_AEWC_TRACKS block as AEWCRadarDisplay draws them."""
+
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = RadarFeed(self.terminal, FakeCoordinator(), clock=lambda: 1000.0)
+
+    def test_standby_until_the_radar_reports(self):
+        data = self.feed.aewc_data()
+        self.assertEqual(("STANDBY", [], 0, 0, [], 0, []),
+                         (data["mode_name"], data["targets"], data["track_count"], data["stealth_tracks"],
+                          data["jammed_sectors"], data["priority_sector"], data["sectors"]))
+        self.assertAlmostEqual(400.0 / 1.852, data["range_nm"], msg="the AEWC radar's 400 km")
+        self.assertEqual("AEWC: no data", self.feed.aewc_status_text())
+
+    def test_targets_sectors_and_the_draw_modes(self):
+        self.terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(
+            state=TerminalState.NORMAL, mode=AewcMode.AEWC_SEARCH, track_count=2, stealth_tracks=1, jammed_sectors=0x08,
+            priority_sector=1)))
+        self.terminal.put_block(b.BcastRdrAewcTracks, sample_aewc(), 2)
+        data = self.feed.aewc_data()
+        self.assertEqual(("SEARCH", 2, 1, [4], 1), (data["mode_name"], data["track_count"], data["stealth_tracks"],
+                                                   data["jammed_sectors"], data["priority_sector"]))
+        one, two = data["targets"]
+        self.assertEqual((1, "FIXED_WING", None, False, True, 1), (one["id"], one["classification"], one["identity"],
+                                                                   one["is_stealth"], one["detected"], one["sector"]))
+        self.assertAlmostEqual(130968.0 / 1852.0, one["position"][0])
+        self.assertEqual((2, "FIXED_WING", True, False, 0, 9.0), (two["id"], two["classification"], two["is_stealth"],
+                                                                  two["detected"], two["sector"], two["snr_db"]))
+        self.assertAlmostEqual(10.0, two["position"][0])
+        sectors = data["sectors"]
+        self.assertEqual([0.0, 60.0, 120.0, 180.0, 240.0, 300.0], [s["azimuth_start"] for s in sectors])
+        self.assertEqual((1, False, 0.25, 12.0, "NONE"), (sectors[0]["active_tracks"], sectors[0]["jammed"],
+                                                         sectors[0]["dwell_fraction"], sectors[0]["priority_score"],
+                                                         sectors[0]["jam_type"]))
+        self.assertEqual((True, "DECEPTIVE", "FREQ_AGILITY", 0.2), (sectors[3]["jammed"], sectors[3]["jam_type"],
+                                                                   sectors[3]["mitigation"], sectors[3]["severity"]))
+        self.assertIn("AEWC NORMAL AEWC_SEARCH  2 tracks (1 stealth)  jammed 4", self.feed.aewc_status_text())
+        for mode, name in ((AewcMode.AEWC_SURVEILLANCE, "SEARCH"), (AewcMode.SECTOR_SCAN, "SEARCH"),
+                           (AewcMode.STEALTH_DETECTION, "SEARCH"), (AewcMode.AEWC_TRACK, "TRACK"),
+                           (AewcMode.GROUND_MAPPING, "SEARCH"), (AewcMode.NONE, "STANDBY")):
+            self.terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(state=TerminalState.NORMAL, mode=mode)))
+            self.assertEqual(name, self.feed.aewc_data()["mode_name"], mode.name)
+        self.terminal.put_block(b.BcastRdrAewcTracks, sample_aewc(), 3, age=3.0)
+        self.assertEqual(([], []), (self.feed.aewc_data()["targets"], self.feed.aewc_data()["sectors"]),
+                         "stale data is no data")
+        item = aewc_item(b.RdrAewcTracksTrack(track_id=7, x=-1852.0, y=1852.0, z=0.0, classification=TargetClass.UNKNOWN,
+                                              identity=IffIdentity.FRIENDLY, threat=Threat.FRIENDLY))
+        self.assertEqual((7, (-1.0, 1.0, 0.0), None, "FRIENDLY", False),
+                         (item["id"], item["position"], item["classification"], item["identity"], item["is_stealth"]))
 
 
 class TsdFeedTest(unittest.TestCase):
