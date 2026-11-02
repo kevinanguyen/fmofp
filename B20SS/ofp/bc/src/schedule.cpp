@@ -26,6 +26,21 @@ std::uint32_t message_us(std::uint8_t words) noexcept {
     return (2U + words) * kUsPerWord + kUsPerMessageGap;
 }
 
+// An RT-to-RT transfer: the receive command, the transmit command, the
+// producer's status and data, the consumer's status, and the gaps.
+std::uint32_t rt_to_rt_us(std::uint8_t words) noexcept { return (4U + words) * kUsPerWord + kUsPerMessageGap; }
+
+// The bus time of one scheduled message: a poll, or, when it is relayed, one
+// RT-to-RT transfer per consumer. The controller listens to the data as it
+// crosses, as a real one does, and needs no poll of its own; the emulated link
+// reads the words and writes them on, but the model is the bus (README section 6).
+std::uint32_t slot_us(std::uint8_t words, std::uint8_t relay_count) noexcept {
+    if (relay_count == 0U) {
+        return message_us(words);
+    }
+    return rt_to_rt_us(words) * static_cast<std::uint32_t>(relay_count);
+}
+
 }  // namespace
 
 Status Schedule::add(const ScheduledMessage& message) noexcept {
@@ -63,7 +78,7 @@ Status Schedule::build() noexcept {
     for (std::size_t i = 0; i < count_; ++i) {
         const ScheduledMessage& m = messages_[i];
         const std::uint8_t period = period_frames(m.rate_hz);
-        const std::uint32_t cost = message_us(m.words) * (1U + static_cast<std::uint32_t>(m.relay_count));
+        const std::uint32_t cost = slot_us(m.words, m.relay_count);
         std::uint8_t phase = 0;
         std::uint32_t best = std::numeric_limits<std::uint32_t>::max();
         for (std::uint8_t candidate = 0; candidate < period; ++candidate) {
@@ -109,7 +124,7 @@ std::uint32_t Schedule::frame_load_us(std::uint8_t minor) const noexcept {
     std::uint32_t us = 2U * kUsPerWord + kUsPerMessageGap;  // the sync broadcast
     for (std::size_t i = 0; i < f.count; ++i) {
         // The same words go out again to each consumer.
-        us += message_us(f.slots[i].words) * (1U + static_cast<std::uint32_t>(f.slots[i].relay_count));
+        us += slot_us(f.slots[i].words, f.slots[i].relay_count);
     }
     return us;
 }

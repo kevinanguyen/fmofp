@@ -22,7 +22,9 @@ constexpr std::size_t kMaxSlotsPerFrame = 32;
 constexpr std::size_t kMaxScheduledMessages = 160;
 
 // Bus time on a real 1 Mbit/s bus: 20 us per word, about 12 us of gaps per
-// message. README section 6 caps a minor frame at 50% of 20 ms.
+// message. README section 6 caps a minor frame at 50% of 20 ms. A relayed
+// message is charged as one RT-to-RT transfer per consumer (two command and
+// two status words around the data), not as a poll plus a write per consumer.
 constexpr std::uint32_t kUsPerWord = 20;
 constexpr std::uint32_t kUsPerMessageGap = 12;
 constexpr std::uint32_t kMinorFrameBudgetUs = 10 * 1000;

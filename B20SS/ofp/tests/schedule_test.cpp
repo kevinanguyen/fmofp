@@ -148,7 +148,7 @@ TEST(Schedule, LoadEstimateCountsEveryWordAndGap) {
     EXPECT_EQ(s.frame_load_us(7), s.worst_frame_load_us());
 }
 
-TEST(Schedule, RelaysRideWithTheirSourceAndCountTwice) {
+TEST(Schedule, RelaysRideWithTheirSourceAsRtToRtTransfers) {
     Schedule s;
     ScheduledMessage src = msg(27, 1, 50, 12);
     src.relays[0] = {5, 13};
@@ -160,9 +160,10 @@ TEST(Schedule, RelaysRideWithTheirSourceAndCountTwice) {
     ASSERT_EQ(1U, slot.relay_count);
     EXPECT_EQ(5, slot.relays[0].rt);
     EXPECT_EQ(13, slot.relays[0].subaddress);
-    EXPECT_EQ(52U + 2U * ((2U + 12U) * 20U + 12U), s.frame_load_us(0));
+    // One RT-to-RT transfer: two commands, the data once, two status words; no poll of the controller's own.
+    EXPECT_EQ(52U + ((4U + 12U) * 20U + 12U), s.frame_load_us(0));
 
-    // Three consumers: the words go out four times.
+    // Three consumers: three transfers, the data crossing once for each.
     Schedule three;
     ScheduledMessage fanout = src;
     fanout.relays[1] = {12, 13};
@@ -171,7 +172,7 @@ TEST(Schedule, RelaysRideWithTheirSourceAndCountTwice) {
     ASSERT_EQ(Status::kOk, three.add(fanout));
     ASSERT_EQ(Status::kOk, three.build());
     EXPECT_EQ(3U, three.frame(0).slots[0].relay_count);
-    EXPECT_EQ(52U + 4U * ((2U + 12U) * 20U + 12U), three.frame_load_us(0));
+    EXPECT_EQ(52U + 3U * ((4U + 12U) * 20U + 12U), three.frame_load_us(0));
 
     // A broadcast consumer (address 31) is one transfer, heard by every terminal
     // that accepts the subaddress (ICD v1.7), so it costs what one consumer costs.
@@ -181,7 +182,7 @@ TEST(Schedule, RelaysRideWithTheirSourceAndCountTwice) {
     ASSERT_EQ(Status::kOk, heard.add(broadcast));
     ASSERT_EQ(Status::kOk, heard.build());
     EXPECT_EQ(fmofp::bus::kBroadcastRt, heard.frame(0).slots[0].relays[0].rt);
-    EXPECT_EQ(52U + 2U * ((2U + 12U) * 20U + 12U), heard.frame_load_us(0));
+    EXPECT_EQ(52U + ((4U + 12U) * 20U + 12U), heard.frame_load_us(0));
 
     // A relay needs a transmit source and a real, different consumer.
     ScheduledMessage bad = msg(27, 1, 50, 12, false);
