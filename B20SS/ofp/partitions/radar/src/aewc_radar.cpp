@@ -123,7 +123,7 @@ SectorPriorities aewc_priorities(const std::array<std::uint8_t, kAewcSectorCount
     for (std::size_t i = 0; i < kAewcSectorCount; ++i) {
         double score = kAewcDensityWeight * static_cast<double>(tracks[i]) + kAewcThreatWeight * static_cast<double>(hostile[i]) +
                        kAewcDwellAgeWeight * age_s[i];
-        if (((jammed_mask >> i) & 1U) != 0U) {
+        if (((static_cast<unsigned>(jammed_mask) >> i) & 1U) != 0U) {
             score += kAewcJammedBonus;
         }
         p.score[i] = score;
