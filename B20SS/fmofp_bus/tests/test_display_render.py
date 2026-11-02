@@ -387,8 +387,8 @@ class DisplayWindowsTest(unittest.TestCase):
             tsd._poll_data()
             window.tick()
             self.app.processEvents()
-            empty = lit_pixels(tsd.grab().toImage())
-            self.assertGreater(empty, 0)
+            before = tsd.grab().toImage()
+            self.assertGreater(lit_pixels(before), 0)
             self.assertEqual([], tsd._threats)
             self.assertFalse(tsd._ownship_position_known)
             self.assertIn("fusion: no data", window.status.text())
@@ -406,9 +406,11 @@ class DisplayWindowsTest(unittest.TestCase):
             tsd._poll_data()   # the 10 Hz poll reads the getters
             window.tick()
             self.app.processEvents()
-            full = lit_pixels(tsd.grab().toImage())
+            after = tsd.grab().toImage()
             self.assertFalse(getattr(tsd, "_paint_error", False))
-            self.assertNotEqual(empty, full)
+            # The TSD paints every pixel of its dark panels, so a lit-pixel count cannot tell the two states apart
+            # (it did not on Linux); the pictures themselves differ.
+            self.assertNotEqual(before, after, "the data changed the picture")
             self.assertEqual(("COMBAT", 45.0, 3.2, 8.0, 70.0), (tsd._mode, tsd._heading, tsd._g_force, tsd._aoa, tsd._energy))
             self.assertTrue(tsd._ownship_position_known)
             self.assertEqual((42.5, 12.3, 20.1, 6000.0),
