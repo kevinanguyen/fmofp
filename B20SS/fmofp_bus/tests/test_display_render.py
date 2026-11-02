@@ -449,6 +449,57 @@ class DisplayWindowsTest(unittest.TestCase):
             window.close()
             self.app_module.uninstall_system_sources()
 
+    def test_the_sms_window_draws_the_stations_and_its_master_arm_follows_the_fms(self):
+        terminal = StubTerminal()
+        terminal.rt = 17
+        systems = SystemsFeed(terminal)
+        window = self.app_module.SmsWindow(terminal, systems)
+        try:
+            window.show()
+            self.app.processEvents()
+            sms = window.sms
+            sms._poll_data()   # the 5 Hz poll reads get_tactical_status()
+            window.tick()
+            self.app.processEvents()
+            safe = sms.grab().toImage()
+            self.assertGreater(lit_pixels(safe), 0)
+            self.assertEqual(("SAFE", "UNKNOWN", "STANDBY", "INACTIVE", "OFF"),
+                             (sms._master_arm, sms._flight_mode, sms._cntm, sms._ecm, sms._stealth))
+            self.assertEqual(11, len(sms._stations), "the display's own loadout")
+            self.assertIn("FMS status: no data", window.status.text())
+            self.assertIn("MASTER ARM SAFE, 2 stations armed", window.status.text())
+
+            terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
+                state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT, countermeasures=CountermeasuresState.READY,
+                targeting=TargetingState.ACTIVE, weapons=WeaponsState.ARMED)))
+            sms._poll_data()
+            window.tick()
+            self.app.processEvents()
+            armed = sms.grab().toImage()
+            self.assertFalse(getattr(sms, "_paint_error", False))
+            self.assertEqual(("ARMED", "COMBAT", "READY", "STANDBY", "OFF"),
+                             (sms._master_arm, sms._flight_mode, sms._cntm, sms._ecm, sms._stealth))
+            self.assertGreater(sms._rcs, 10.0, "a conventional signature with stealth OFF")
+            self.assertNotEqual(safe, armed, "the master arm changed the picture")
+            self.assertIn("FMS COMBAT: weapons ARMED, countermeasures READY, stealth OFF", window.status.text())
+            self.assertIn("MASTER ARM ARMED, 2 stations armed", window.status.text())
+
+            terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
+                state=TerminalState.NORMAL, flight_mode=FmsFlightMode.STEALTH, countermeasures=CountermeasuresState.PASSIVE,
+                targeting=TargetingState.PASSIVE, weapons=WeaponsState.SAFE, stealth_mode=True)))
+            sms._poll_data()
+            self.assertEqual(("SAFE", "STEALTH", "PASSIVE", "STANDBY", "ON", 0.001, 0.05),
+                             (sms._master_arm, sms._flight_mode, sms._cntm, sms._ecm, sms._stealth, sms._rcs, sms._ir_sig))
+            terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
+                state=TerminalState.NORMAL, flight_mode=FmsFlightMode.EMERGENCY, countermeasures=CountermeasuresState.ACTIVE,
+                targeting=TargetingState.READY, weapons=WeaponsState.READY)))
+            sms._poll_data()
+            self.assertEqual(("TRAIN", "ACTIVE"), (sms._master_arm, sms._ecm), "READY weapons are the TRAIN master arm")
+        finally:
+            window.timer.stop()
+            window.close()
+            self.app_module.uninstall_system_sources()
+
 
 if __name__ == "__main__":
     unittest.main()

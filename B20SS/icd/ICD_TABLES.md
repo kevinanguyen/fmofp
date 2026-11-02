@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.13 (DRAFT, 2026-11-01). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.14 (DRAFT, 2026-11-02). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -23,7 +23,7 @@
 | 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays/eicas.py | On the bus from v1.9 (fmofp_display eicas): it hears the engine computer's engine and fuel status (31/18-19), the flight computer's GCAS alerts and exceedances (31/5, 31/10), the FMS's flight data and status (31/25-26) and the weather radar's scan summary (31/2) by broadcast, and commands nothing. Its hydraulic, electrical and environmental rows read unknown until those terminals exist |
 | 15 | `radar_display` | Radar display - the radars' pictures and their control panel | new | Interfaces/userInterface/displays/radar | On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24); from v1.11 it hears the targeting radar's status too (31/24) and commands that radar |
 | 16 | `tsd` | Tactical situation display | new | Interfaces/userInterface/displays/tsd.py | On the bus from v1.11 (fmofp_display tsd): it hears the fused air tracks (31/22-23) and the FMS's flight data, status, attitude status and energy maneuverability (31/25-28) by broadcast, and commands nothing. Its waypoints, order of battle and radar warning contacts wait for the mission and defensive terminals |
-| 17 | `sms` | Stores management display | new | Interfaces/userInterface/displays |  |
+| 17 | `sms` | Stores management display | new | Interfaces/userInterface/displays/sms.py | On the bus from v1.14 (fmofp_display sms): it hears the FMS status by broadcast (31/26) for the flight mode and the tactical systems its master arm, ECM cell and signature strip follow, and commands nothing. Its weapon stations are the display's own table, as in the Python, which modelled no armament system (README section 2); a stores management computer is backlog (section 12) |
 | 18 | `hud` | Head-up display | new | Interfaces/userInterface (HUDContainer) |  |
 | 19 | `hydraulics` | Hydraulics | new | Systems/hydraulics |  |
 | 20 | `airframe` | Airframe systems | new | Systems/airframeSystemManagement |  |
@@ -188,7 +188,7 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) (broadcast, heard by RT 13, 14) | 4 | 5 |
 | [`FCS_PERF_STATUS`](#fcs_perf_status) | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) (broadcast, heard by RT 13, 14) | 4 | 1 |
 | [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 3, 9, 11, 13, 14, 16) | 21 | 10 |
-| [`FMS_STATUS`](#fms_status) | [`BCAST_FMS_STATUS`](#bcast_fms_status) (broadcast, heard by RT 11, 14, 16) | 3 | 5 |
+| [`FMS_STATUS`](#fms_status) | [`BCAST_FMS_STATUS`](#bcast_fms_status) (broadcast, heard by RT 11, 14, 16, 17) | 3 | 5 |
 | [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) (broadcast, heard by RT 11, 16) | 8 | 10 |
 | [`FMS_CONTROL_STATUS`](#fms_control_status) | [`ENG_FMS_CONTROL`](#eng_fms_control) | 3 | 5 |
 | [`PLANT_ENGINE`](#plant_engine) | [`ENG_ENGINE_IN`](#eng_engine_in) | 19 | 10 |
@@ -1629,6 +1629,8 @@ Same layout as [`FMS_FLIGHT_DATA`](#fms_flight_data).
 ### BCAST_FMS_STATUS
 
 **FMS status, broadcast to the displays** — RT 31 · SA 26 · receive (bus to terminal) · 3 words · 5 Hz
+
+The PFD's and the TSD's tactical strips, the EICAS's profile power and, from v1.14, the SMS's master arm (the weapons state), ECM cell (the countermeasures state) and signature (the stealth bit).
 
 Same layout as [`FMS_STATUS`](#fms_status).
 

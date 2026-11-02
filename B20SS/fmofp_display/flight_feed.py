@@ -1,4 +1,4 @@
-"""What the PFD, the EICAS and the TSD read from the FMS, made from a display terminal's bus data.
+"""What the PFD, the EICAS, the TSD and the SMS read from the FMS, made from a display terminal's bus data.
 
 PrimaryFlightDisplay.update_flight_data() polls fms.get_flight_data() and
 fms_control.get_tactical_status() sixty times a second. FlightDataFeed answers
@@ -125,3 +125,12 @@ class FlightDataFeed:
         p = message.payload
         stale = " (stale)" if age is not None and age > self.stale_after_s else ""
         return f"FMS {p.flight_mode.name}  alt {p.altitude:.0f} ft  ias {p.airspeed:.0f} kt  hdg {p.heading:.0f}{stale}"
+
+    def tactical_text(self):
+        """One line of the FMS status the SMS follows: the flight mode and the tactical systems it set."""
+        status = self.terminal.fresh(m.BcastFmsStatus, self.stale_after_s)
+        if status is None:
+            return "FMS status: no data"
+        s = status.payload
+        return (f"FMS {s.flight_mode.name}: weapons {s.weapons.name}, countermeasures {s.countermeasures.name}, "
+                f"stealth {'ON' if s.stealth_mode else 'OFF'}")

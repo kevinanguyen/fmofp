@@ -741,5 +741,37 @@ class SarFeedTest(unittest.TestCase):
         self.assertEqual(sar_pgm(sample_sar_image())[:3], b"P5\n")
 
 
+class SmsFeedTest(unittest.TestCase):
+    """What sms._poll_data() reads: get_tactical_status()'s mode and tactical systems (its master arm is the weapons
+    state, its ECM cell the countermeasures state, its signature the stealth bit), and the window's status line."""
+
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = FlightDataFeed(self.terminal)
+
+    def test_no_status_leaves_the_sms_its_defaults(self):
+        tactical = self.feed.get_tactical_status()
+        self.assertEqual("UNKNOWN", tactical["mode"])
+        self.assertNotIn("tactical_systems", tactical, "the SMS's .get('weapons', 'SAFE') keeps the master arm SAFE")
+        self.assertEqual("FMS status: no data", self.feed.tactical_text())
+
+    def test_the_tactical_systems_and_the_status_line_follow_the_fms_status(self):
+        self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
+            state=TerminalState.NORMAL, flight_mode=FmsFlightMode.EMERGENCY, countermeasures=CountermeasuresState.ACTIVE,
+            targeting=TargetingState.READY, weapons=WeaponsState.READY, stealth_mode=False)))
+        tactical = self.feed.get_tactical_status()
+        self.assertEqual("EMERGENCY", tactical["mode"])
+        self.assertEqual({"countermeasures": "ACTIVE", "targeting": "READY", "weapons": "READY", "stealth_mode": "OFF"},
+                         tactical["tactical_systems"])
+        self.assertEqual("FMS EMERGENCY: weapons READY, countermeasures ACTIVE, stealth OFF", self.feed.tactical_text())
+        self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
+            state=TerminalState.NORMAL, flight_mode=FmsFlightMode.STEALTH, countermeasures=CountermeasuresState.PASSIVE,
+            targeting=TargetingState.PASSIVE, weapons=WeaponsState.SAFE, stealth_mode=True)))
+        self.assertEqual("FMS STEALTH: weapons SAFE, countermeasures PASSIVE, stealth ON", self.feed.tactical_text())
+        self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL)), age=5.0)
+        self.assertEqual("FMS status: no data", self.feed.tactical_text(), "stale")
+        self.assertNotIn("tactical_systems", self.feed.get_tactical_status())
+
+
 if __name__ == "__main__":
     unittest.main()

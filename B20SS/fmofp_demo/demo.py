@@ -6,8 +6,9 @@
 It starts, in this order: the plant (the simulated aircraft with its weather,
 terrain and engines, RT 27), the ported partitions (flight control RT 5,
 navigation RT 7, flight management RT 12, the radar computer RT 9, engine
-management RT 3), the five display programs (the radar display RT 15, the PFD
-RT 11, the MFD RT 13, the EICAS RT 14 and the TSD RT 16, each in its own window), and finally the bus
+management RT 3), the six display programs (the radar display RT 15, the PFD
+RT 11, the MFD RT 13, the EICAS RT 14, the TSD RT 16 and the SMS RT 17, each in its own window), and
+finally the bus
 controller, which drives the bus in real time. Every program writes its own
 log under logs/demo/. The console shows one line a second with what is
 crossing the bus, read from the controller's monitor port: altitude, airspeed
@@ -54,11 +55,11 @@ PARTITIONS = (("fcs", m.FcsStatus.RT), ("nav", m.NavSolution.RT), ("fms", m.FmsS
               ("radar", m.RdrWxStatus.RT), ("engine", m.EngStatus.RT))
 # (fmofp_display argument, RT) of each display program.
 DISPLAYS = (("radar", m.DspRadarStatus.RT), ("pfd", m.DspPfdStatus.RT), ("mfd", m.DspMfdStatus.RT),
-            ("eicas", m.DspEicasStatus.RT), ("tsd", m.DspTsdStatus.RT))
+            ("eicas", m.DspEicasStatus.RT), ("tsd", m.DspTsdStatus.RT), ("sms", m.DspSmsStatus.RT))
 NAMES = {PLANT_RT: "plant", m.FcsStatus.RT: "FCS", m.NavSolution.RT: "nav", m.FmsStatus.RT: "FMS",
          m.RdrWxStatus.RT: "radar", m.EngStatus.RT: "engine", m.DspRadarStatus.RT: "radar display",
          m.DspPfdStatus.RT: "PFD", m.DspMfdStatus.RT: "MFD", m.DspEicasStatus.RT: "EICAS",
-         m.DspTsdStatus.RT: "TSD"}
+         m.DspTsdStatus.RT: "TSD", m.DspSmsStatus.RT: "SMS"}
 
 Event = namedtuple("Event", "seconds what message")
 
@@ -86,7 +87,8 @@ def default_events():
                               resolution=1.0)),
         Event(20.0, "autothrottle engaged: hold 500 kt",
               m.EngCmd(cmd_seq=201, command=EngineCommand.AUTOTHROTTLE_ENGAGE, target_airspeed=500.0)),
-        Event(30.0, "flight mode COMBAT", m.FmsFlightModeCmd(cmd_seq=201, flight_mode=FmsFlightMode.COMBAT)),
+        Event(30.0, "flight mode COMBAT (the SMS's master arm goes ARMED)",
+              m.FmsFlightModeCmd(cmd_seq=201, flight_mode=FmsFlightMode.COMBAT)),
         Event(38.0, "autothrottle disengaged", m.EngCmd(cmd_seq=202, command=EngineCommand.AUTOTHROTTLE_DISENGAGE)),
         Event(40.0, "engine 2 alone to 40 %: asymmetric thrust",
               m.EngCmd(cmd_seq=203, command=EngineCommand.SET_THRUST, engine=EngineSelect.ENGINE_2, thrust=40.0)),
@@ -274,7 +276,11 @@ class Dashboard:
         parts = [f"t={elapsed_s:4.0f}s", f"frame {max(self.frame, 0):5d}"]
         fd = self.latest.get(m.FmsFlightData)
         if fd is not None:
-            parts.append(f"alt {fd.altitude:5.0f} ft  ias {fd.airspeed:3.0f} kt  hdg {fd.heading:03.0f}  {fd.flight_mode.name}")
+            text = f"alt {fd.altitude:5.0f} ft  ias {fd.airspeed:3.0f} kt  hdg {fd.heading:03.0f}  {fd.flight_mode.name}"
+            fms = self.latest.get(m.FmsStatus)
+            if fms is not None:
+                text += f" weapons {fms.weapons.name}"
+            parts.append(text)
         gcas = self.latest.get(m.FcsGcasAlerts)
         if gcas is not None:
             codes = [code for bit, code in (("pullup", "PULLUP"), ("sink_rate", "SINK RATE"), ("terrain", "TERRAIN"),
@@ -365,7 +371,9 @@ def banner(args, terminals, events, log_dir, paths):
               "  EICAS window: the engine readings, the fuel quantity and balance, the FCS alerts and the crew alert\n"
               "    list (hydraulics, electrical and ECS read unknown until their terminals exist).\n"
               "  TSD window: the fused air tracks around the aircraft (bearing and range), the energy metrics and\n"
-              "    the tactical systems strip.")
+              "    the tactical systems strip.\n"
+              "  SMS window: the weapon stations, colour-coded by state, and the signature strip; MASTER ARM follows\n"
+              "    the FMS's weapons state (ARMED from the COMBAT event at 30 s).")
     if events:
         print("  scripted flight: " + "; ".join(f"{e.seconds:.0f} s {e.what}" for e in events))
     print("  stop with Ctrl-C" + (f"; runs for {args.seconds:.0f} s" if args.seconds > 0 else ""))

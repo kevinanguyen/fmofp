@@ -136,7 +136,7 @@ frame 40:
 ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --port-base 53000 --script commands.txt
 ```
 
-**The displays.** Five of the PyQt6 displays run as their own bus terminals
+**The displays.** Six of the PyQt6 displays run as their own bus terminals
 (`B20SS/fmofp_display`): the radar display, RT 15, which shows the weather and
 terrain-following radars' pictures and commands the weather, terrain-following,
 targeting, AEWC and synthetic aperture radars; the primary
@@ -152,7 +152,10 @@ shear and turbulence severities and the crew alert list (its hydraulic,
 electrical and ECS rows wait for those terminals); and the TSD, RT 16, which
 shows the fused air tracks around the aircraft, the FMS's energy metrics and
 the tactical systems strip (its route, order of battle and radar warning
-contacts wait for the mission and defensive terminals). List them for the
+contacts wait for the mission and defensive terminals); and the SMS, RT 17,
+which shows the weapon stations and the signature strip, its master arm
+following the FMS's weapons state (its stations are the display's own table
+until a stores management computer exists). List them for the
 controller and give it a reply timeout a Python process beside a Qt paint loop
 can meet, without `--strict`:
 
@@ -162,7 +165,8 @@ py -m fmofp_display pfd --port-base 53000
 py -m fmofp_display mfd --port-base 53000
 py -m fmofp_display eicas --port-base 53000
 py -m fmofp_display tsd --port-base 53000
-ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 3 --rt 11 --rt 13 --rt 14 --rt 15 --rt 16 --port-base 53000 --timeout-ms 20 --report
+py -m fmofp_display sms --port-base 53000
+ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 3 --rt 11 --rt 13 --rt 14 --rt 15 --rt 16 --rt 17 --port-base 53000 --timeout-ms 20 --report
 ```
 
 The controller broadcasts the radars' status, scan summary and guidance, their
@@ -219,16 +223,17 @@ two spotlight pictures of one patch with the ship three pixels further on, and
 standby's empty block; `test_sar_oracle.py` checks the change detector against
 `sar_processor.py` event for event and the picture's geometry and levels through
 `fmofp_radar_tool`, and `test_plant_ground.py` the plant's training range.
-`test_display_e2e.py` runs the five display terminals headless beside the
+`test_display_e2e.py` runs the six display terminals headless beside the
 whole set of partitions and checks that the radars' products and the FMS's
 flight data arrive at the displays by broadcast, that the flight computer's
 alerts and exceedances and the engine computer's engine and fuel status reach
 the MFD and the EICAS, that the targeting radar's tracks reach the MFD and
 the fused tracks the EICAS and the TSD, and that the radar display's commands
 reach the radars; `test_display_feeds.py` checks the feeds
-and `test_display_render.py` paints the five windows offscreen from sample
-bus data, the MFD through every page and radar picture and the EICAS with its
-alert list (skipped without PyQt6).
+and `test_display_render.py` paints the six windows offscreen from sample
+bus data, the MFD through every page and radar picture, the EICAS with its
+alert list and the SMS with its master arm following the FMS status (skipped
+without PyQt6).
 
 ## Building on Windows
 

@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="13" status="DRAFT" date="2026-11-01">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="14" status="DRAFT" date="2026-11-02">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -297,7 +297,7 @@
     <terminal rt="14" id="eicas" name="Engine indicating and crew alerting display" status="new" source="Interfaces/userInterface/displays/eicas.py" note="On the bus from v1.9 (fmofp_display eicas): it hears the engine computer's engine and fuel status (31/18-19), the flight computer's GCAS alerts and exceedances (31/5, 31/10), the FMS's flight data and status (31/25-26) and the weather radar's scan summary (31/2) by broadcast, and commands nothing. Its hydraulic, electrical and environmental rows read unknown until those terminals exist"/>
     <terminal rt="15" id="radar_display" name="Radar display - the radars' pictures and their control panel" status="new" source="Interfaces/userInterface/displays/radar" note="On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24); from v1.11 it hears the targeting radar's status too (31/24) and commands that radar"/>
     <terminal rt="16" id="tsd" name="Tactical situation display" status="new" source="Interfaces/userInterface/displays/tsd.py" note="On the bus from v1.11 (fmofp_display tsd): it hears the fused air tracks (31/22-23) and the FMS's flight data, status, attitude status and energy maneuverability (31/25-28) by broadcast, and commands nothing. Its waypoints, order of battle and radar warning contacts wait for the mission and defensive terminals"/>
-    <terminal rt="17" id="sms" name="Stores management display" status="new" source="Interfaces/userInterface/displays"/>
+    <terminal rt="17" id="sms" name="Stores management display" status="new" source="Interfaces/userInterface/displays/sms.py" note="On the bus from v1.14 (fmofp_display sms): it hears the FMS status by broadcast (31/26) for the flight mode and the tactical systems its master arm, ECM cell and signature strip follow, and commands nothing. Its weapon stations are the display's own table, as in the Python, which modelled no armament system (README section 2); a stores management computer is backlog (section 12)"/>
     <terminal rt="18" id="hud" name="Head-up display" status="new" source="Interfaces/userInterface (HUDContainer)"/>
     <terminal rt="19" id="hydraulics" name="Hydraulics" status="new" source="Systems/hydraulics"/>
     <terminal rt="20" id="airframe" name="Airframe systems" status="new" source="Systems/airframeSystemManagement"/>
@@ -870,7 +870,9 @@
     <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast" layout_of="FMS_FLIGHT_DATA" listeners="3 9 11 13 14 16">
       <doc>What the PFD draws and the MFD's mission page reads; the HUD will listen too. From v1.8 the engine computer (RT 3) listens as well: its autothrottle holds the airspeed in it. From v1.13 the radar computer (RT 9) listens: the synthetic aperture radar places its pictures by the position and heading in it.</doc>
     </message>
-    <message id="BCAST_FMS_STATUS" rt="31" sa="26" dir="R" words="3" rate="5" title="FMS status, broadcast to the displays" layout_of="FMS_STATUS" listeners="11 14 16"/>
+    <message id="BCAST_FMS_STATUS" rt="31" sa="26" dir="R" words="3" rate="5" title="FMS status, broadcast to the displays" layout_of="FMS_STATUS" listeners="11 14 16 17">
+      <doc>The PFD's and the TSD's tactical strips, the EICAS's profile power and, from v1.14, the SMS's master arm (the weapons state), ECM cell (the countermeasures state) and signature (the stealth bit).</doc>
+    </message>
     <message id="BCAST_FMS_ATTITUDE_STATUS" rt="31" sa="27" dir="R" words="8" rate="10" title="Attitude command status, broadcast to the displays" layout_of="FMS_ATTITUDE_STATUS" listeners="11 16"/>
     <message id="BCAST_ENG_ENGINE_STATUS" rt="31" sa="18" dir="R" words="20" rate="5" title="Engine status, broadcast" layout_of="ENG_ENGINE_STATUS" listeners="5 13 14">
       <doc>The engine band of the broadcast map, 18-19 (v1.8). The MFD's systems and engine pages draw it; the flight control computer takes the total fuel flow for FCS_PERF_STATUS's fuel efficiency; the EICAS's engine panel draws it too (v1.9).</doc>

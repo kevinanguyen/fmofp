@@ -1,8 +1,9 @@
 """The displays on the bus, end to end, headless.
 
 The plant, the real fmofp_fcs, fmofp_nav, fmofp_fms, fmofp_radar and
-fmofp_engine, and five DisplayTerminals in this process (the radar display,
-RT 15, the PFD, RT 11, the MFD, RT 13, the EICAS, RT 14, and the TSD, RT 16) under the real fmofp_bc. The radar
+fmofp_engine, and six DisplayTerminals in this process (the radar display,
+RT 15, the PFD, RT 11, the MFD, RT 13, the EICAS, RT 14, the TSD, RT 16, and the SMS, RT 17) under the real
+fmofp_bc. The radar
 display commands the weather, terrain-following and targeting radars from its own
 transmit subaddresses, exactly as the window's buttons do; the bus controller
 broadcasts the radars' status, scan summary, guidance and product blocks, the
@@ -32,8 +33,7 @@ from fmofp_bus.status import Status
 from fmofp_bus.tests._support import binary_env, needs
 from fmofp_bus.tests.test_display_feeds import FakeCoordinator
 from fmofp_display.app import (aewc_command, eicas_terminal, mfd_terminal, pfd_terminal, radar_terminal, sar_command,
-                               targeting_command,
-                               tfr_command, tsd_terminal, weather_command)
+                               sms_terminal, targeting_command, tfr_command, tsd_terminal, weather_command)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
@@ -67,6 +67,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
     mfd = None
     eicas = None
     tsd = None
+    sms = None
 
     @classmethod
     def setUpClass(cls):
@@ -89,6 +90,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
             assert cls.eicas.start() == Status.OK, "EICAS port in use?"
             cls.tsd = tsd_terminal(PORT_BASE)
             assert cls.tsd.start() == Status.OK, "TSD port in use?"
+            cls.sms = sms_terminal(PORT_BASE)
+            assert cls.sms.start() == Status.OK, "SMS port in use?"
             for binary in BINARIES:
                 cls.processes.append(subprocess.Popen(
                     [os.environ[binary], "--port-base", str(PORT_BASE), "--quiet"], stdout=subprocess.PIPE,
@@ -105,7 +108,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
             p.wait(timeout=10)
             p.stdout.close()
         cls.processes = []
-        for terminal in (cls.radar_display, cls.pfd, cls.mfd, cls.eicas, cls.tsd):
+        for terminal in (cls.radar_display, cls.pfd, cls.mfd, cls.eicas, cls.tsd, cls.sms):
             if terminal is not None:
                 terminal.stop()
         if cls.plant_thread is not None:
@@ -119,7 +122,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
     def run_bus(self):
         terminals = ["27", str(m.FcsStatus.RT), str(m.NavSolution.RT), str(m.FmsStatus.RT), str(m.RdrWxStatus.RT),
                      str(m.EngStatus.RT), str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT),
-                     str(m.DspEicasStatus.RT), str(m.DspTsdStatus.RT)]
+                     str(m.DspEicasStatus.RT), str(m.DspTsdStatus.RT), str(m.DspSmsStatus.RT)]
         args = [os.environ["FMOFP_BC"]]
         for rt in terminals:
             args += ["--rt", rt]
@@ -236,7 +239,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
         self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28}, broadcast)
-        for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT, m.DspTsdStatus.RT):
+        for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT, m.DspTsdStatus.RT,
+                   m.DspSmsStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}
             self.assertEqual(set(), unicast, f"RT {rt}")
@@ -358,6 +362,18 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.assertEqual(({"route": []}, []), (tsd.mission.get_nav_data(), tsd.defensive.get_rwr_contacts()))
         tsd_status = self.transmitted(framed, m.DspTsdStatus, 100, FRAMES)
         self.assertEqual(TerminalState.NORMAL, tsd_status[-1][1].state)
+        # The SMS: the FMS status by broadcast and nothing else; its master arm is the weapons state the FMS reports.
+        self.assertIsNotNone(self.sms.fresh(m.BcastFmsStatus, stale_after_s=60.0), "BCAST_FMS_STATUS reached the SMS")
+        self.assertIsNone(self.sms.fresh(m.BcastFmsFlightData, stale_after_s=60.0), "not among its receives: ignored")
+        self.assertEqual(0, self.sms.blocks_completed)
+        sms = SystemsFeed(self.sms, stale_after_s=60.0)
+        tactical = sms.fms_control.get_tactical_status()
+        self.assertEqual(("NORMAL", "SAFE", "STANDBY", "OFF"),
+                         (tactical["mode"], tactical["tactical_systems"]["weapons"],
+                          tactical["tactical_systems"]["countermeasures"], tactical["tactical_systems"]["stealth_mode"]))
+        self.assertEqual("FMS NORMAL: weapons SAFE, countermeasures STANDBY, stealth OFF", sms.flight.tactical_text())
+        sms_status = self.transmitted(framed, m.DspSmsStatus, 100, FRAMES)
+        self.assertEqual(TerminalState.NORMAL, sms_status[-1][1].state)
         self.assertIn("overruns=0", output)
         self.assertGreaterEqual(self.radar_display.syncs, FRAMES - 2)
 

@@ -1,4 +1,4 @@
-"""The display windows and the entry point: py -m fmofp_display radar|pfd|mfd|eicas|tsd [--port-base N].
+"""The display windows and the entry point: py -m fmofp_display radar|pfd|mfd|eicas|tsd|sms [--port-base N].
 
 The windows own a DisplayTerminal (the bus, in a thread) and a feed, and paint
 with the Python display classes from FMOFP/Interfaces/userInterface/displays,
@@ -37,6 +37,7 @@ PFD_RT = m.DspPfdStatus.RT
 MFD_RT = m.DspMfdStatus.RT
 EICAS_RT = m.DspEicasStatus.RT
 TSD_RT = m.DspTsdStatus.RT
+SMS_RT = m.DspSmsStatus.RT
 TICK_MS = 50
 DEFAULT_RANGE_KM = 200.0
 
@@ -691,23 +692,77 @@ class TsdWindow(QWidget):
         super().closeEvent(event)
 
 
+# ---- the SMS, RT 17 --------------------------------------------------------------------
+
+def sms_terminal(port_base):
+    return TerminalProcess(SMS_RT, port_base, m.DspSmsStatus, m.DspSmsModeCmd, receives=(m.BcastFmsStatus,))
+
+
+def make_sms(systems_feed):
+    """A StoresManagementDisplay whose sources are the bus feeds: the FMS and the FMS control it polls five times a
+    second for the flight mode and the tactical systems (its master arm is the weapons state, its ECM cell the
+    countermeasures state, its signature the stealth bit). Its weapon stations are its own table, as in the Python:
+    no stores management computer exists to report them."""
+    bootstrap()
+    install_system_sources(systems_feed)
+    import FMOFP.Interfaces.userInterface.displays.sms as sms_module
+    sms = sms_module.StoresManagementDisplay()
+    sms.start()
+    return sms
+
+
+class SmsWindow(QWidget):
+    """The stores management display, RT 17: the unchanged SMS over the bus feeds."""
+
+    def __init__(self, terminal, systems_feed=None):
+        super().__init__()
+        bootstrap()
+        self.terminal = terminal
+        self.systems = systems_feed if systems_feed is not None else SystemsFeed(terminal)
+        self.setWindowTitle(f"FMOFP stores management display - RT {terminal.rt}")
+        self.status = QLabel("waiting for the bus")
+        self.sms = make_sms(self.systems)
+        from FMOFP.Interfaces.userInterface.displays.base_display import DisplayMode
+        self._display_modes = DisplayMode
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.status)
+        layout.addWidget(self.sms, 1)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(250)
+
+    def tick(self):
+        requested = self.terminal.take_mode_request()
+        if requested is not None and requested.name in self._display_modes.__members__:
+            self.sms.set_mode(self._display_modes[requested.name])
+        sms = self.sms
+        self.status.setText(f"RT {self.terminal.rt} {self.terminal.state.name}  frames {self.terminal.syncs}  |  "
+                            f"{self.systems.flight.tactical_text()}  |  MASTER ARM {sms._master_arm}, "
+                            f"{sms._armed_count()} stations armed, {sms._total_weight_kg():.0f} kg")
+
+    def closeEvent(self, event):
+        self.sms.stop()
+        super().closeEvent(event)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("display", choices=["radar", "pfd", "mfd", "eicas", "tsd"])
+    parser.add_argument("display", choices=["radar", "pfd", "mfd", "eicas", "tsd", "sms"])
     parser.add_argument("--port-base", type=int, default=51000)
     parser.add_argument("--seconds", type=float, default=0.0, help="close after this long (0 = until the window is closed)")
     args = parser.parse_args(argv)
     bootstrap()
     app = QApplication(sys.argv[:1])
     terminals = {"radar": radar_terminal, "pfd": pfd_terminal, "mfd": mfd_terminal, "eicas": eicas_terminal,
-                 "tsd": tsd_terminal}
+                 "tsd": tsd_terminal, "sms": sms_terminal}
     terminal = terminals[args.display](args.port_base)
     status = terminal.start()
     if status != Status.OK:
         print(f"display: terminal init failed: {status.name} (port {args.port_base + terminal.rt} in use?)",
               file=sys.stderr)
         return 1
-    windows = {"radar": RadarWindow, "pfd": PfdWindow, "mfd": MfdWindow, "eicas": EicasWindow, "tsd": TsdWindow}
+    windows = {"radar": RadarWindow, "pfd": PfdWindow, "mfd": MfdWindow, "eicas": EicasWindow, "tsd": TsdWindow,
+               "sms": SmsWindow}
     window = windows[args.display](terminal)
     window.show()
     if args.seconds > 0.0:
