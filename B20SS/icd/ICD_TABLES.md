@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.14 (DRAFT, 2026-11-02). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.15 (DRAFT, 2026-11-02). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -19,10 +19,10 @@
 | 10 | `sensormanagement` | Sensor management | existing | Systems/sensorManagement |  |
 | 11 | `pfd` | Primary flight display | changed | Interfaces/userInterface/displays/pfd.py | Was the single 'Display System' terminal; one process per display means each display needs its own address. On the bus from v1.5 (fmofp_display pfd): it hears the FMS's flight data, status and attitude status by broadcast (RT 31 SA 25-27, v1.7; copies of its own on SA 1-3 until then) |
 | 12 | `flightmanagementsystem` | Flight management system | existing | Systems/flightManagementSys: flightManagementSystem.py and fmsControl.py | Ported in v1.2. Its attitude comes from the FCS over the bus, as the Python copied it from its own flight control object |
-| 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py | On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10), its mission page the FMS flight data (31/25) and, from v1.8, its systems and engine pages the engine computer's engine and fuel status (31/18, 31/19); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing. From v1.11 its targeting page draws the targeting radar's tracks (31/24, 31/20-21) |
+| 13 | `mfd` | Multi-function display | new | Interfaces/userInterface/displays/mfd.py | On the bus from v1.6 (fmofp_display mfd): its radar page mirrors the radars' pictures from the broadcasts the radar display hears too (RT 31 SA 1-4, 6-9), its systems page reads the FCS's GCAS alerts and exceedances (31/5, 31/10), its mission page the FMS flight data (31/25) and, from v1.8, its systems and engine pages the engine computer's engine and fuel status (31/18, 31/19); v1.6 gave it copies of its own on SA 1-11, v1.7 the broadcasts. Its radar commands moved to the radar display terminal in v1.5; it commands nothing. From v1.11 its targeting page draws the targeting radar's tracks (31/24, 31/20-21). From v1.15 the targeting, AEWC and SAR pictures, which only it draws, come by relay into its own receive subaddresses 20-21, 22-23 and 26-27 instead of broadcasts (one consumer, one transfer either way; README section 8) |
 | 14 | `eicas` | Engine indicating and crew alerting display | new | Interfaces/userInterface/displays/eicas.py | On the bus from v1.9 (fmofp_display eicas): it hears the engine computer's engine and fuel status (31/18-19), the flight computer's GCAS alerts and exceedances (31/5, 31/10), the FMS's flight data and status (31/25-26) and the weather radar's scan summary (31/2) by broadcast, and commands nothing. Its hydraulic, electrical and environmental rows read unknown until those terminals exist |
 | 15 | `radar_display` | Radar display - the radars' pictures and their control panel | new | Interfaces/userInterface/displays/radar | On the bus from v1.5 (fmofp_display radar): it hears the weather and terrain-following radars' status, scan summary and guidance by broadcast (RT 31 SA 1-4) and their products as broadcast blocks (31 SA 6-9; copies of its own on the same numbers until v1.7), and commands the radars (SA 20-24); from v1.11 it hears the targeting radar's status too (31/24) and commands that radar |
-| 16 | `tsd` | Tactical situation display | new | Interfaces/userInterface/displays/tsd.py | On the bus from v1.11 (fmofp_display tsd): it hears the fused air tracks (31/22-23) and the FMS's flight data, status, attitude status and energy maneuverability (31/25-28) by broadcast, and commands nothing. Its waypoints, order of battle and radar warning contacts wait for the mission and defensive terminals |
+| 16 | `tsd` | Tactical situation display | new | Interfaces/userInterface/displays/tsd.py | On the bus from v1.11 (fmofp_display tsd): it hears the fused air tracks (31/22-23) and the FMS's flight data, status and attitude status (31/25-27) by broadcast, the energy maneuverability by relay into its own SA 1 (TSD_FMS_ENERGY; broadcast at 31/28 until v1.15), and commands nothing. Its waypoints, order of battle and radar warning contacts wait for the mission and defensive terminals |
 | 17 | `sms` | Stores management display | new | Interfaces/userInterface/displays/sms.py | On the bus from v1.14 (fmofp_display sms): it hears the FMS status by broadcast (31/26) for the flight mode and the tactical systems its master arm, ECM cell and signature strip follow, and commands nothing. Its weapon stations are the display's own table, as in the Python, which modelled no armament system (README section 2); a stores management computer is backlog (section 12) |
 | 18 | `hud` | Head-up display | new | Interfaces/userInterface (HUDContainer) |  |
 | 19 | `hydraulics` | Hydraulics | new | Systems/hydraulics |  |
@@ -102,6 +102,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`DSP_RDR_SAR_CMD`](#dsp_rdr_sar_cmd) | 15 | 22 | T | 2 | 10 | Radar display command to the synthetic aperture radar | DRAFT |
 | [`DSP_RDR_TGT_CMD`](#dsp_rdr_tgt_cmd) | 15 | 23 | T | 3 | 10 | Radar display command to the targeting radar | DRAFT |
 | [`DSP_RDR_AEWC_CMD`](#dsp_rdr_aewc_cmd) | 15 | 24 | T | 4 | 10 | Radar display command to the AEWC radar | DRAFT |
+| [`TSD_FMS_ENERGY`](#tsd_fms_energy) | 16 | 1 | R | 6 | 1 | Energy maneuverability, for the TSD | DRAFT |
 | [`DSP_TSD_MODE_CMD`](#dsp_tsd_mode_cmd) | 16 | 15 | R | 1 | aperiodic | Tactical situation display mode command | DRAFT |
 | [`DSP_TSD_STATUS`](#dsp_tsd_status) | 16 | 15 | T | 2 | 1 | Tactical situation display status | DRAFT |
 | [`DSP_SMS_MODE_CMD`](#dsp_sms_mode_cmd) | 17 | 16 | R | 1 | aperiodic | Stores management display mode command | DRAFT |
@@ -127,7 +128,6 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) | 31 | 25 | R | 21 | 10 | FMS flight data, broadcast | DRAFT |
 | [`BCAST_FMS_STATUS`](#bcast_fms_status) | 31 | 26 | R | 3 | 5 | FMS status, broadcast to the displays | DRAFT |
 | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) | 31 | 27 | R | 8 | 10 | Attitude command status, broadcast to the displays | DRAFT |
-| [`BCAST_FMS_ENERGY`](#bcast_fms_energy) | 31 | 28 | R | 6 | 1 | Energy maneuverability, broadcast to the displays | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
 | [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
 
@@ -151,9 +151,9 @@ The descriptor and segment framing is in README.md section 8. A block's payload 
 | `RDR_SAR_SCENE` | 9 | R | 26 | 27 | 10 | Ground scene as received by the radar computer | as [`PLANT_GROUND`](#plant_ground) (relayed copy) |
 | `BCAST_RDR_WX_PRODUCTS` | 31 | R | 6 | 7 | 25 | Weather radar products, broadcast to the displays | as [`RDR_WX_PRODUCTS`](#rdr_wx_products) (relayed copy) |
 | `BCAST_RDR_TFR_ELEVATION` | 31 | R | 8 | 9 | 25 | TFR elevation profile, broadcast to the displays | as [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) (relayed copy) |
-| `BCAST_RDR_TGT_TRACKS` | 31 | R | 20 | 21 | 25 | Targeting radar tracks, broadcast to the displays | as [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) (relayed copy) |
-| `BCAST_RDR_AEWC_TRACKS` | 31 | R | 16 | 17 | 10 | AEWC tracks and sectors, broadcast to the displays | as [`RDR_AEWC_TRACKS`](#rdr_aewc_tracks) (relayed copy) |
-| `BCAST_RDR_SAR_IMAGE` | 31 | R | 13 | 14 | 25 | SAR image, broadcast to the displays | as [`RDR_SAR_IMAGE`](#rdr_sar_image) (relayed copy) |
+| `MFD_RDR_TGT_TRACKS` | 13 | R | 20 | 21 | 25 | Targeting radar tracks, for the MFD | as [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) (relayed copy) |
+| `MFD_RDR_AEWC_TRACKS` | 13 | R | 22 | 23 | 10 | AEWC tracks and sectors, for the MFD | as [`RDR_AEWC_TRACKS`](#rdr_aewc_tracks) (relayed copy) |
+| `MFD_RDR_SAR_IMAGE` | 13 | R | 26 | 27 | 25 | SAR image, for the MFD | as [`RDR_SAR_IMAGE`](#rdr_sar_image) (relayed copy) |
 | `BCAST_RDR_FUSED_TRACKS` | 31 | R | 22 | 23 | 25 | Fused air tracks, broadcast to the displays | as [`RDR_FUSED_TRACKS`](#rdr_fused_tracks) (relayed copy) |
 
 ## Relays (RT-to-RT transfers)
@@ -197,14 +197,14 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`ENG_FUEL_STATUS`](#eng_fuel_status) | [`BCAST_ENG_FUEL_STATUS`](#bcast_eng_fuel_status) (broadcast, heard by RT 13, 14) | 7 | 1 |
 | [`PLANT_TRAFFIC`](#plant_traffic) | `RDR_TRAFFIC` | block: 4 + 32 per frame | 25 |
 | [`RDR_TGT_STATUS`](#rdr_tgt_status) | [`BCAST_RDR_TGT_STATUS`](#bcast_rdr_tgt_status) (broadcast, heard by RT 13, 15) | 4 | 5 |
-| [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) | `BCAST_RDR_TGT_TRACKS` (broadcast, heard by RT 13) | block: 4 + 32 per frame | 25 |
+| [`RDR_TGT_TRACKS`](#rdr_tgt_tracks) | `MFD_RDR_TGT_TRACKS` | block: 4 + 32 per frame | 25 |
 | [`RDR_FUSED_TRACKS`](#rdr_fused_tracks) | `BCAST_RDR_FUSED_TRACKS` (broadcast, heard by RT 14, 16) | block: 4 + 32 per frame | 25 |
-| [`FMS_ENERGY`](#fms_energy) | [`BCAST_FMS_ENERGY`](#bcast_fms_energy) (broadcast, heard by RT 16) | 6 | 1 |
+| [`FMS_ENERGY`](#fms_energy) | [`TSD_FMS_ENERGY`](#tsd_fms_energy) | 6 | 1 |
 | [`RDR_AEWC_STATUS`](#rdr_aewc_status) | [`BCAST_RDR_AEWC_STATUS`](#bcast_rdr_aewc_status) (broadcast, heard by RT 13, 15) | 3 | 5 |
-| [`RDR_AEWC_TRACKS`](#rdr_aewc_tracks) | `BCAST_RDR_AEWC_TRACKS` (broadcast, heard by RT 13) | block: 4 + 32 per frame | 10 |
+| [`RDR_AEWC_TRACKS`](#rdr_aewc_tracks) | `MFD_RDR_AEWC_TRACKS` | block: 4 + 32 per frame | 10 |
 | [`PLANT_GROUND`](#plant_ground) | `RDR_SAR_SCENE` | block: 4 + 32 per frame | 10 |
 | [`RDR_SAR_STATUS`](#rdr_sar_status) | [`BCAST_RDR_SAR_STATUS`](#bcast_rdr_sar_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
-| [`RDR_SAR_IMAGE`](#rdr_sar_image) | `BCAST_RDR_SAR_IMAGE` (broadcast, heard by RT 13) | block: 4 + 32 per frame | 25 |
+| [`RDR_SAR_IMAGE`](#rdr_sar_image) | `MFD_RDR_SAR_IMAGE` | block: 4 + 32 per frame | 25 |
 
 ## Mode codes
 
@@ -1678,11 +1678,11 @@ The MFD's SAR page and the radar display's status line (v1.13). Subaddress 15 is
 
 Same layout as [`RDR_SAR_STATUS`](#rdr_sar_status).
 
-### BCAST_FMS_ENERGY
+### TSD_FMS_ENERGY
 
-**Energy maneuverability, broadcast to the displays** — RT 31 · SA 28 · receive (bus to terminal) · 6 words · 1 Hz
+**Energy maneuverability, for the TSD** — RT 16 · SA 1 · receive (bus to terminal) · 6 words · 1 Hz
 
-The TSD's energy metrics (tsd._poll_data reads get_tactical_status()['energy_metrics']), v1.10.
+The TSD's energy metrics (tsd._poll_data reads get_tactical_status()['energy_metrics']), v1.10. Broadcast as BCAST_FMS_ENERGY at 31/28 until v1.15, when a stream with one consumer became that consumer's own relay (README section 8); SA 1 is a number the TSD never hears a broadcast on.
 
 Same layout as [`FMS_ENERGY`](#fms_energy).
 

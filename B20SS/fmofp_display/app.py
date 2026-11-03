@@ -345,8 +345,8 @@ def mfd_terminal(port_base):
                                      m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus, m.BcastFmsFlightData,
                                      m.BcastEngEngineStatus, m.BcastEngFuelStatus, m.BcastRdrTgtStatus,
                                      m.BcastRdrAewcStatus, m.BcastRdrSarStatus),
-                           blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation, b.BcastRdrTgtTracks,
-                                   b.BcastRdrAewcTracks, b.BcastRdrSarImage))
+                           blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation, b.MfdRdrTgtTracks,
+                                   b.MfdRdrAewcTracks, b.MfdRdrSarImage))
 
 
 # The getters mfd.py imports inside its page functions and eicas.py inside its poll, and the feed attribute each
@@ -641,7 +641,7 @@ class EicasWindow(QWidget):
 
 def tsd_terminal(port_base):
     return TerminalProcess(TSD_RT, port_base, m.DspTsdStatus, m.DspTsdModeCmd,
-                           receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFmsAttitudeStatus, m.BcastFmsEnergy),
+                           receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFmsAttitudeStatus, m.TsdFmsEnergy),
                            blocks=(b.BcastRdrFusedTracks,))
 
 

@@ -264,7 +264,7 @@ class DisplayWindowsTest(unittest.TestCase):
             standby_targets = lit_pixels(mfd.grab().toImage())
             terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(state=TerminalState.NORMAL,
                                                                   mode=TargetingMode.TARGET_SEARCH, track_count=2)))
-            terminal.put_block(b.BcastRdrTgtTracks, sample_tracks(), 1)
+            terminal.put_block(b.MfdRdrTgtTracks, sample_tracks(), 1)
             window.tick()
             mfd.update()
             self.app.processEvents()
@@ -287,7 +287,7 @@ class DisplayWindowsTest(unittest.TestCase):
             terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(state=TerminalState.NORMAL,
                                                                     mode=AewcMode.AEWC_SEARCH, track_count=2,
                                                                     stealth_tracks=1)))
-            terminal.put_block(b.BcastRdrAewcTracks, sample_aewc(), 1)
+            terminal.put_block(b.MfdRdrAewcTracks, sample_aewc(), 1)
             window.tick()
             mfd.update()
             self.app.processEvents()
@@ -309,7 +309,7 @@ class DisplayWindowsTest(unittest.TestCase):
             standby_sar = lit_pixels(mfd.grab().toImage())
             terminal.put(m.BcastRdrSarStatus(payload=m.RdrSarStatus(state=TerminalState.NORMAL, mode=SarMode.STRIPMAP,
                                                                   scene_valid=True, nav_valid=True, image_seq=4)))
-            terminal.put_block(b.BcastRdrSarImage, sample_sar_image(), 1)
+            terminal.put_block(b.MfdRdrSarImage, sample_sar_image(), 1)
             window.tick()
             mfd.update()
             self.app.processEvents()
@@ -420,7 +420,7 @@ class DisplayWindowsTest(unittest.TestCase):
                 state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT, countermeasures=CountermeasuresState.ACTIVE,
                 targeting=TargetingState.ACTIVE, weapons=WeaponsState.ARMED)))
             terminal.put(m.BcastFmsAttitudeStatus(payload=m.FmsAttitudeStatus(bank_limited=True)))
-            terminal.put(m.BcastFmsEnergy(payload=m.FmsEnergy(
+            terminal.put(m.TsdFmsEnergy(payload=m.FmsEnergy(
                 ssm=Ssm.NORMAL, specific_excess_power=42.5, max_sustained_turn_rate=12.3, max_instantaneous_turn_rate=20.1,
                 max_climb_rate=6000.0, energy_advantage=425.0)))
             terminal.put_block(b.BcastRdrFusedTracks, sample_fused(), 5)

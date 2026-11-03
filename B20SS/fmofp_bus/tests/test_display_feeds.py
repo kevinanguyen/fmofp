@@ -522,7 +522,7 @@ class TargetingFeedTest(unittest.TestCase):
         self.terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(
             state=TerminalState.NORMAL, mode=TargetingMode.TARGET_TRACK, track_count=2, lock_status=LockStatus.LOCKED,
             locked_track_id=2, lock_quality=0.8)))
-        self.terminal.put_block(b.BcastRdrTgtTracks, sample_tracks(TargetingMode.TARGET_TRACK), 3)
+        self.terminal.put_block(b.MfdRdrTgtTracks, sample_tracks(TargetingMode.TARGET_TRACK), 3)
         data = self.feed.targeting_data()
         self.assertEqual(("TARGET_TRACK", 2, "LOCKED", 2),
                          (data["mode_name"], data["track_count"], data["lock_status"], data["locked_track_id"]))
@@ -541,7 +541,7 @@ class TargetingFeedTest(unittest.TestCase):
         self.terminal.put(m.BcastRdrTgtStatus(payload=m.RdrTgtStatus(state=TerminalState.STANDBY, mode=TargetingMode.NONE)))
         self.assertEqual("STANDBY", self.feed.targeting_data()["mode_name"])
         self.assertEqual(2, len(self.feed.targeting_data()["targets"]))
-        self.terminal.put_block(b.BcastRdrTgtTracks, sample_tracks(), 4, age=3.0)
+        self.terminal.put_block(b.MfdRdrTgtTracks, sample_tracks(), 4, age=3.0)
         self.assertEqual([], self.feed.targeting_data()["targets"], "stale data is no data")
 
     def test_the_symbol_vocabulary(self):
@@ -575,7 +575,7 @@ class AewcFeedTest(unittest.TestCase):
         self.terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(
             state=TerminalState.NORMAL, mode=AewcMode.AEWC_SEARCH, track_count=2, stealth_tracks=1, jammed_sectors=0x08,
             priority_sector=1)))
-        self.terminal.put_block(b.BcastRdrAewcTracks, sample_aewc(), 2)
+        self.terminal.put_block(b.MfdRdrAewcTracks, sample_aewc(), 2)
         data = self.feed.aewc_data()
         self.assertEqual(("SEARCH", 2, 1, [4], 1), (data["mode_name"], data["track_count"], data["stealth_tracks"],
                                                    data["jammed_sectors"], data["priority_sector"]))
@@ -599,7 +599,7 @@ class AewcFeedTest(unittest.TestCase):
                            (AewcMode.GROUND_MAPPING, "SEARCH"), (AewcMode.NONE, "STANDBY")):
             self.terminal.put(m.BcastRdrAewcStatus(payload=m.RdrAewcStatus(state=TerminalState.NORMAL, mode=mode)))
             self.assertEqual(name, self.feed.aewc_data()["mode_name"], mode.name)
-        self.terminal.put_block(b.BcastRdrAewcTracks, sample_aewc(), 3, age=3.0)
+        self.terminal.put_block(b.MfdRdrAewcTracks, sample_aewc(), 3, age=3.0)
         self.assertEqual(([], []), (self.feed.aewc_data()["targets"], self.feed.aewc_data()["sectors"]),
                          "stale data is no data")
         item = aewc_item(b.RdrAewcTracksTrack(track_id=7, x=-1852.0, y=1852.0, z=0.0, classification=TargetClass.UNKNOWN,
@@ -623,7 +623,7 @@ class TsdFeedTest(unittest.TestCase):
         self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(
             state=TerminalState.NORMAL, flight_mode=FmsFlightMode.COMBAT, countermeasures=CountermeasuresState.ACTIVE,
             targeting=TargetingState.ACTIVE, weapons=WeaponsState.ARMED, stealth_mode=False)))
-        self.terminal.put(m.BcastFmsEnergy(payload=m.FmsEnergy(
+        self.terminal.put(m.TsdFmsEnergy(payload=m.FmsEnergy(
             ssm=Ssm.NORMAL, specific_excess_power=42.5, max_sustained_turn_rate=12.3, max_instantaneous_turn_rate=20.1,
             max_climb_rate=6000.0, energy_advantage=425.0)))
         tactical = self.feed.fms_control.get_tactical_status()
@@ -632,7 +632,7 @@ class TsdFeedTest(unittest.TestCase):
         self.assertEqual({"specific_excess_power": 42.5, "max_sustained_turn_rate": 12.3,
                           "max_instantaneous_turn_rate": 20.1, "max_climb_rate_fpm": 6000.0, "energy_advantage": 425.0},
                          tactical["energy_metrics"])
-        self.terminal.put(m.BcastFmsEnergy(payload=m.FmsEnergy(ssm=Ssm.NO_COMPUTED_DATA)))
+        self.terminal.put(m.TsdFmsEnergy(payload=m.FmsEnergy(ssm=Ssm.NO_COMPUTED_DATA)))
         self.assertNotIn("energy_metrics", self.feed.fms_control.get_tactical_status())
 
     def test_the_position_reaches_the_navigation_group(self):
@@ -686,7 +686,7 @@ class SarFeedTest(unittest.TestCase):
 
     def test_the_image_becomes_the_pgm_the_display_decodes(self):
         self.terminal.put(self.status())
-        self.terminal.put_block(b.BcastRdrSarImage, sample_sar_image(), 3, age=1.5)
+        self.terminal.put_block(b.MfdRdrSarImage, sample_sar_image(), 3, age=1.5)
         data = self.feed.sar_data()
         self.assertEqual("STRIPMAP", data["mode_name"])
         pgm = data["image_data"]
@@ -720,14 +720,14 @@ class SarFeedTest(unittest.TestCase):
         wide.pixel_size = 640.0
         wide.centre_cross = 2000.0 + 32.0 * 640.0
         self.terminal.put(self.status(mode=SarMode.SCANSAR))
-        self.terminal.put_block(b.BcastRdrSarImage, wide, 1)
+        self.terminal.put_block(b.MfdRdrSarImage, wide, 1)
         data = self.feed.sar_data()
         self.assertEqual("SCANSAR", data["mode_name"])
         self.assertGreater(data["range_nm"], 25.0, "the range scale shows the 43 km far edge")
 
     def test_an_empty_block_and_a_waiting_radar(self):
         self.terminal.put(self.status(scene_valid=False, nav_valid=False, image_seq=0))
-        self.terminal.put_block(b.BcastRdrSarImage, b.RdrSarImage(), 2)
+        self.terminal.put_block(b.MfdRdrSarImage, b.RdrSarImage(), 2)
         data = self.feed.sar_data()
         self.assertEqual(("STRIPMAP", b"", False, False), (data["mode_name"], data["image_data"], data["scene_valid"],
                                                           data["nav_valid"]))

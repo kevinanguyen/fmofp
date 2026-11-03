@@ -98,7 +98,7 @@ class FlightDataFeed:
         without them."""
         status = self.terminal.fresh(m.BcastFmsStatus, self.stale_after_s)
         attitude = self.terminal.fresh(m.BcastFmsAttitudeStatus, self.stale_after_s)
-        energy = self.terminal.fresh(m.BcastFmsEnergy, self.stale_after_s)
+        energy = self.terminal.fresh(m.TsdFmsEnergy, self.stale_after_s)
         mode = status.payload.flight_mode if status is not None else None
         max_g, max_aoa, engine_power = PROFILE_LIMITS.get(mode, DEFAULT_LIMITS)
         warnings = []

@@ -238,12 +238,15 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # copy written into any display.
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
-        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28}, broadcast)
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 18, 19, 22, 23, 24, 25, 26, 27}, broadcast)
+        # A stream with one consumer is that consumer's own relay (v1.15): the MFD's targeting, AEWC and SAR
+        # pictures and the TSD's energy metrics arrive unicast; nothing else is written into a display.
+        own = {m.DspMfdStatus.RT: {20, 21, 22, 23, 26, 27}, m.DspTsdStatus.RT: {1}}
         for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT, m.DspTsdStatus.RT,
                    m.DspSmsStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
                        if not r.command.transmit and not r.command.is_mode_code and r.command.rt == rt}
-            self.assertEqual(set(), unicast, f"RT {rt}")
+            self.assertEqual(own.get(rt, set()), unicast, f"RT {rt}")
         # A terminal that did not accept a subaddress ignored the broadcasts on it: the PFD heard none of the radar's.
         self.assertIsNone(self.pfd.fresh(m.BcastRdrWxStatus, stale_after_s=60.0))
         self.assertEqual(0, self.pfd.blocks_completed)
@@ -355,7 +358,7 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.assertTrue(any(t["sources"] == ["aewc_radar"] for t in threats), "far aircraft, seen by the AEWC alone")
         self.assertEqual(tsd.fused_summary()[1], len([t for t in threats if t["hostile"]]))
         tactical = tsd.fms_control.get_tactical_status()
-        self.assertIn("energy_metrics", tactical, "BCAST_FMS_ENERGY reached the TSD")
+        self.assertIn("energy_metrics", tactical, "TSD_FMS_ENERGY reached the TSD by relay")
         self.assertEqual({"countermeasures", "targeting", "weapons", "stealth_mode"}, set(tactical["tactical_systems"]))
         self.assertIn("latitude", tsd.fms.get_flight_data()["navigation"])
         self.assertIsNone(self.tsd.fresh(m.BcastRdrWxScan, stale_after_s=60.0), "not among its receives: ignored")

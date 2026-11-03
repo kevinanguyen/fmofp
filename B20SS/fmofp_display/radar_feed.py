@@ -107,8 +107,8 @@ RadarSources = namedtuple("RadarSources", "wx_status wx_scan wx_products tfr_sta
                                            "tgt_status tgt_tracks aewc_status aewc_tracks sar_status sar_image")
 BROADCAST_SOURCES = RadarSources(m.BcastRdrWxStatus, m.BcastRdrWxScan, b.BcastRdrWxProducts, m.BcastRdrTfrStatus,
                                  m.BcastRdrTfrGuidance, b.BcastRdrTfrElevation, m.BcastRdrTgtStatus,
-                                 b.BcastRdrTgtTracks, m.BcastRdrAewcStatus, b.BcastRdrAewcTracks,
-                                 m.BcastRdrSarStatus, b.BcastRdrSarImage)
+                                 b.MfdRdrTgtTracks, m.BcastRdrAewcStatus, b.MfdRdrAewcTracks,
+                                 m.BcastRdrSarStatus, b.MfdRdrSarImage)
 
 
 def polar_to_nm(azimuth_deg, range_km):
