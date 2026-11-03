@@ -179,6 +179,52 @@ class FusedTrackView:
                 "track_id": self.track_id, "identity": self.identity}
 
 
+# ---- the mission computer's plan, in the dictionaries missionService.py returned ----
+
+AFFILIATION_NAMES = {"FRIENDLY": "Friendly", "ENEMY": "Enemy", "NEUTRAL": "Neutral", "UNKNOWN": "Unknown"}
+AFFILIATION_PREFIX = {"FRIENDLY": "F", "ENEMY": "E", "NEUTRAL": "N", "UNKNOWN": "U"}
+
+
+def name_of(words):
+    """Eight ASCII characters from four words, the first of each pair in the high byte, 0 padding."""
+    chars = []
+    for word in words:
+        for code in ((word >> 8) & 0xFF, word & 0xFF):
+            if code == 0:
+                return "".join(chars)
+            chars.append(chr(code))
+    return "".join(chars)
+
+
+def waypoint_dict(record, passed):
+    """handleRoute.Waypoint.to_dict(): the keys the MFD's route tab and the TSD read; ete_min None once passed."""
+    return {"id": record.id, "name": name_of((record.name_0, record.name_1, record.name_2, record.name_3)),
+            "lat": record.latitude, "lon": record.longitude, "alt_ft": record.altitude, "type": record.type.name,
+            "speed_kts": None, "fly_over": record.fly_over,
+            "ete_min": None if passed or record.passed else record.ete}
+
+
+def target_dict(record):
+    """targeting.Target.to_dict(): the Python's T0001-style id, the kind and status by name."""
+    tid = f"T{record.id:04d}"
+    return {"id": tid, "type": record.kind.name, "position": (record.latitude, record.longitude, record.altitude),
+            "priority": record.priority, "status": record.status.name, "track_quality": round(record.track_quality, 2),
+            "weapon_system": None if record.weapon.name == "NONE" else record.weapon.name,
+            "speed_kts": record.speed, "heading_deg": record.heading, "name": tid,
+            "lat": record.latitude, "lon": record.longitude, "alt_ft": record.altitude}
+
+
+def unit_dict(record):
+    """orderOfBattle.Unit.to_dict(): an id by affiliation (E001, F001, N001), the kind and status by name, the
+    position tuple the TSD projects; the capabilities list is not carried."""
+    affiliation = record.affiliation.name
+    return {"id": f"{AFFILIATION_PREFIX[affiliation]}{record.id:03d}", "type": record.kind.name,
+            "affiliation": AFFILIATION_NAMES[affiliation],
+            "position": (record.latitude, record.longitude, record.altitude), "capabilities": [],
+            "status": record.status.name, "threat_level": record.threat_level, "speed_kts": record.speed,
+            "heading_deg": record.heading}
+
+
 class SystemsFeed:
     """Stands in for the systems the MFD's pages, the EICAS and the TSD poll."""
 
@@ -282,8 +328,52 @@ class SystemsFeed:
                 "leak_suspected": p.leak_suspected}
 
     def comms_data(self):
-        """CommsService.get_data(): nothing until the communications terminal (RT 2) is on the bus."""
-        return {}
+        """CommsService.get_data(): the radio, satcom and datalink dictionaries from the relayed COM_LINK_STATUS
+        (MFD_COM_LINK_STATUS); empty until it arrives, when the MFD's page shows dashes as it did without the
+        service."""
+        link = self.terminal.fresh(m.MfdComLinkStatus, self.stale_after_s)
+        if link is None:
+            return {}
+        p = link.payload
+        connected = p.satcom_state.name == "CONNECTED"
+        return {"radio": {"frequency": p.frequency, "mode": p.radio_mode.name, "volume": p.volume,
+                          "squelch": p.squelch, "signal_strength": p.radio_signal, "active": p.radio_active},
+                "satcom": {"connection_status": p.satcom_state.name.lower(),
+                           "signal_strength": p.satcom_signal if connected else 0.0,
+                           "data_rate_kbps": p.data_rate if connected else 0.0,
+                           "latency_ms": p.latency if connected else 0.0,
+                           "satellite_id": p.satellite_id if connected and p.satellite_id else None},
+                "datalink": {"link_status": p.datalink_state.name.lower(), "mode": p.datalink_mode.name,
+                             "channel": p.channel, "packets_sent": p.packets_sent,
+                             "packets_received": p.packets_received, "error_rate": p.error_rate}}
+
+    def mission_status(self):
+        """The fresh BCAST_MSN_STATUS, or None while the mission computer is not heard."""
+        return self.terminal.fresh(m.BcastMsnStatus, self.stale_after_s)
+
+    def mission_plan(self):
+        """The latest complete MSN_PLAN block, kept as long as the mission status is fresh: the plan is
+        republished only when it changes (and every three seconds while a route is flown)."""
+        if self.mission_status() is None:
+            return None
+        return self.terminal.latest_block(b.BcastMsnPlan)[0]
+
+    def route_data(self):
+        """RouteManager.get_nav_data(): the route as Waypoint dictionaries, the active index (the status's, which is
+        fresher than the plan's), the active waypoint, the distance and bearing to it and the waypoints remaining;
+        {"route": []} without the mission computer, when the TSD draws no waypoints, as with the service not
+        running."""
+        status = self.mission_status()
+        plan = self.mission_plan()
+        if status is None or plan is None:
+            return {"route": []}
+        s = status.payload
+        route = [waypoint_dict(w, i < s.active_index) for i, w in enumerate(plan.waypoint)]
+        active = route[s.active_index] if s.active_index < len(route) else None
+        return {"route": route, "active_index": s.active_index, "active_waypoint": active,
+                "distance_to_next_nm": round(s.distance_to_next, 1) if active is not None else None,
+                "bearing_to_next_deg": round(s.bearing_to_next, 1) if active is not None else None,
+                "waypoints_remaining": max(0, len(route) - s.active_index)}
 
     def defensive_data(self):
         """DefensiveService.get_data(): nothing until the defensive systems terminal (RT 22) is on the bus; the
@@ -339,24 +429,51 @@ class SystemsFeed:
         return readings
 
     def mission_data(self):
-        """MissionService.get_data(): the position from the FMS flight data; the route and targets wait for RT 6."""
+        """MissionService.get_data(): the position from the FMS flight data (as the service copied it), and from the
+        mission computer the phase, the route (get_nav_data's dictionary), the targets by priority, the engaged
+        ones and the order-of-battle summary. The position alone while the mission computer is not heard: the
+        MFD then shows MISSION UNKNOWN and "No waypoints loaded", as with the service not running."""
+        out = {}
         flight = self.terminal.fresh(m.BcastFmsFlightData, self.stale_after_s)
-        if flight is None or not _valid(flight.payload.position_ssm):
-            return {}
-        f = flight.payload
-        position = {"lat": f.latitude, "lon": f.longitude}
-        if _valid(f.altitude_ssm):
-            position["alt_ft"] = f.altitude
-        return {"current_position": position}
+        if flight is not None and _valid(flight.payload.position_ssm):
+            f = flight.payload
+            position = {"lat": f.latitude, "lon": f.longitude}
+            if _valid(f.altitude_ssm):
+                position["alt_ft"] = f.altitude
+            out["current_position"] = position
+        status = self.mission_status()
+        if status is None:
+            return out
+        s = status.payload
+        plan = self.mission_plan()
+        targets = [target_dict(t) for t in plan.target] if plan is not None else []
+        out["phase"] = s.phase.name
+        out["route"] = self.route_data()
+        out["waypoints"] = out["route"]["route"]
+        out["active_waypoint"] = s.active_index
+        out["targets"] = targets
+        out["engaged"] = [t for t in targets if t["status"] == "ENGAGED"]
+        out["threats"] = []
+        out["oob_summary"] = {"FRIENDLY": s.friendly_units, "ENEMY": s.enemy_units, "NEUTRAL": s.neutral_units}
+        return out
 
     def order_of_battle(self):
-        """MissionService.get_oob(): empty until the mission terminal is on the bus."""
-        return {"summary": {}, "friendly": [], "enemy": [], "neutral": []}
+        """MissionService.get_oob(): the summary counts and the units by affiliation (an unknown affiliation with
+        the neutral ones, as the Python filed it); empty without the mission computer."""
+        status = self.mission_status()
+        plan = self.mission_plan()
+        if status is None or plan is None:
+            return {"summary": {}, "friendly": [], "enemy": [], "neutral": []}
+        s = status.payload
+        units = [unit_dict(u) for u in plan.unit]
+        return {"summary": {"FRIENDLY": s.friendly_units, "ENEMY": s.enemy_units, "NEUTRAL": s.neutral_units},
+                "friendly": [u for u in units if u["affiliation"] == "Friendly"],
+                "enemy": [u for u in units if u["affiliation"] == "Enemy"],
+                "neutral": [u for u in units if u["affiliation"] not in ("Friendly", "Enemy")]}
 
     def nav_data(self):
-        """MissionService.get_nav_data(): no route until the mission terminal is on the bus (the TSD then draws no
-        waypoints, as with the service not running)."""
-        return {"route": []}
+        """MissionService.get_nav_data(): the route for the TSD's waypoint symbols."""
+        return self.route_data()
 
     def rwr_contacts(self):
         """DefensiveService.get_rwr_contacts(): none until the defensive systems terminal (RT 22) is on the bus."""
@@ -393,4 +510,17 @@ class SystemsFeed:
         fused = self.fused_summary()
         if fused is not None:
             parts.append(f"fused {fused[0]} ({fused[1]} hostile)")
+        mission = self.mission_status()
+        if mission is not None:
+            s = mission.payload
+            text = f"MSN {s.phase.name}"
+            if s.route_active:
+                text += f" wp {s.active_index + 1}/{s.waypoint_count}"
+            if s.target_count:
+                text += f" tgt {s.target_count}"
+            parts.append(text)
+        comms = self.comms_data()
+        if comms:
+            parts.append(f"COM radio {'ACTIVE' if comms['radio']['active'] else 'SQUELCH'} "
+                         f"sat {comms['satcom']['connection_status']}")
         return "  ".join(parts) if parts else "FCS: no data"

@@ -10,6 +10,9 @@ The binaries are named by environment variables (CI sets them):
     FMOFP_RADAR_TOOL partitions/fmofp_radar_tool
     FMOFP_ENGINE    partitions/fmofp_engine
     FMOFP_ENGINE_TOOL partitions/fmofp_engine_tool
+    FMOFP_MISSION   partitions/fmofp_mission
+    FMOFP_MISSION_TOOL partitions/fmofp_mission_tool
+    FMOFP_COMMS     partitions/fmofp_comms
 """
 
 import os

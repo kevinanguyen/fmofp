@@ -4,9 +4,9 @@
                      [--no-events] [--hold name=value,...] [--seed N] [--log-dir DIR] [--settle S]
 
 It starts, in this order: the plant (the simulated aircraft with its weather,
-terrain and engines, RT 27), the ported partitions (flight control RT 5,
-navigation RT 7, flight management RT 12, the radar computer RT 9, engine
-management RT 3), the six display programs (the radar display RT 15, the PFD
+terrain, engines and RF environment, RT 27), the ported partitions (flight
+control RT 5, navigation RT 7, flight management RT 12, the radar computer RT 9,
+engine management RT 3, the mission computer RT 6, communications RT 2), the six display programs (the radar display RT 15, the PFD
 RT 11, the MFD RT 13, the EICAS RT 14, the TSD RT 16 and the SMS RT 17, each in its own window), and
 finally the bus
 controller, which drives the bus in real time. Every program writes its own
@@ -14,14 +14,17 @@ log under logs/demo/. The console shows one line a second with what is
 crossing the bus, read from the controller's monitor port: altitude, airspeed
 and heading from the FMS flight data, the ground collision avoidance state,
 the engines' N1 and the fuel, the radars' modes, the terrain clearance and the
-targeting tracks, the navigation fix, and which terminals are answering.
+targeting tracks, the navigation fix, the mission's phase and route progress, the
+radio and satcom links, and which terminals are answering.
 
 Unless --no-events is given, a short scripted flight runs: the radars are
 switched on (the targeting and AEWC radars search, the SAR images the strip
 beside the track and then spotlights the lake, the targeting radar later
 locks on a track), the thrust
 lever moves, the autothrottle holds 500 kt, the flight
-mode changes, one engine is throttled back, fuel is transferred. Each event is
+mode changes, one engine is throttled back, fuel is transferred; a route is loaded
+and flown waypoint by waypoint, a target is designated, engaged and assessed, an
+enemy unit appears on the TSD, the radio is tuned and a satellite acquired. Each event is
 announced as it happens. The radar display window's own buttons keep working
 throughout: it is the radars' control panel.
 
@@ -37,7 +40,8 @@ import time
 from collections import namedtuple
 
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (AewcMode, EngineCommand, EngineSelect, FmsFlightMode, FuelTank, LockStatus, SarMode,
+from fmofp_bus.icd.enums import (Affiliation, CommsCommand, MissionCommand, MissionPhase, RadioMode,
+                                 TargetKind, UnitKind, WaypointType, Weapon, AewcMode, EngineCommand, EngineSelect, FmsFlightMode, FuelTank, LockStatus, SarMode,
                                  Ssm,
                                  TargetingMode, TerminalState, TfrMode, TrackFilter, WeatherMode)
 from fmofp_bus.monitor import Monitor
@@ -52,22 +56,46 @@ ANSWER_WINDOW_S = 2.5  # a terminal is "answering" if it answered a poll this re
 PLANT_RT = m.PlantSensors.RT
 # (executable name, RT) of each ported partition.
 PARTITIONS = (("fcs", m.FcsStatus.RT), ("nav", m.NavSolution.RT), ("fms", m.FmsStatus.RT),
-              ("radar", m.RdrWxStatus.RT), ("engine", m.EngStatus.RT))
+              ("radar", m.RdrWxStatus.RT), ("engine", m.EngStatus.RT), ("mission", m.MsnStatus.RT),
+              ("comms", m.ComStatus.RT))
 # (fmofp_display argument, RT) of each display program.
 DISPLAYS = (("radar", m.DspRadarStatus.RT), ("pfd", m.DspPfdStatus.RT), ("mfd", m.DspMfdStatus.RT),
             ("eicas", m.DspEicasStatus.RT), ("tsd", m.DspTsdStatus.RT), ("sms", m.DspSmsStatus.RT))
 NAMES = {PLANT_RT: "plant", m.FcsStatus.RT: "FCS", m.NavSolution.RT: "nav", m.FmsStatus.RT: "FMS",
          m.RdrWxStatus.RT: "radar", m.EngStatus.RT: "engine", m.DspRadarStatus.RT: "radar display",
          m.DspPfdStatus.RT: "PFD", m.DspMfdStatus.RT: "MFD", m.DspEicasStatus.RT: "EICAS",
-         m.DspTsdStatus.RT: "TSD", m.DspSmsStatus.RT: "SMS"}
+         m.DspTsdStatus.RT: "TSD", m.DspSmsStatus.RT: "SMS", m.MsnStatus.RT: "mission",
+         m.ComStatus.RT: "comms"}
 
 Event = namedtuple("Event", "seconds what message")
+
+
+def name_words(text):
+    """An eight-character waypoint name in the four words of MSN_CMD (the first of each pair in the high byte)."""
+    data = text.encode("ascii", "replace")[:8].ljust(8, b"\0")
+    return [(data[2 * i] << 8) | data[2 * i + 1] for i in range(4)]
+
+
+def waypoint(seq, name, lat, lon, alt_ft, kind=WaypointType.NAV):
+    words = name_words(name)
+    return m.MsnCmd(cmd_seq=seq, command=MissionCommand.ADD_WAYPOINT, waypoint_type=kind, fly_over=True,
+                    latitude=lat, longitude=lon, altitude=alt_ft, name_0=words[0], name_1=words[1], name_2=words[2],
+                    name_3=words[3])
 
 
 def default_events():
     """The scripted flight. The cmd_seq values start at 201 so they never collide with the radar display
     window's own numbering, which starts at 1 (a command with the same cmd_seq as the last one is ignored)."""
     return [
+        # The route runs up the northbound track the plant flies (home 0 N 0 E, 450 kt, heading 0): the
+        # crossroad bridge 5 km out is a designated target, the initial point is at 8 km, the turn at 16 km,
+        # the egress at 30 km; each is reached within 0.5 nm as the aircraft passes.
+        Event(1.0, "mission: route loaded (IP at 8 km, TURN at 16 km, EGRESS at 30 km up the track)",
+              waypoint(201, "IP", 0.0719, 0.0, 10000.0, WaypointType.IP)),
+        Event(1.2, "mission: waypoint TURN", waypoint(202, "TURN", 0.1438, 0.0, 10000.0)),
+        Event(1.4, "mission: waypoint EGRESS", waypoint(203, "EGRESS", 0.2697, 0.0, 10000.0, WaypointType.EGR)),
+        Event(1.6, "mission: phase INGRESS",
+              m.MsnCmd(cmd_seq=204, command=MissionCommand.SET_PHASE, phase=MissionPhase.INGRESS)),
         Event(2.0, "weather radar on: SURVEILLANCE at 200 km",
               m.RdrWxModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL,
                              requested_mode=WeatherMode.SURVEILLANCE, range_km=200.0, tilt=0.0)),
@@ -77,18 +105,36 @@ def default_events():
         Event(6.0, "targeting radar on: TARGET_SEARCH (the plant flies twelve aircraft around us)",
               m.RdrTgtModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL,
                               requested_mode=TargetingMode.TARGET_SEARCH, track_filter=TrackFilter.ALL)),
+        Event(7.0, "comms: radio to 243.000 MHz (the MFD COMMS page)",
+              m.ComCmd(cmd_seq=201, command=CommsCommand.SET_RADIO_FREQUENCY, frequency=243.0)),
         Event(8.0, "AEWC radar on: AEWC_SEARCH (the far aircraft, out to 400 km)",
               m.RdrAewcModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL,
                                requested_mode=AewcMode.AEWC_SEARCH, azimuth_start=0.0, azimuth_end=90.0,
                                elevation=0.0)),
+        Event(9.0, "comms: acquire a satellite (connected once one comes into view: a 1 % chance a second)",
+              m.ComCmd(cmd_seq=202, command=CommsCommand.ACQUIRE_SATELLITE)),
         Event(10.0, "FMS thrust lever to 80 %", m.FmsControlCmd(cmd_seq=201, thrust_present=True, thrust=0.8)),
         Event(12.0, "SAR on: STRIPMAP at 1 m (the strip 2 km to the right: the road beside the track, then the town)",
               m.RdrSarModeCmd(cmd_seq=201, requested_state=TerminalState.NORMAL, requested_mode=SarMode.STRIPMAP,
                               resolution=1.0)),
+        Event(14.0, "mission: designate the bridge at the crossroad as target 1 (a TGT waypoint goes in before IP)",
+              m.MsnCmd(cmd_seq=205, command=MissionCommand.DESIGNATE_TARGET, target_kind=TargetKind.BRIDGE,
+                       priority=1, latitude=0.0450, longitude=0.0, altitude=0.0)),
+        Event(16.0, "mission: an enemy SAM site 1.3 km east of the track (the TSD shows a hostile contact)",
+              m.MsnCmd(cmd_seq=206, command=MissionCommand.ADD_UNIT, unit_kind=UnitKind.SAM_SITE,
+                       affiliation=Affiliation.ENEMY, threat_level=4, latitude=0.13, longitude=0.012, altitude=0.0)),
+        Event(17.0, "mission: a friendly tanker to the north-west",
+              m.MsnCmd(cmd_seq=207, command=MissionCommand.ADD_UNIT, unit_kind=UnitKind.TANKER,
+                       affiliation=Affiliation.FRIENDLY, latitude=0.25, longitude=-0.05, altitude=25000.0)),
         Event(20.0, "autothrottle engaged: hold 500 kt",
               m.EngCmd(cmd_seq=201, command=EngineCommand.AUTOTHROTTLE_ENGAGE, target_airspeed=500.0)),
         Event(30.0, "flight mode COMBAT (the SMS's master arm goes ARMED)",
               m.FmsFlightModeCmd(cmd_seq=201, flight_mode=FmsFlightMode.COMBAT)),
+        Event(34.0, "mission: acquire target 1, then engage it with a JDAM",
+              m.MsnCmd(cmd_seq=208, command=MissionCommand.ACQUIRE_TARGET, id=1)),
+        Event(35.0, "mission: engage target 1 (JDAM)",
+              m.MsnCmd(cmd_seq=209, command=MissionCommand.ENGAGE_TARGET, id=1, weapon=Weapon.JDAM)),
+        Event(36.0, "mission: phase OBJECTIVE", m.MsnCmd(cmd_seq=210, command=MissionCommand.ADVANCE_PHASE)),
         Event(38.0, "autothrottle disengaged", m.EngCmd(cmd_seq=202, command=EngineCommand.AUTOTHROTTLE_DISENGAGE)),
         Event(40.0, "engine 2 alone to 40 %: asymmetric thrust",
               m.EngCmd(cmd_seq=203, command=EngineCommand.SET_THRUST, engine=EngineSelect.ENGINE_2, thrust=40.0)),
@@ -105,8 +151,15 @@ def default_events():
         Event(65.0, "SAR to SPOTLIGHT at 0.3 m: the lake abeam, a ship under way (a picture every 3 s)",
               m.RdrSarModeCmd(cmd_seq=202, requested_state=TerminalState.NORMAL, requested_mode=SarMode.SPOTLIGHT,
                               resolution=0.3)),
+        Event(70.0, "mission: target 1 assessed destroyed (it leaves the targets tab); phase EGRESS",
+              m.MsnCmd(cmd_seq=211, command=MissionCommand.ASSESS_DAMAGE, id=1, destroyed=True)),
+        Event(71.0, "mission: phase EGRESS", m.MsnCmd(cmd_seq=212, command=MissionCommand.ADVANCE_PHASE)),
         Event(75.0, "both engines back to 70 %",
               m.EngCmd(cmd_seq=205, command=EngineCommand.SET_THRUST, engine=EngineSelect.ALL, thrust=70.0)),
+        Event(85.0, "comms: send a data-link message (ACCEPTED only with a satellite; see the COM line)",
+              m.ComCmd(cmd_seq=203, command=CommsCommand.DATALINK_SEND, message_id=1, priority=2)),
+        Event(86.0, "comms: a radio transmission (FAILED while the field strength is under 20 %)",
+              m.ComCmd(cmd_seq=204, command=CommsCommand.RADIO_TRANSMIT, message_id=2)),
     ]
 
 
@@ -342,6 +395,28 @@ class Dashboard:
             else:
                 text = "SAR " + ("off" if sar.state == TerminalState.NORMAL else sar.state.name)
             parts.append(text)
+        msn = self.latest.get(m.MsnStatus)
+        if msn is not None:
+            text = f"MSN {msn.phase.name}"
+            if msn.route_active:
+                text += (f" wp {msn.active_index + 1}/{msn.waypoint_count} {msn.distance_to_next:.1f}nm "
+                         f"{msn.bearing_to_next:03.0f}")
+            elif msn.waypoint_count:
+                text += f" route flown ({msn.waypoint_count} wp)"
+            if msn.target_count:
+                text += f" tgt {msn.target_count}"
+            if msn.enemy_units:
+                text += f" hostile {msn.enemy_units}"
+            parts.append(text)
+        com = self.latest.get(m.ComLinkStatus)
+        if com is not None:
+            text = f"COM {com.frequency:.3f} {'ACTIVE' if com.radio_active else 'SQUELCH'} sat {com.satcom_state.name}"
+            if com.datalink_state.name == "ACTIVE":
+                text += f" dl {com.packets_sent}/{com.packets_received}"
+            status = self.latest.get(m.ComStatus)
+            if status is not None and status.comms_cmd_status.name not in ("NONE", "ACCEPTED"):
+                text += f" cmd {status.comms_cmd_status.name}"
+            parts.append(text)
         nav = self.latest.get(m.NavSolution)
         if nav is not None and nav.position_ssm == Ssm.NORMAL:
             parts.append(f"nav {nav.latitude:+.4f} {nav.longitude:+.4f} ({nav.sats_used} sats)")
@@ -367,11 +442,12 @@ def banner(args, terminals, events, log_dir, paths):
               "  MFD window: RADAR shows the radars' pictures (Targeting Radar and AEWC Radar: their tracks; Synthetic\n"
               "    Aperture: its picture of the ground, a new one every 3 s), SYSTEMS the GCAS alerts,\n"
               "    exceedances and engine\n"
-              "    rows, MISSION the position.\n"
+              "    rows, COMMS the radio, satcom and data link, MISSION the route (the active waypoint marked),\n"
+              "    the targets and the order of battle.\n"
               "  EICAS window: the engine readings, the fuel quantity and balance, the FCS alerts and the crew alert\n"
               "    list (hydraulics, electrical and ECS read unknown until their terminals exist).\n"
-              "  TSD window: the fused air tracks around the aircraft (bearing and range), the energy metrics and\n"
-              "    the tactical systems strip.\n"
+              "  TSD window: the fused air tracks around the aircraft (bearing and range), the route's waypoints,\n"
+              "    the enemy unit as a hostile contact, the energy metrics and the tactical systems strip.\n"
               "  SMS window: the weapon stations, colour-coded by state, and the signature strip; MASTER ARM follows\n"
               "    the FMS's weapons state (ARMED from the COMBAT event at 30 s).")
     if events:

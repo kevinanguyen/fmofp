@@ -5,14 +5,17 @@ import unittest
 
 from fmofp_bus.icd import blocks as b
 from fmofp_bus.icd import messages as m
-from fmofp_bus.icd.enums import (AewcMode, ChangeType, ClearanceLevel, CountermeasuresState, EcmMitigation,
-                                 FmsFlightMode, GcasStatus, IffIdentity, JamType, LockStatus, PathReason, PrecipType,
-                                 SarMode, ShearSeverity, Ssm, TargetClass, TargetingMode, TargetingState, TerminalState,
-                                 TfrMode, Threat, TurbulenceCategory, WeaponsState, WeatherMode)
+from fmofp_bus.icd.enums import (AewcMode, Affiliation, ChangeType, ClearanceLevel, CountermeasuresState,
+                                 DatalinkMode, EcmMitigation, FmsFlightMode, GcasStatus, IffIdentity, JamType,
+                                 LinkState, LockStatus, MissionPhase, PathReason, PrecipType, RadioMode, SarMode,
+                                 SatcomState, ShearSeverity, Ssm, TargetClass, TargetKind, TargetStatus,
+                                 TargetingMode, TargetingState, TerminalState, TfrMode, Threat, TurbulenceCategory,
+                                 UnitKind, UnitStatus, WaypointType, Weapon, WeaponsState, WeatherMode)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import (BROADCAST_SOURCES, SYMBOL_CLASS, RadarFeed, aewc_item, cell_velocity_nm_s,
                                       polar_to_nm, sar_corners_nm, sar_pgm, targeting_item, weather_items)
-from fmofp_display.systems_feed import LIMITS, FusedTrackView, SystemsFeed, TerrainClearance, WeatherSeverity
+from fmofp_display.systems_feed import (LIMITS, FusedTrackView, SystemsFeed, TerrainClearance, WeatherSeverity,
+                                        name_of)
 
 
 class FakeTerminal:
@@ -136,6 +139,41 @@ def sample_sar_image(mode=SarMode.STRIPMAP, heading=0.0, image_seq=4):
     img.change = [b.RdrSarImageChange(row=10, col=20, area=57, change=ChangeType.ADDITION, significant=True,
                                       confidence=0.95, log_ratio=3.375)]
     return img
+
+
+def sample_plan(phase=MissionPhase.INGRESS, active_index=0):
+    """An MSN_PLAN block: the demo's first two waypoints, an engaged bridge, an enemy SAM site and a friendly tanker."""
+    plan = b.MsnPlan(plan_seq=3, phase=phase, active_index=active_index, distance_to_next=4.3, bearing_to_next=359.0)
+    plan.waypoint = [
+        b.MsnPlanWaypoint(id=1, type=WaypointType.IP, fly_over=True, passed=False, name_0=0x4950, latitude=0.0719,
+                          longitude=0.0, altitude=10000.0, ete=1.2),
+        b.MsnPlanWaypoint(id=2, type=WaypointType.NAV, fly_over=True, passed=False, name_0=0x5455, name_1=0x524E,
+                          latitude=0.1438, longitude=0.0, altitude=10000.0, ete=2.4)]
+    plan.target = [
+        b.MsnPlanTarget(id=1, kind=TargetKind.BRIDGE, status=TargetStatus.ENGAGED, priority=1, weapon=Weapon.JDAM,
+                        track_quality=0.5, latitude=0.045, longitude=0.0, altitude=0.0)]
+    plan.unit = [
+        b.MsnPlanUnit(id=1, kind=UnitKind.SAM_SITE, affiliation=Affiliation.ENEMY, status=UnitStatus.OPERATIONAL,
+                      threat_level=4, latitude=0.13, longitude=0.012, altitude=0.0),
+        b.MsnPlanUnit(id=2, kind=UnitKind.TANKER, affiliation=Affiliation.FRIENDLY, status=UnitStatus.OPERATIONAL,
+                      threat_level=0, latitude=0.25, longitude=-0.05, altitude=25000.0)]
+    return plan
+
+
+def sample_mission_status(phase=MissionPhase.INGRESS, active_index=0):
+    return m.BcastMsnStatus(payload=m.MsnStatus(
+        state=TerminalState.NORMAL, phase=phase, route_active=True, position_valid=True, waypoint_count=2,
+        active_index=active_index, target_count=1, friendly_units=1, enemy_units=1, distance_to_next=4.3,
+        bearing_to_next=359.0))
+
+
+def sample_link(connected=True):
+    return m.MfdComLinkStatus(payload=m.ComLinkStatus(
+        frequency=243.0, radio_mode=RadioMode.USB, radio_active=True, volume=50, squelch=3, radio_signal=42.0,
+        satcom_state=SatcomState.CONNECTED if connected else SatcomState.ACQUIRING, satellite_id=7 if connected else 0,
+        datalink_state=LinkState.ACTIVE if connected else LinkState.INACTIVE, datalink_mode=DatalinkMode.LOS, channel=1,
+        satcom_signal=65.0 if connected else 0.0, data_rate=120.0 if connected else 0.0,
+        latency=350.0 if connected else 0.0, packets_sent=5, packets_received=9, error_rate=0.3))
 
 
 class WeatherItemsTest(unittest.TestCase):
@@ -771,6 +809,95 @@ class SmsFeedTest(unittest.TestCase):
         self.terminal.put(m.BcastFmsStatus(payload=m.FmsStatus(state=TerminalState.NORMAL)), age=5.0)
         self.assertEqual("FMS status: no data", self.feed.tactical_text(), "stale")
         self.assertNotIn("tactical_systems", self.feed.get_tactical_status())
+
+
+class MissionFeedTest(unittest.TestCase):
+    """What the MFD's mission page and the TSD read from the mission computer: get_data(), get_oob(), get_nav_data()."""
+
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = SystemsFeed(self.terminal, clock=lambda: 1000.0)
+
+    def test_names_come_back_from_their_words(self):
+        self.assertEqual("IP", name_of((0x4950, 0, 0, 0)))
+        self.assertEqual("TGT-0001", name_of((0x5447, 0x542D, 0x3030, 0x3031)))
+        self.assertEqual("", name_of((0, 0, 0, 0)))
+
+    def test_without_the_mission_computer_the_pages_get_what_the_service_gave_when_not_running(self):
+        self.assertEqual({}, self.feed.mission_data())
+        self.assertEqual({"route": []}, self.feed.nav_data())
+        self.assertEqual({"summary": {}, "friendly": [], "enemy": [], "neutral": []}, self.feed.order_of_battle())
+        self.terminal.put(m.BcastFmsFlightData(payload=flight_payload()))
+        self.assertEqual({"current_position": {"lat": 1.5, "lon": -2.25, "alt_ft": 5000.0}}, self.feed.mission_data())
+
+    def test_the_plan_and_the_status_become_the_pythons_dictionaries(self):
+        self.terminal.put(sample_mission_status())
+        self.terminal.put_block(b.BcastMsnPlan, sample_plan(), 3)
+        data = self.feed.mission_data()
+        self.assertEqual("INGRESS", data["phase"])
+        route = data["route"]
+        self.assertEqual(["IP", "TURN"], [w["name"] for w in route["route"]])
+        self.assertEqual(("IP", 1.2, 10000.0, True), (route["route"][0]["type"], route["route"][0]["ete_min"],
+                                                      route["route"][0]["alt_ft"], route["route"][0]["fly_over"]))
+        self.assertEqual((0, "IP", 4.3, 359.0, 2), (route["active_index"], route["active_waypoint"]["name"],
+                                                     route["distance_to_next_nm"], route["bearing_to_next_deg"],
+                                                     route["waypoints_remaining"]))
+        self.assertEqual(route, self.feed.nav_data())
+        self.assertEqual(data["waypoints"], route["route"])
+        target = data["targets"][0]
+        self.assertEqual(("T0001", "BRIDGE", "ENGAGED", 1, "JDAM", 0.5, "T0001"),
+                         (target["id"], target["type"], target["status"], target["priority"], target["weapon_system"],
+                          target["track_quality"], target["name"]))
+        self.assertEqual((0.045, 0.0, 0.0), target["position"])
+        self.assertEqual(0.045, target["lat"])
+        self.assertEqual(1, len(data["engaged"]))
+        self.assertEqual({"FRIENDLY": 1, "ENEMY": 1, "NEUTRAL": 0}, data["oob_summary"])
+        oob = self.feed.order_of_battle()
+        self.assertEqual({"FRIENDLY": 1, "ENEMY": 1, "NEUTRAL": 0}, oob["summary"])
+        self.assertEqual(("E001", "SAM_SITE", "Enemy", (0.13, 0.012, 0.0), "OPERATIONAL", 4, []),
+                         tuple(oob["enemy"][0][k] for k in ("id", "type", "affiliation", "position", "status",
+                                                             "threat_level", "capabilities")))
+        self.assertEqual("F002", oob["friendly"][0]["id"], "the mission computer numbers units across affiliations")
+        self.assertEqual([], oob["neutral"])
+        self.assertIn("MSN INGRESS wp 1/2 tgt 1", self.feed.status_text())
+        # The status's active index is the fresher: a waypoint passed since the plan loses its ETE.
+        self.terminal.put(sample_mission_status(active_index=1))
+        route = self.feed.nav_data()
+        self.assertEqual((1, "TURN", None, 1), (route["active_index"], route["active_waypoint"]["name"],
+                                                route["route"][0]["ete_min"], route["waypoints_remaining"]))
+        # A stale status takes the plan with it.
+        self.terminal.put(sample_mission_status(), age=5.0)
+        self.assertEqual({"route": []}, self.feed.nav_data())
+        self.assertNotIn("phase", self.feed.mission_data())
+
+
+class CommsFeedTest(unittest.TestCase):
+    """What mfd.draw_comms_page reads: CommsService.get_data()'s radio, satcom and datalink dictionaries."""
+
+    def setUp(self):
+        self.terminal = FakeTerminal()
+        self.feed = SystemsFeed(self.terminal, clock=lambda: 1000.0)
+
+    def test_without_the_terminal_the_page_gets_nothing(self):
+        self.assertEqual({}, self.feed.comms.get_data())
+        self.assertNotIn("COM", self.feed.status_text())
+
+    def test_the_link_status_becomes_the_three_dictionaries(self):
+        self.terminal.put(sample_link())
+        data = self.feed.comms.get_data()
+        self.assertEqual({"frequency": 243.0, "mode": "USB", "volume": 50, "squelch": 3, "signal_strength": 42.0,
+                          "active": True}, data["radio"])
+        self.assertEqual({"connection_status": "connected", "signal_strength": 65.0, "data_rate_kbps": 120.0,
+                          "latency_ms": 350.0, "satellite_id": 7}, data["satcom"])
+        self.assertEqual({"link_status": "active", "mode": "LOS", "channel": 1, "packets_sent": 5,
+                          "packets_received": 9, "error_rate": 0.3}, data["datalink"])
+        self.assertIn("COM radio ACTIVE sat connected", self.feed.status_text())
+        self.terminal.put(sample_link(connected=False))
+        data = self.feed.comms.get_data()
+        self.assertEqual(("acquiring", None, 0.0, "inactive"), (data["satcom"]["connection_status"],
+                                                                 data["satcom"]["satellite_id"],
+                                                                 data["satcom"]["data_rate_kbps"],
+                                                                 data["datalink"]["link_status"]))
 
 
 if __name__ == "__main__":

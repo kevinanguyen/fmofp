@@ -132,9 +132,9 @@ TEST(BusControllerGate, TwoTerminalsFollowTheBusControllerFrameForFrame) {
     StubTerminal a;
     StubTerminal b;
     ASSERT_EQ(Status::kOk, a.start(1));
-    ASSERT_EQ(Status::kOk, b.start(2));
+    ASSERT_EQ(Status::kOk, b.start(4));
 
-    const BcConfig cfg = config({1, 2}, BcMode::kFreeRun);
+    const BcConfig cfg = config({1, 4}, BcMode::kFreeRun);
     auto bc = make_bc();
     ASSERT_EQ(Status::kOk, bc->init(cfg, schedule_for(cfg)));
 
@@ -148,7 +148,7 @@ TEST(BusControllerGate, TwoTerminalsFollowTheBusControllerFrameForFrame) {
     EXPECT_EQ(frames, a.syncs());
     EXPECT_EQ(frames, b.syncs());
     EXPECT_EQ(frames, bc->stats().frames);
-    for (const std::uint8_t rt : {std::uint8_t{1}, std::uint8_t{2}}) {
+    for (const std::uint8_t rt : {std::uint8_t{1}, std::uint8_t{4}}) {
         const fmofp::bc::TerminalStats& t = bc->terminal(rt);
         EXPECT_TRUE(t.responded);
         EXPECT_EQ(0U, t.no_response) << "RT " << static_cast<int>(rt);
@@ -178,8 +178,8 @@ TEST(BusControllerGate, RealTimeFramesHoldTwentyMillisecondsWithoutOverruns) {
     StubTerminal a;
     StubTerminal b;
     ASSERT_EQ(Status::kOk, a.start(1));
-    ASSERT_EQ(Status::kOk, b.start(2));
-    const BcConfig cfg = config({1, 2}, BcMode::kRealTime);
+    ASSERT_EQ(Status::kOk, b.start(4));
+    const BcConfig cfg = config({1, 4}, BcMode::kRealTime);
     auto bc = make_bc();
     ASSERT_EQ(Status::kOk, bc->init(cfg, schedule_for(cfg)));
 

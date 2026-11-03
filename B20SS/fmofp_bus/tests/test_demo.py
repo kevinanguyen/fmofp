@@ -35,14 +35,14 @@ class ScriptedFlightTest(unittest.TestCase):
             self.assertEqual(event.message.cmd_seq, back.cmd_seq)
             self.assertGreaterEqual(event.message.cmd_seq, 201, "clear of the radar display window's own numbering")
         self.assertEqual([e.seconds for e in events], sorted(e.seconds for e in events))
-        first = events[0].message
+        first = next(e.message for e in events if isinstance(e.message, m.RdrWxModeCmd))
         self.assertEqual((WeatherMode.SURVEILLANCE, 200.0), (first.requested_mode, first.range_km))
 
     def test_the_binaries_are_named_per_partition(self):
         paths = binaries(os.path.join("build", "x"))
-        self.assertEqual({"bc", "fcs", "nav", "fms", "radar", "engine"}, set(paths))
+        self.assertEqual({"bc", "fcs", "nav", "fms", "radar", "engine", "mission", "comms"}, set(paths))
         self.assertEqual(len(paths), len(missing_binaries(paths)), "a build directory that does not exist")
-        self.assertEqual([5, 7, 12, 9, 3], [rt for _, rt in PARTITIONS])
+        self.assertEqual([5, 7, 12, 9, 3, 6, 2], [rt for _, rt in PARTITIONS])
         self.assertEqual([15, 11, 13, 14, 16, 17], [rt for _, rt in DISPLAYS])
         self.assertEqual(27, PLANT_RT)
 
@@ -96,7 +96,10 @@ class DemoRunTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, output)
         self.assertIn(">> t=2 s: weather radar on", output)
         self.assertIn(">> t=3 s: terrain-following radar on", output)
-        self.assertIn("12/12 answering", output)
+        self.assertIn("14/14 answering", output)
+        self.assertIn(">> t=1 s: mission: route loaded", output)
+        self.assertIn("MSN INGRESS wp 1/3", output)  # three waypoints loaded in the first two seconds
+        self.assertIn("COM 243.000", output)
         self.assertIn("GCAS ", output)
         self.assertIn("N1 ", output)
         self.assertIn("WX SURVEILLANCE", output)

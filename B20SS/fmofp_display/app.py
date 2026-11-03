@@ -344,9 +344,10 @@ def mfd_terminal(port_base):
                            receives=(m.BcastRdrWxStatus, m.BcastRdrWxScan, m.BcastRdrTfrStatus, m.BcastRdrTfrGuidance,
                                      m.BcastFcsGcasAlerts, m.BcastFcsPerfStatus, m.BcastFmsFlightData,
                                      m.BcastEngEngineStatus, m.BcastEngFuelStatus, m.BcastRdrTgtStatus,
-                                     m.BcastRdrAewcStatus, m.BcastRdrSarStatus),
+                                     m.BcastRdrAewcStatus, m.BcastRdrSarStatus, m.BcastMsnStatus,
+                                     m.MfdComLinkStatus),
                            blocks=(b.BcastRdrWxProducts, b.BcastRdrTfrElevation, b.MfdRdrTgtTracks,
-                                   b.MfdRdrAewcTracks, b.MfdRdrSarImage))
+                                   b.MfdRdrAewcTracks, b.MfdRdrSarImage, b.BcastMsnPlan))
 
 
 # The getters mfd.py imports inside its page functions and eicas.py inside its poll, and the feed attribute each
@@ -641,15 +642,16 @@ class EicasWindow(QWidget):
 
 def tsd_terminal(port_base):
     return TerminalProcess(TSD_RT, port_base, m.DspTsdStatus, m.DspTsdModeCmd,
-                           receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFmsAttitudeStatus, m.TsdFmsEnergy),
-                           blocks=(b.BcastRdrFusedTracks,))
+                           receives=(m.BcastFmsFlightData, m.BcastFmsStatus, m.BcastFmsAttitudeStatus, m.TsdFmsEnergy,
+                                     m.BcastMsnStatus),
+                           blocks=(b.BcastRdrFusedTracks, b.BcastMsnPlan))
 
 
 def make_tsd(systems_feed):
     """A TacticalSituationDisplay whose sources are the bus feeds: the FMS and the FMS control (flight data, tactical
-    systems, envelope warnings, energy metrics), the radar data fusion (the fused tracks), and the mission and
-    defensive services answering as they did with their terminals not yet on the bus (no route, no order of battle,
-    no radar warning contacts). Its own 10 Hz poll reads them."""
+    systems, envelope warnings, energy metrics), the radar data fusion (the fused tracks), the mission computer (the
+    route and the order of battle, from v1.16) and the defensive service answering as it did with its terminal not
+    yet on the bus (no radar warning contacts). Its own 10 Hz poll reads them."""
     bootstrap()
     install_system_sources(systems_feed)
     import FMOFP.Interfaces.userInterface.displays.tsd as tsd_module

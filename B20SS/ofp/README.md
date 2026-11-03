@@ -72,10 +72,11 @@ window reads a mirror.
 ## Running the partitions
 
 Flight control, navigation, flight management, the five radars (weather,
-terrain-following, synthetic aperture, targeting and AEWC) with the track fusion
-and engine management on the bus, fed by the Python plant model (the simulated
-aircraft, its weather, its terrain, its two engines, the air traffic around it and
-the ground beneath it, RT 27). From `B20SS/`:
+terrain-following, synthetic aperture, targeting and AEWC) with the track fusion,
+engine management, the mission computer and communications on the bus, fed by
+the Python plant model (the simulated aircraft, its weather, its terrain, its two
+engines, the air traffic around it, the ground beneath it and the RF environment
+it flies through, RT 27). From `B20SS/`:
 
 ```bash
 py -m fmofp_plant --port-base 53000                 # the aircraft; add --hold altitude=150 to test ALT LOW
@@ -84,7 +85,9 @@ ofp/build/<preset>/partitions/fmofp_nav --port-base 53000
 ofp/build/<preset>/partitions/fmofp_fms --port-base 53000
 ofp/build/<preset>/partitions/fmofp_radar --port-base 53000
 ofp/build/<preset>/partitions/fmofp_engine --port-base 53000
-ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 3 --port-base 53000 --report
+ofp/build/<preset>/partitions/fmofp_mission --port-base 53000
+ofp/build/<preset>/partitions/fmofp_comms --port-base 53000
+ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 3 --rt 6 --rt 2 --port-base 53000 --report
 ```
 
 The controller polls the plant's `PLANT_SENSORS` 50 times a second and relays it
@@ -118,7 +121,17 @@ as `PLANT_THRUST_CMD`), their measurements come back as `ENG_ENGINE_IN`, and
 its engine and fuel status go out by broadcast (31/18, 31/19), where the flight
 computer picks up the fuel flow for its fuel efficiency and the MFD its engine
 rows. An `ENG_CMD` (RT 3, SA 13) sets one engine's thrust, engages the
-autothrottle at a target airspeed or moves fuel between tanks.
+autothrottle at a target airspeed or moves fuel between tanks. The mission
+computer (RT 6) hears the FMS flight data broadcast for the route's progress and
+takes `MSN_CMD` (RT 6, SA 11): waypoints, the phase, designated targets and their
+engagement, units of the order of battle, a route optimisation around the enemy
+ones; its `MSN_STATUS` and `MSN_PLAN` block go to the MFD and the TSD by
+broadcast. The communications terminal (RT 2) measures the plant's RF
+environment (`PLANT_RF`, relayed as `COM_RF`: the field strength, a satellite
+that comes into view by chance, the link's traffic) and takes `COM_CMD` (RT 2,
+SA 12): the radio's frequency and mode, a satellite acquisition, transmissions on
+the radio, the satcom and the data link; its `COM_LINK_STATUS` reaches the MFD's
+communications page by relay.
 
 To command a partition, give the controller a script: one command per line,
 `frame rt sa word word ...` with the data words in hex, sent in that minor
@@ -145,14 +158,16 @@ display, RT 13, whose radar page mirrors the radars' pictures from the same
 broadcasts, draws the targeting and AEWC radars' tracks and the SAR's picture of
 the ground, whose systems page shows the flight computer's GCAS alerts and
 envelope exceedances and the engine computer's readings, and whose mission
-page shows the FMS position (its communications and mission rows wait for
-those terminals); and the EICAS, RT 14, which shows the engine computer's
+page shows the mission computer's route, targets and order of battle with
+the FMS position, and whose communications page the radio, satcom and data
+link; and the EICAS, RT 14, which shows the engine computer's
 readings and tanks, the flight computer's alerts, the weather radar's wind
 shear and turbulence severities and the crew alert list (its hydraulic,
 electrical and ECS rows wait for those terminals); and the TSD, RT 16, which
-shows the fused air tracks around the aircraft, the FMS's energy metrics and
-the tactical systems strip (its route, order of battle and radar warning
-contacts wait for the mission and defensive terminals); and the SMS, RT 17,
+shows the fused air tracks around the aircraft, the mission computer's route
+and its enemy units as hostile contacts, the FMS's energy metrics and the
+tactical systems strip (its radar warning contacts wait for the defensive
+terminal); and the SMS, RT 17,
 which shows the weapon stations and the signature strip, its master arm
 following the FMS's weapons state (its stations are the display's own table
 until a stores management computer exists). List them for the
@@ -166,7 +181,7 @@ py -m fmofp_display mfd --port-base 53000
 py -m fmofp_display eicas --port-base 53000
 py -m fmofp_display tsd --port-base 53000
 py -m fmofp_display sms --port-base 53000
-ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 3 --rt 11 --rt 13 --rt 14 --rt 15 --rt 16 --rt 17 --port-base 53000 --timeout-ms 20 --report
+ofp/build/<preset>/bc/fmofp_bc --rt 27 --rt 5 --rt 7 --rt 12 --rt 9 --rt 3 --rt 11 --rt 13 --rt 14 --rt 15 --rt 16 --rt 17 --rt 6 --rt 2 --port-base 53000 --timeout-ms 20 --report
 ```
 
 The controller broadcasts the radars' status, scan summary and guidance, their
@@ -223,6 +238,13 @@ two spotlight pictures of one patch with the ship three pixels further on, and
 standby's empty block; `test_sar_oracle.py` checks the change detector against
 `sar_processor.py` event for event and the picture's geometry and levels through
 `fmofp_radar_tool`, and `test_plant_ground.py` the plant's training range.
+`test_mission_oracle.py` runs the frozen `handleRoute.py`, `targeting.py` and
+`orderOfBattle.py` beside `fmofp_mission_tool` (the route's progress and ETEs,
+target insertion and threat deviation, the target status machine and its decay,
+the order of battle's threats), `test_mission_e2e.py` flies a route under the
+real controller with a script of mission commands, `test_comms_e2e.py` tunes,
+acquires and transmits with a scripted satellite, and `test_plant_rf.py` checks
+the plant's RF environment.
 `test_display_e2e.py` runs the six display terminals headless beside the
 whole set of partitions and checks that the radars' products and the FMS's
 flight data arrive at the displays by broadcast, that the flight computer's

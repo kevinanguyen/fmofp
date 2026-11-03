@@ -8,7 +8,7 @@
   bits="11-8" means (word >> 8) & 0xF. A field may span two consecutive words
   (word="3-4" bits="31-0", most significant word first) for one 32-bit value.
 -->
-<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="15" status="DRAFT" date="2026-11-02">
+<icd name="FMOFP MIL-STD-1553B Bus ICD" version_major="1" version_minor="16" status="DRAFT" date="2026-11-02">
   <revision version="1.0-draft" date="2026-10-04" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">First draft, derived from FMOFP/rtAddressConfig.xml and FMOFP/MIL_STD_1553B/message_schemas.py.</revision>
   <revision version="1.0-draft.2" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 1-3: display addresses accepted; BIT merged into avionics (RT 1), FM fitness and SW configuration folded in as well; bus controller confirmed as its own process. RT 24-26 freed.</revision>
   <revision version="1.0-draft.3" date="2026-10-10" owner="Alee (TubAleeLo)" author="Claude, for Kevin Nguyen">Alee's answers 4-10: UDP transport accepted; legacy WEATHER mode dropped as unnecessary; every TBD value defined from the code that uses it; heading and yaw are true. Command parameters nothing consumed were removed.</revision>
@@ -277,16 +277,139 @@
       <value name="REMOVAL" value="2" doc="Mean log-ratio below -0.3: a return that went away"/>
       <value name="CHANGE" value="3" doc="In between"/>
     </enum>
+    <enum id="mission_phase" bits="3" doc="MissionControl's phase (missionService.set_phase, advance_phase): PLANNING, INGRESS, OBJECTIVE, EGRESS, COMPLETE, advanced in that order and never past COMPLETE">
+      <value name="PLANNING" value="0"/>
+      <value name="INGRESS" value="1"/>
+      <value name="OBJECTIVE" value="2"/>
+      <value name="EGRESS" value="3"/>
+      <value name="COMPLETE" value="4"/>
+    </enum>
+    <enum id="waypoint_type" bits="3" doc="handleRoute.WaypointType: NAV navigation (the default), IP initial point, TGT target, EGR egress, ALT alternate, REF refuel, HOME recovery airfield">
+      <value name="NAV" value="0"/>
+      <value name="IP" value="1"/>
+      <value name="TGT" value="2"/>
+      <value name="EGR" value="3"/>
+      <value name="ALT" value="4"/>
+      <value name="REF" value="5"/>
+      <value name="HOME" value="6"/>
+    </enum>
+    <enum id="target_status" bits="3" doc="targeting.TargetStatus: DESIGNATED when added, ACQUIRED by an acquire or the first radar update, TRACKING by the next radar update, ENGAGED with a weapon, BDA_PENDING then DESTROYED or back to ACQUIRED by the damage assessment, LOST when a tracked target's quality decays below 0.1">
+      <value name="DESIGNATED" value="0"/>
+      <value name="ACQUIRED" value="1"/>
+      <value name="TRACKING" value="2"/>
+      <value name="ENGAGED" value="3"/>
+      <value name="BDA_PENDING" value="4"/>
+      <value name="DESTROYED" value="5"/>
+      <value name="LOST" value="6"/>
+    </enum>
+    <enum id="target_kind" bits="4" doc="What a designated target is (the Python's free-text target type, POINT by default)">
+      <value name="UNKNOWN" value="0"/>
+      <value name="POINT" value="1"/>
+      <value name="SAM" value="2"/>
+      <value name="AIRFIELD" value="3"/>
+      <value name="BRIDGE" value="4"/>
+      <value name="VEHICLE" value="5"/>
+      <value name="SHIP" value="6"/>
+      <value name="BUILDING" value="7"/>
+      <value name="RADAR" value="8"/>
+      <value name="ARMOR" value="9"/>
+    </enum>
+    <enum id="affiliation" bits="2" doc="orderOfBattle.Unit.affiliation: friendly, enemy or neutral; an unknown affiliation is filed with the neutral forces, as the Python did">
+      <value name="UNKNOWN" value="0"/>
+      <value name="FRIENDLY" value="1"/>
+      <value name="ENEMY" value="2"/>
+      <value name="NEUTRAL" value="3"/>
+    </enum>
+    <enum id="unit_kind" bits="4" doc="What a unit of the order of battle is (the Python's free-text unit type)">
+      <value name="UNKNOWN" value="0"/>
+      <value name="FIGHTER" value="1"/>
+      <value name="BOMBER" value="2"/>
+      <value name="TANKER" value="3"/>
+      <value name="AWACS" value="4"/>
+      <value name="HELICOPTER" value="5"/>
+      <value name="SAM_SITE" value="6"/>
+      <value name="RADAR" value="7"/>
+      <value name="AIRFIELD" value="8"/>
+      <value name="ARMOR" value="9"/>
+      <value name="SHIP" value="10"/>
+      <value name="INFANTRY" value="11"/>
+    </enum>
+    <enum id="unit_status" bits="2" doc="A unit's status (orderOfBattle.Unit.status, 'Operational' when added)">
+      <value name="UNKNOWN" value="0"/>
+      <value name="OPERATIONAL" value="1"/>
+      <value name="DEGRADED" value="2"/>
+      <value name="DESTROYED" value="3"/>
+    </enum>
+    <enum id="weapon" bits="3" doc="The weapon a target is engaged with (targeting.engage_target's free-text weapon_system; the SMS's stores)">
+      <value name="NONE" value="0"/>
+      <value name="GUN" value="1"/>
+      <value name="AIM_120" value="2"/>
+      <value name="AIM_9" value="3"/>
+      <value name="JDAM" value="4"/>
+      <value name="JASSM" value="5"/>
+      <value name="MK_82" value="6"/>
+      <value name="AGM_88" value="7"/>
+    </enum>
+    <enum id="mission_command" bits="4" doc="What MSN_CMD asks of the mission computer: missionService.py's entry points (the scenario engine's waypoint and phase injections, the targeting and order-of-battle calls nothing in the Python ever made)">
+      <value name="NONE" value="0"/>
+      <value name="SET_PHASE" value="1" doc="set_phase"/>
+      <value name="ADVANCE_PHASE" value="2" doc="advance_phase"/>
+      <value name="ADD_WAYPOINT" value="3" doc="add_waypoint: appended to the route"/>
+      <value name="REMOVE_WAYPOINT" value="4" doc="RouteManager.remove_waypoint"/>
+      <value name="CLEAR_ROUTE" value="5" doc="RouteManager.clear_route"/>
+      <value name="DESIGNATE_TARGET" value="6" doc="designate_target: a target and a TGT waypoint before the nearest waypoint ahead"/>
+      <value name="ACQUIRE_TARGET" value="7" doc="Targeting.acquire"/>
+      <value name="ENGAGE_TARGET" value="8" doc="engage_target with a weapon"/>
+      <value name="DISENGAGE_TARGET" value="9" doc="Targeting.disengage_target"/>
+      <value name="ASSESS_DAMAGE" value="10" doc="mark_bda_pending then assess_damage: DESTROYED, or back to ACQUIRED"/>
+      <value name="ADD_UNIT" value="11" doc="add_unit to the order of battle"/>
+      <value name="REMOVE_UNIT" value="12" doc="OrderOfBattle.remove_unit"/>
+      <value name="SET_UNIT_STATUS" value="13" doc="OrderOfBattle.update_status"/>
+      <value name="OPTIMISE_ROUTE" value="14" doc="optimise_route: deviate the route from every enemy unit of threat level 2 or more"/>
+      <value name="REMOVE_TARGET" value="15" doc="Targeting.remove_target"/>
+    </enum>
+    <enum id="radio_mode" bits="2" doc="CommsService.set_radio_mode: AM, FM, USB, LSB">
+      <value name="AM" value="0"/>
+      <value name="FM" value="1"/>
+      <value name="USB" value="2"/>
+      <value name="LSB" value="3"/>
+    </enum>
+    <enum id="satcom_state" bits="2" doc="CommsService's satcom connection_status: disconnected, acquiring (after acquire_satellite), connected">
+      <value name="DISCONNECTED" value="0"/>
+      <value name="ACQUIRING" value="1"/>
+      <value name="CONNECTED" value="2"/>
+    </enum>
+    <enum id="datalink_mode" bits="2" doc="CommsService.set_datalink_mode: line of sight or beyond">
+      <value name="LOS" value="0"/>
+      <value name="BLOS" value="1"/>
+    </enum>
+    <enum id="link_state" bits="2" doc="The data link's link_status: active while the satcom is connected">
+      <value name="INACTIVE" value="0"/>
+      <value name="ACTIVE" value="1"/>
+    </enum>
+    <enum id="comms_command" bits="4" doc="What COM_CMD asks of the communications terminal: CommsService's manual controls (set_radio_frequency, set_radio_mode, set_radio_volume, set_radio_squelch, transmit_radio, acquire_satellite, send_satcom, set_datalink_mode, set_datalink_channel, send_datalink), which nothing in the Python ever called">
+      <value name="NONE" value="0"/>
+      <value name="SET_RADIO_FREQUENCY" value="1"/>
+      <value name="SET_RADIO_MODE" value="2"/>
+      <value name="SET_RADIO_VOLUME" value="3"/>
+      <value name="SET_RADIO_SQUELCH" value="4"/>
+      <value name="RADIO_TRANSMIT" value="5" doc="transmit_radio: FAILED unless the radio is active"/>
+      <value name="ACQUIRE_SATELLITE" value="6"/>
+      <value name="SATCOM_SEND" value="7" doc="send_satcom: FAILED unless connected"/>
+      <value name="SET_DATALINK_MODE" value="8"/>
+      <value name="SET_DATALINK_CHANNEL" value="9"/>
+      <value name="DATALINK_SEND" value="10" doc="send_datalink: one packet sent; FAILED unless the link is active"/>
+    </enum>
   </enums>
 
   <terminals>
     <terminal rt="0" id="reserved_0" name="Reserved (was 'Unnamed System')" status="reserved"/>
     <terminal rt="1" id="avionics" name="Avionics - LRU health, built-in test, FM fitness, software configuration" status="existing" source="Systems/avionics/hardwareHealth, Systems/builtInTestSystems, Systems/fmFitness, Systems/configurationManagement" note="BIT merged here (Alee, 2026-10-10). FM fitness and SW configuration are here too: Alee said to fold them into another terminal, and both are health/maintenance functions"/>
-    <terminal rt="2" id="comms" name="Communications" status="existing" source="Systems/comms/messaging_service.py"/>
+    <terminal rt="2" id="comms" name="Communications - radio, satcom, data link" status="existing" source="Systems/comms/messaging_service.py" note="Ported in v1.16 (fmofp_comms). The radio, satcom and data-link state of CommsService; what they measure (the field strength, the satellite, the link's traffic and errors) is the plant's RF environment (PLANT_RF, relayed as COM_RF). COM_CMD carries the service's manual controls; COM_LINK_STATUS goes to the MFD's communications page by relay"/>
     <terminal rt="3" id="enginemanagement" name="Engine management - thrust, autothrottle, fuel" status="existing" source="Systems/engineManagement: thrustManagement/thrustManagement.py, fuelManagement/fuelControl.py and fuelMonitor.py" note="Ported in v1.8 (fmofp_engine). The engine model of ecu/engineControlUnit.py is simulation and runs in the plant (PLANT_ENGINE); this terminal commands the engines (ENG_THRUST_CMD) from the FMS thrust lever, ENG_CMD and its autothrottle, and reports what it measures. It hears the FMS flight data by broadcast (RT 31 SA 25) for the autothrottle's airspeed"/>
     <terminal rt="4" id="enviornmentalcontrolsystem" name="Environmental control system" status="existing" source="Systems/enviornmentalControlSystem" note="id keeps the repo's spelling"/>
     <terminal rt="5" id="flightcontrolsys" name="Flight control - FCC, GCAS, performance monitor" status="existing" source="Systems/flightControlSys" note="Ported in v1.1 (fmofp_fcs). From v1.8 it hears the engine computer's ENG_ENGINE_STATUS by broadcast (RT 31 SA 18), which gives FCS_PERF_STATUS its fuel efficiency"/>
-    <terminal rt="6" id="missionplanning" name="Mission planning" status="existing" source="Systems/missionPlanning/missionService.py"/>
+    <terminal rt="6" id="missionplanning" name="Mission computer - phase, route, targets, order of battle" status="existing" source="Systems/missionPlanning: missionService.py, missionControl.py (MissionControl), routeManagement/handleRoute.py, targeting/targeting.py, orderOfBattle/orderOfBattle.py" note="Ported in v1.16 (fmofp_mission). It hears the FMS flight data by broadcast (31/25) for the route's progress, takes MSN_CMD (the scenario engine's waypoints and phases, and the targeting and order-of-battle calls nothing in the Python made), and publishes MSN_STATUS and the MSN_PLAN block, broadcast to the MFD and the TSD. The MissionPlanningSystem class of missionControl.py, a second route in flat degrees that the service fed and never read, is not carried"/>
     <terminal rt="7" id="nav" name="Navigation - GPS position solver and GPS/dead-reckoning fusion" status="existing" source="Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py" note="Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2)"/>
     <terminal rt="8" id="powermanagement" name="Power management" status="existing" source="Systems/powerManagement"/>
     <terminal rt="9" id="radar" name="Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion" status="existing" source="Systems/radarManagement" note="The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19), the terrain-following radar in v1.4 (SA 2, 14-15, 20-23) the targeting radar with the track fusion in v1.10 (SA 4, 8-11, 24-25), the AEWC radar in v1.12 (SA 5, 12-13) and the synthetic aperture radar in v1.13 (SA 3, 16-17, 26-27). The radar computer listens to the FMS flight data broadcast (31/25) for the synthetic aperture radar's imaging geometry"/>
@@ -304,7 +427,7 @@
     <terminal rt="21" id="flightsurfaces" name="Flight surfaces" status="new" source="Systems/flightSurfaces"/>
     <terminal rt="22" id="defensive" name="Defensive systems - RWR, chaff, flare, ECM" status="new" source="Systems/defensiveSys"/>
     <terminal rt="23" id="flightdatamonitoring" name="Flight data monitoring" status="new" source="Systems/flightDataMonitoring"/>
-    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC). From v1.13 it also holds the ground scene the synthetic aperture radar images (PLANT_GROUND): roads, a river, a town with its buildings, forests, a lake, and the vehicles and the ship that move"/>
+    <terminal rt="27" id="plant" name="Plant model - the simulated aircraft and world (test equipment, not aircraft software)" status="new" source="Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process" note="Added in v1.1. Publishes what the sensors would measure (and, from v1.16, the RF environment the communications terminal measures, PLANT_RF). Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC). From v1.13 it also holds the ground scene the synthetic aperture radar images (PLANT_GROUND): roads, a river, a town with its buildings, forests, a lake, and the vehicles and the ship that move"/>
     <terminal rt="31" id="broadcast" name="Broadcast address - every terminal that accepts a subaddress hears it" status="reserved" note="Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7"/>
   </terminals>
 
@@ -867,7 +990,7 @@
       <doc>The MFD's systems page rows and the EICAS's FCS rows and alert list (v1.9); any display that shows the alerts later (HUD) adds itself to the listeners.</doc>
     </message>
     <message id="BCAST_FCS_PERF_STATUS" rt="31" sa="10" dir="R" words="4" rate="1" title="Flight envelope monitoring, broadcast to the displays" layout_of="FCS_PERF_STATUS" listeners="13 14"/>
-    <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast" layout_of="FMS_FLIGHT_DATA" listeners="3 9 11 13 14 16">
+    <message id="BCAST_FMS_FLIGHT_DATA" rt="31" sa="25" dir="R" words="21" rate="10" title="FMS flight data, broadcast" layout_of="FMS_FLIGHT_DATA" listeners="3 6 9 11 13 14 16">
       <doc>What the PFD draws and the MFD's mission page reads; the HUD will listen too. From v1.8 the engine computer (RT 3) listens as well: its autothrottle holds the airspeed in it. From v1.13 the radar computer (RT 9) listens: the synthetic aperture radar places its pictures by the position and heading in it.</doc>
     </message>
     <message id="BCAST_FMS_STATUS" rt="31" sa="26" dir="R" words="3" rate="5" title="FMS status, broadcast to the displays" layout_of="FMS_STATUS" listeners="11 14 16 17">
@@ -1158,6 +1281,143 @@
       <field name="burn_rate" word="5" bits="15-0" type="uint" lsb="1" units="kg/h" min="0" max="65535" doc="All tanks; saturates"/>
       <field name="transferred" word="6" bits="15-0" type="uint" lsb="1" units="kg" min="0" max="65535" doc="Since reset; saturates"/>
     </message>
+
+    <!-- ===== v1.16: the mission computer (RT 6), the communications terminal (RT 2) and the RF environment in the plant ===== -->
+    <message id="MSN_STATUS" rt="6" sa="10" dir="T" words="6" rate="5" title="Mission computer status">
+      <doc>The terminal's state and command handling as the other subsystems report them, plus what missionService.get_data() summarised: the phase (MissionControl), the route's progress (RouteManager.get_nav_data: the active waypoint's index, the distance and bearing to it), and the counts of waypoints, active targets and units by affiliation. The plan itself is the MSN_PLAN block. mission_cmd_status is the outcome of the last MSN_CMD.</doc>
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last MSN_MODE_CMD processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last MSN_MODE_CMD was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="phase" word="1" bits="13-11" type="enum" enum="mission_phase"/>
+      <field name="mission_cmd_status" word="1" bits="10-7" type="enum" enum="cmd_status" doc="Outcome of the last MSN_CMD"/>
+      <field name="position_valid" word="1" bits="6" type="bool" doc="1 = the route's progress is measured from a valid FMS position (BCAST_FMS_FLIGHT_DATA, position SSM NORMAL)"/>
+      <field name="route_active" word="1" bits="5" type="bool" doc="1 = a waypoint lies ahead (active_index below waypoint_count)"/>
+      <field name="spare_1" word="1" bits="4-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+      <field name="waypoint_count" word="2" bits="15-11" type="uint" doc="Waypoints in the route (at most 16)"/>
+      <field name="active_index" word="2" bits="10-6" type="uint" doc="RouteManager._active_idx: the waypoint being flown to; equals waypoint_count once the route is flown"/>
+      <field name="target_count" word="2" bits="5-1" type="uint" doc="Targets neither destroyed nor lost (Targeting.get_prioritised)"/>
+      <field name="spare_2" word="2" bits="0" type="spare"/>
+      <field name="friendly_units" word="3" bits="15-11" type="uint" doc="OrderOfBattle.summary()"/>
+      <field name="enemy_units" word="3" bits="10-6" type="uint"/>
+      <field name="neutral_units" word="3" bits="5-1" type="uint" doc="Neutral and unknown affiliations"/>
+      <field name="spare_3" word="3" bits="0" type="spare"/>
+      <field name="distance_to_next" word="4" bits="15-0" type="uint" lsb="1/10" units="nm" min="0" max="6553.5" doc="get_nav_data's distance_to_next_nm: great-circle, from the FMS position to the active waypoint; 0 without one"/>
+      <field name="bearing_to_next" word="5" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="get_nav_data's bearing_to_next_deg, true; 0 without an active waypoint"/>
+    </message>
+    <message id="MSN_MODE_CMD" rt="6" sa="10" dir="R" words="1" rate="aperiodic" title="Mission computer mode command">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="MSN_CMD" rt="6" sa="11" dir="R" words="13" rate="aperiodic" title="Mission command">
+      <doc>missionService.py's entry points on the bus (the scenario engine injected waypoints and phases through them; the targeting and order-of-battle calls had no caller). The fields a command does not use are ignored. ADD_WAYPOINT takes the name, position, altitude, type and fly-over flag; DESIGNATE_TARGET the kind, position, altitude and priority (the waypoint it inserts is named TGT-nnnn after the target's id); ADD_UNIT the kind, affiliation, status, threat level, position and altitude; the target and unit commands name their object by the id the mission computer gave it (MSN_PLAN); SET_PHASE takes the phase, ENGAGE_TARGET the weapon, ASSESS_DAMAGE the verdict. The outcome is MSN_STATUS.mission_cmd_status: ACCEPTED, REJECTED_INVALID for an unknown command or an unusable parameter, FAILED when the route or a table is full or the id is not found or the target's status does not allow the step.</doc>
+      <field name="command" word="0" bits="15-12" type="enum" enum="mission_command"/>
+      <field name="waypoint_type" word="0" bits="11-9" type="enum" enum="waypoint_type" doc="ADD_WAYPOINT"/>
+      <field name="fly_over" word="0" bits="8" type="bool" doc="ADD_WAYPOINT: Waypoint.fly_over (informational, as in the Python)"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="id" word="1" bits="15-8" type="uint" doc="The waypoint, target or unit the command names (0 = none)"/>
+      <field name="priority" word="1" bits="7-5" type="uint" doc="DESIGNATE_TARGET: 1 is the highest; the Python's default was 3"/>
+      <field name="weapon" word="1" bits="4-2" type="enum" enum="weapon" doc="ENGAGE_TARGET"/>
+      <field name="destroyed" word="1" bits="1" type="bool" doc="ASSESS_DAMAGE: 1 = destroyed, 0 = survived (back to ACQUIRED)"/>
+      <field name="spare_1" word="1" bits="0" type="spare"/>
+      <field name="target_kind" word="2" bits="15-12" type="enum" enum="target_kind" doc="DESIGNATE_TARGET"/>
+      <field name="unit_kind" word="2" bits="11-8" type="enum" enum="unit_kind" doc="ADD_UNIT"/>
+      <field name="affiliation" word="2" bits="7-6" type="enum" enum="affiliation" doc="ADD_UNIT"/>
+      <field name="unit_status" word="2" bits="5-4" type="enum" enum="unit_status" doc="ADD_UNIT, SET_UNIT_STATUS (UNKNOWN on ADD_UNIT reads as OPERATIONAL, the Python's default)"/>
+      <field name="threat_level" word="2" bits="3-1" type="uint" doc="ADD_UNIT: 0-5"/>
+      <field name="spare_2" word="2" bits="0" type="spare"/>
+      <field name="latitude" word="3-4" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90" doc="ADD_WAYPOINT, DESIGNATE_TARGET, ADD_UNIT: WGS-84"/>
+      <field name="longitude" word="5-6" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999"/>
+      <field name="altitude" word="7" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
+      <field name="name_0" word="8" bits="15-0" type="uint" doc="ADD_WAYPOINT: the name, eight ASCII characters in four words, the first of each pair in the high byte, 0 padding"/>
+      <field name="name_1" word="9" bits="15-0" type="uint"/>
+      <field name="name_2" word="10" bits="15-0" type="uint"/>
+      <field name="name_3" word="11" bits="15-0" type="uint"/>
+      <field name="phase" word="12" bits="15-13" type="enum" enum="mission_phase" doc="SET_PHASE"/>
+      <field name="spare_12" word="12" bits="12-0" type="spare"/>
+    </message>
+    <message id="BCAST_MSN_STATUS" rt="31" sa="28" dir="R" words="6" rate="5" title="Mission status, broadcast to the displays" layout_of="MSN_STATUS" listeners="13 16">
+      <doc>The MFD's mission page header and route progress, the TSD's route (v1.16). Subaddress 28 carried the energy maneuverability until v1.15.</doc>
+    </message>
+    <message id="COM_STATUS" rt="2" sa="10" dir="T" words="3" rate="1" title="Communications status">
+      <doc>The terminal's state and command handling, the three links' availability (CommsService.get_data: the radio active, the satcom connected, the data link active), the outcome of the last COM_CMD and the counts of radio and satcom transmissions it accepted. The links' details are COM_LINK_STATUS.</doc>
+      <field name="state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="last_cmd_seq" word="0" bits="7-0" type="uint" doc="cmd_seq of the last COM_MODE_CMD processed (see Command sequence rule)"/>
+      <field name="cmd_rejected" word="1" bits="15" type="bool" doc="1 = the last COM_MODE_CMD was rejected"/>
+      <field name="mode_transition" word="1" bits="14" type="bool" doc="1 = a commanded mode change is still in progress"/>
+      <field name="radio_active" word="1" bits="13" type="bool" doc="1 = the radio field strength is above 20 % (CommsService._simulate)"/>
+      <field name="satcom_connected" word="1" bits="12" type="bool"/>
+      <field name="datalink_active" word="1" bits="11" type="bool" doc="1 = the data link is up, which it is while the satcom is connected"/>
+      <field name="comms_cmd_status" word="1" bits="10-7" type="enum" enum="cmd_status" doc="Outcome of the last COM_CMD"/>
+      <field name="spare_1" word="1" bits="6-1" type="spare"/>
+      <field name="healthy" word="1" bits="0" type="bool" doc="1 = healthy (legacy health_status, bit 0)"/>
+      <field name="radio_transmissions" word="2" bits="15-8" type="uint" doc="RADIO_TRANSMIT commands accepted, mod 256"/>
+      <field name="satcom_transmissions" word="2" bits="7-0" type="uint" doc="SATCOM_SEND commands accepted, mod 256"/>
+    </message>
+    <message id="COM_MODE_CMD" rt="2" sa="10" dir="R" words="1" rate="aperiodic" title="Communications mode command">
+      <field name="requested_state" word="0" bits="15-12" type="enum" enum="terminal_state"/>
+      <field name="spare_0" word="0" bits="11-8" type="spare"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+    </message>
+    <message id="COM_RF" rt="2" sa="11" dir="R" layout_of="PLANT_RF" rate="1" title="RF environment, from the plant">
+      <doc>PLANT_RF relayed to the communications terminal: what its radio, satcom receiver and data link would measure.</doc>
+    </message>
+    <message id="COM_CMD" rt="2" sa="12" dir="R" words="6" rate="aperiodic" title="Communications command">
+      <doc>CommsService's manual controls on the bus. SET_RADIO_FREQUENCY takes the frequency (rounded to a kHz, as set_radio_frequency rounded to three decimals), SET_RADIO_MODE the mode, SET_RADIO_VOLUME the volume (held to 0-100), SET_RADIO_SQUELCH the squelch (0-9), SET_DATALINK_MODE the mode, SET_DATALINK_CHANNEL the channel (held to 1-20); the three send commands name a message by number and a priority (the text itself stays with the sender: a 1553 word is not a message body). The outcome is COM_STATUS.comms_cmd_status: ACCEPTED, REJECTED_INVALID for an unknown command or an unusable frequency, FAILED for a transmission the link cannot carry (the radio squelched, the satcom not connected, the data link inactive).</doc>
+      <field name="command" word="0" bits="15-12" type="enum" enum="comms_command"/>
+      <field name="radio_mode" word="0" bits="11-10" type="enum" enum="radio_mode" doc="SET_RADIO_MODE"/>
+      <field name="datalink_mode" word="0" bits="9-8" type="enum" enum="datalink_mode" doc="SET_DATALINK_MODE"/>
+      <field name="cmd_seq" word="0" bits="7-0" type="uint" doc="Incremented by the sender for each new command"/>
+      <field name="volume" word="1" bits="15-9" type="uint" doc="SET_RADIO_VOLUME: 0-100"/>
+      <field name="squelch" word="1" bits="8-5" type="uint" doc="SET_RADIO_SQUELCH: 0-9"/>
+      <field name="channel" word="1" bits="4-0" type="uint" doc="SET_DATALINK_CHANNEL: 1-20"/>
+      <field name="frequency" word="2-3" bits="31-0" type="sint" lsb="1/1000" units="MHz" min="0" max="2000" doc="SET_RADIO_FREQUENCY: above 0"/>
+      <field name="message_id" word="4" bits="15-0" type="uint" doc="RADIO_TRANSMIT, SATCOM_SEND, DATALINK_SEND: the sender's number for the message"/>
+      <field name="priority" word="5" bits="15-14" type="uint" doc="DATALINK_SEND: send_datalink's priority (2 by default in the Python)"/>
+      <field name="spare_5" word="5" bits="13-0" type="spare"/>
+    </message>
+    <message id="COM_LINK_STATUS" rt="2" sa="13" dir="T" words="11" rate="1" title="Radio, satcom and data link status">
+      <doc>CommsService.get_data()'s three dictionaries, once a second as its loop ran: the radio's settings, field strength and whether it is active (above 20 %); the satcom's state and, while connected, the satellite's number, signal, data rate and latency the plant reports; the data link's state, mode and channel, its packet counters (the plant's background traffic while the link is up, plus one per DATALINK_SEND) and error rate. The MFD's communications page reads it by relay (MFD_COM_LINK_STATUS).</doc>
+      <field name="frequency" word="0-1" bits="31-0" type="sint" lsb="1/1000" units="MHz" min="0" max="2000" doc="The radio's frequency; 118.000 at start"/>
+      <field name="radio_mode" word="2" bits="15-14" type="enum" enum="radio_mode"/>
+      <field name="radio_active" word="2" bits="13" type="bool" doc="1 = field strength above 20 %"/>
+      <field name="volume" word="2" bits="12-6" type="uint" doc="0-100; 50 at start"/>
+      <field name="squelch" word="2" bits="5-2" type="uint" doc="0-9; 3 at start"/>
+      <field name="spare_2" word="2" bits="1-0" type="spare"/>
+      <field name="radio_signal" word="3" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="The radio field strength the plant reports"/>
+      <field name="satcom_state" word="4" bits="15-14" type="enum" enum="satcom_state"/>
+      <field name="satellite_id" word="4" bits="13-10" type="uint" doc="1-12 while connected, 0 otherwise"/>
+      <field name="datalink_state" word="4" bits="9-8" type="enum" enum="link_state"/>
+      <field name="datalink_mode" word="4" bits="7-6" type="enum" enum="datalink_mode"/>
+      <field name="channel" word="4" bits="5-1" type="uint" doc="1-20; 1 at start"/>
+      <field name="spare_4" word="4" bits="0" type="spare"/>
+      <field name="satcom_signal" word="5" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100" doc="While connected; 0 otherwise"/>
+      <field name="data_rate" word="6" bits="15-0" type="uint" lsb="1/10" units="kbps" min="0" max="6553.5" doc="While connected; 0 otherwise"/>
+      <field name="latency" word="7" bits="15-0" type="uint" lsb="1" units="ms" min="0" max="65535" doc="While connected; 0 otherwise"/>
+      <field name="packets_sent" word="8" bits="15-0" type="uint" doc="mod 65536"/>
+      <field name="packets_received" word="9" bits="15-0" type="uint" doc="mod 65536"/>
+      <field name="error_rate" word="10" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="655.35" doc="The link's error rate the plant reports, while the link is up"/>
+    </message>
+    <message id="MFD_COM_LINK_STATUS" rt="13" sa="17" dir="R" layout_of="COM_LINK_STATUS" rate="1" title="Radio, satcom and data link status, for the MFD">
+      <doc>COM_LINK_STATUS relayed to the MFD for its communications page (mfd.draw_comms_page). One consumer, so its own relay (v1.15's rule); SA 17 is a broadcast number the MFD never listens to.</doc>
+    </message>
+    <message id="PLANT_RF" rt="27" sa="12" dir="T" words="7" rate="1" title="RF environment: the radio field, the satellite, the link, from the plant">
+      <doc>What CommsService._simulate drew once a second, as the world the communications terminal measures (v1.16, fmofp_plant.rf): the VHF field strength at the aircraft (a random walk of 3 % a second from 0); whether a satellite is in view (it comes into view with the Python's 1 % chance a second and stays), with its number, signal (40-80 % then a 1 % walk), data rate (50-200 kbps then a 5 kbps walk) and latency (200-600 ms then a 10 ms walk, never under 200); the data link's error rate (a 0.1 % walk, never negative) and the packets the network offers in and out each second (0-2 each).</doc>
+      <field name="radio_field" word="0" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100"/>
+      <field name="satellite_available" word="1" bits="15" type="bool" doc="1 = a satellite is in view"/>
+      <field name="satellite_id" word="1" bits="14-11" type="uint" doc="1-12 while in view, 0 otherwise"/>
+      <field name="spare_1" word="1" bits="10-0" type="spare"/>
+      <field name="satellite_signal" word="2" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="100"/>
+      <field name="satellite_data_rate" word="3" bits="15-0" type="uint" lsb="1/10" units="kbps" min="0" max="6553.5"/>
+      <field name="satellite_latency" word="4" bits="15-0" type="uint" lsb="1" units="ms" min="0" max="65535"/>
+      <field name="link_error_rate" word="5" bits="15-0" type="uint" lsb="1/100" units="%" min="0" max="655.35"/>
+      <field name="packets_in" word="6" bits="15-8" type="uint" doc="Packets the network offers this second"/>
+      <field name="packets_out" word="6" bits="7-0" type="uint" doc="Packets the aircraft's background traffic sends this second"/>
+    </message>
   </messages>
 
   <!-- RT-to-RT transfers the bus controller performs: in the minor frame where it polls `from`,
@@ -1209,6 +1469,10 @@
     <relay from="PLANT_GROUND" to="RDR_SAR_SCENE"/>
     <relay from="RDR_SAR_STATUS" to="BCAST_RDR_SAR_STATUS"/>
     <relay from="RDR_SAR_IMAGE" to="MFD_RDR_SAR_IMAGE"/>
+    <relay from="PLANT_RF" to="COM_RF"/>
+    <relay from="COM_LINK_STATUS" to="MFD_COM_LINK_STATUS"/>
+    <relay from="MSN_STATUS" to="BCAST_MSN_STATUS"/>
+    <relay from="MSN_PLAN" to="BCAST_MSN_PLAN"/>
   </relays>
 
   <!-- Payloads larger than one message use the block transfer format in README.md.
@@ -1527,6 +1791,60 @@
     </block>
     <block id="BCAST_RDR_FUSED_TRACKS" rt="31" dir="R" desc_sa="22" seg_sa="23" rate="25" title="Fused air tracks, broadcast to the displays" layout_of="RDR_FUSED_TRACKS" listeners="14 16">
       <doc>The relayed RDR_FUSED_TRACKS for the tactical situation display's threat picture and the EICAS's hostile track count (v1.10).</doc>
+    </block>
+    <block id="MSN_PLAN" rt="6" desc_sa="12" seg_sa="13" rate="10" title="Mission plan: the route, the targets, the order of battle">
+      <doc>What missionService.get_data(), get_nav_data() and get_oob() handed the MFD's mission page and the TSD (v1.16): RouteManager.get_full_route() (every waypoint with its name, type, position, altitude and ETE, in route order, those already passed flagged), Targeting.get_prioritised() (the targets neither destroyed nor lost, by priority then track quality), and every unit of the order of battle with its affiliation, kind, status and threat level. Published when a command or the route's progress changes it, no sooner than 75 frames after the last publication (its thirteen segments take 65 frames at 10 Hz), and every 150 frames while a route is being flown, as the ETEs move.</doc>
+      <header words="3">
+        <field name="plan_seq" word="0" bits="15-8" type="uint" doc="The publication's number, 1-255 round and round"/>
+        <field name="phase" word="0" bits="7-5" type="enum" enum="mission_phase"/>
+        <field name="active_index" word="0" bits="4-0" type="uint" doc="RouteManager._active_idx, as MSN_STATUS"/>
+        <field name="distance_to_next" word="1" bits="15-0" type="uint" lsb="1/10" units="nm" min="0" max="6553.5" doc="To the active waypoint; 0 without one"/>
+        <field name="bearing_to_next" word="2" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945" doc="True; 0 without an active waypoint"/>
+      </header>
+      <section id="waypoint" words="11" max="16" doc="RouteManager.get_full_route(): the route in order">
+        <field name="id" word="0" bits="15-8" type="uint" doc="Waypoint.id: the number the route gave it, counted up from 1"/>
+        <field name="type" word="0" bits="7-5" type="enum" enum="waypoint_type"/>
+        <field name="fly_over" word="0" bits="4" type="bool"/>
+        <field name="passed" word="0" bits="3" type="bool" doc="1 = behind the active waypoint (its ETE was None)"/>
+        <field name="spare_0" word="0" bits="2-0" type="spare"/>
+        <field name="name_0" word="1" bits="15-0" type="uint" doc="Eight ASCII characters in four words, the first of each pair in the high byte, 0 padding"/>
+        <field name="name_1" word="2" bits="15-0" type="uint"/>
+        <field name="name_2" word="3" bits="15-0" type="uint"/>
+        <field name="name_3" word="4" bits="15-0" type="uint"/>
+        <field name="latitude" word="5-6" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90"/>
+        <field name="longitude" word="7-8" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999"/>
+        <field name="altitude" word="9" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
+        <field name="ete" word="10" bits="15-0" type="uint" lsb="1/10" units="min" min="0" max="6553.5" doc="Waypoint.ete_min: the cumulative time to it at the ground speed; 0 when passed or without a position"/>
+      </section>
+      <section id="target" words="9" max="8" doc="Targeting.get_prioritised(): active targets by priority, then by track quality">
+        <field name="id" word="0" bits="15-8" type="uint" doc="The number the mission computer gave it (the Python's T0001 is 1)"/>
+        <field name="kind" word="0" bits="7-4" type="enum" enum="target_kind"/>
+        <field name="status" word="0" bits="3-1" type="enum" enum="target_status"/>
+        <field name="spare_0" word="0" bits="0" type="spare"/>
+        <field name="priority" word="1" bits="15-13" type="uint"/>
+        <field name="weapon" word="1" bits="12-10" type="enum" enum="weapon" doc="While engaged; NONE otherwise"/>
+        <field name="track_quality" word="1" bits="9-0" type="uint" lsb="1/1000" min="0" max="1" doc="Target.track_quality: 0 when designated, 0.5 when acquired, the radar's when updated, decaying while stale"/>
+        <field name="latitude" word="2-3" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90"/>
+        <field name="longitude" word="4-5" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999"/>
+        <field name="altitude" word="6" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
+        <field name="speed" word="7" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="6553.5"/>
+        <field name="heading" word="8" bits="15-0" type="uint" lsb="360/65536" units="deg" min="0" max="359.9945"/>
+      </section>
+      <section id="unit" words="8" max="16" doc="OrderOfBattle.get_all_units(): every unit, in the order added">
+        <field name="id" word="0" bits="15-8" type="uint" doc="The number the mission computer gave it"/>
+        <field name="kind" word="0" bits="7-4" type="enum" enum="unit_kind"/>
+        <field name="affiliation" word="0" bits="3-2" type="enum" enum="affiliation"/>
+        <field name="status" word="0" bits="1-0" type="enum" enum="unit_status"/>
+        <field name="threat_level" word="1" bits="15-13" type="uint" doc="0-5"/>
+        <field name="heading" word="1" bits="12-0" type="uint" lsb="360/8192" units="deg" min="0" max="359.956"/>
+        <field name="latitude" word="2-3" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-90" max="90"/>
+        <field name="longitude" word="4-5" bits="31-0" type="sint" lsb="180/2147483648" units="deg" min="-180" max="179.9999999"/>
+        <field name="altitude" word="6" bits="15-0" type="uint" lsb="1" units="ft" min="0" max="65535"/>
+        <field name="speed" word="7" bits="15-0" type="uint" lsb="1/10" units="kt" min="0" max="6553.5"/>
+      </section>
+    </block>
+    <block id="BCAST_MSN_PLAN" rt="31" dir="R" desc_sa="13" seg_sa="14" rate="10" title="Mission plan, broadcast to the displays" layout_of="MSN_PLAN" listeners="13 16">
+      <doc>The relayed MSN_PLAN for the MFD's mission page (route, targets and order-of-battle tabs) and the TSD's waypoints and order-of-battle contacts (v1.16). Subaddresses 13-14 carried the SAR image until v1.15.</doc>
     </block>
   </blocks>
 

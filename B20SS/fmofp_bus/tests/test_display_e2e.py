@@ -12,7 +12,8 @@ computer's engine and fuel status once each to address 31, and each display
 accepts the subaddresses it draws (ICD v1.7, v1.8). The feeds then make of it
 what the Qt windows would draw.
 
-Needs FMOFP_BC, FMOFP_FCS, FMOFP_NAV, FMOFP_FMS, FMOFP_RADAR and FMOFP_ENGINE (CI sets them).
+Needs FMOFP_BC, FMOFP_FCS, FMOFP_NAV, FMOFP_FMS, FMOFP_RADAR, FMOFP_ENGINE, FMOFP_MISSION and FMOFP_COMMS (CI sets
+them).
 """
 
 import math
@@ -42,7 +43,7 @@ from fmofp_plant.plant import PlantModel, PlantTerminal
 PORT_BASE = 61000
 FRAMES = 420  # the SAR's first picture: a fix, 150 frames of integration, 134 frames of segments
 SYNC_MODE_CODE = 17
-BINARIES = ("FMOFP_FCS", "FMOFP_NAV", "FMOFP_FMS", "FMOFP_RADAR", "FMOFP_ENGINE")
+BINARIES = ("FMOFP_FCS", "FMOFP_NAV", "FMOFP_FMS", "FMOFP_RADAR", "FMOFP_ENGINE", "FMOFP_MISSION", "FMOFP_COMMS")
 
 
 class PlantThread(threading.Thread):
@@ -122,7 +123,8 @@ class DisplaysEndToEndTest(unittest.TestCase):
     def run_bus(self):
         terminals = ["27", str(m.FcsStatus.RT), str(m.NavSolution.RT), str(m.FmsStatus.RT), str(m.RdrWxStatus.RT),
                      str(m.EngStatus.RT), str(m.DspPfdStatus.RT), str(m.DspRadarStatus.RT), str(m.DspMfdStatus.RT),
-                     str(m.DspEicasStatus.RT), str(m.DspTsdStatus.RT), str(m.DspSmsStatus.RT)]
+                     str(m.DspEicasStatus.RT), str(m.DspTsdStatus.RT), str(m.DspSmsStatus.RT), str(m.MsnStatus.RT),
+                     str(m.ComStatus.RT)]
         args = [os.environ["FMOFP_BC"]]
         for rt in terminals:
             args += ["--rt", rt]
@@ -238,10 +240,10 @@ class DisplaysEndToEndTest(unittest.TestCase):
         # copy written into any display.
         broadcast = {r.command.subaddress for _, r in framed
                      if not r.command.transmit and not r.command.is_mode_code and r.command.rt == BROADCAST_RT}
-        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 18, 19, 22, 23, 24, 25, 26, 27}, broadcast)
+        self.assertEqual({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 18, 19, 22, 23, 24, 25, 26, 27, 28}, broadcast)
         # A stream with one consumer is that consumer's own relay (v1.15): the MFD's targeting, AEWC and SAR
         # pictures and the TSD's energy metrics arrive unicast; nothing else is written into a display.
-        own = {m.DspMfdStatus.RT: {20, 21, 22, 23, 26, 27}, m.DspTsdStatus.RT: {1}}
+        own = {m.DspMfdStatus.RT: {17, 20, 21, 22, 23, 26, 27}, m.DspTsdStatus.RT: {1}}
         for rt in (m.DspRadarStatus.RT, m.DspPfdStatus.RT, m.DspMfdStatus.RT, m.DspEicasStatus.RT, m.DspTsdStatus.RT,
                    m.DspSmsStatus.RT):
             unicast = {r.command.subaddress for _, r in framed
@@ -283,6 +285,22 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.assertEqual(Ssm.NORMAL, perf.payload.fuel_ssm, "the FCS heard the engine status broadcast")
         self.assertAlmostEqual(450.0 / (4200.0 / 60.0), perf.payload.fuel_efficiency, delta=0.1)
         self.assertIn("ENG N1", systems.status_text())
+        # The communications terminal and the mission computer, read as the MFD's pages read them: the links as
+        # the plant's RF environment left them, the mission's empty plan.
+        comms = systems.comms.get_data()
+        self.assertEqual((118.0, "AM", 50, 3), (comms["radio"]["frequency"], comms["radio"]["mode"],
+                                                 comms["radio"]["volume"], comms["radio"]["squelch"]))
+        self.assertIn(comms["satcom"]["connection_status"], ("disconnected", "connected"))
+        self.assertEqual(comms["satcom"]["connection_status"] == "connected",
+                         comms["datalink"]["link_status"] == "active")
+        mission = systems.mission.get_data()
+        self.assertEqual("PLANNING", mission["phase"])
+        self.assertEqual([], mission["route"]["route"], "no command loaded a route")
+        self.assertEqual([], mission["targets"])
+        self.assertEqual({"FRIENDLY": 0, "ENEMY": 0, "NEUTRAL": 0}, systems.mission.get_oob()["summary"])
+        self.assertIsNotNone(systems.mission_plan(), "the empty plan block arrived whole")
+        self.assertIn("MSN PLANNING", systems.status_text())
+        self.assertIn("COM radio", systems.status_text())
         position = systems.mission_data()["current_position"]
         self.assertAlmostEqual(5000.0, position["alt_ft"], delta=1.0)
         self.assertLess(abs(position["lat"]) + abs(position["lon"]), 0.1, "the plant flies from 0 N 0 E")
@@ -362,7 +380,9 @@ class DisplaysEndToEndTest(unittest.TestCase):
         self.assertEqual({"countermeasures", "targeting", "weapons", "stealth_mode"}, set(tactical["tactical_systems"]))
         self.assertIn("latitude", tsd.fms.get_flight_data()["navigation"])
         self.assertIsNone(self.tsd.fresh(m.BcastRdrWxScan, stale_after_s=60.0), "not among its receives: ignored")
-        self.assertEqual(({"route": []}, []), (tsd.mission.get_nav_data(), tsd.defensive.get_rwr_contacts()))
+        self.assertEqual([], tsd.mission.get_nav_data()["route"])
+        self.assertEqual(0, tsd.mission.get_nav_data()["waypoints_remaining"], "the mission computer's empty plan")
+        self.assertEqual([], tsd.defensive.get_rwr_contacts())
         tsd_status = self.transmitted(framed, m.DspTsdStatus, 100, FRAMES)
         self.assertEqual(TerminalState.NORMAL, tsd_status[-1][1].state)
         # The SMS: the FMS status by broadcast and nothing else; its master arm is the weapons state the FMS reports.

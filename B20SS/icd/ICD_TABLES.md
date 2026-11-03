@@ -1,6 +1,6 @@
 # FMOFP 1553B ICD — tables
 
-> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.15 (DRAFT, 2026-11-02). Conventions, timing and transport are in [README.md](README.md).
+> Generated from `fmofp_icd.xml` by `tools/icd_tool.py render`. **Do not edit by hand.** ICD version 1.16 (DRAFT, 2026-11-02). Conventions, timing and transport are in [README.md](README.md).
 
 ## Terminals
 
@@ -8,11 +8,11 @@
 |---|---|---|---|---|---|
 | 0 | `reserved_0` | Reserved (was 'Unnamed System') | reserved |  |  |
 | 1 | `avionics` | Avionics - LRU health, built-in test, FM fitness, software configuration | existing | Systems/avionics/hardwareHealth, Systems/builtInTestSystems, Systems/fmFitness, Systems/configurationManagement | BIT merged here (Alee, 2026-10-10). FM fitness and SW configuration are here too: Alee said to fold them into another terminal, and both are health/maintenance functions |
-| 2 | `comms` | Communications | existing | Systems/comms/messaging_service.py |  |
+| 2 | `comms` | Communications - radio, satcom, data link | existing | Systems/comms/messaging_service.py | Ported in v1.16 (fmofp_comms). The radio, satcom and data-link state of CommsService; what they measure (the field strength, the satellite, the link's traffic and errors) is the plant's RF environment (PLANT_RF, relayed as COM_RF). COM_CMD carries the service's manual controls; COM_LINK_STATUS goes to the MFD's communications page by relay |
 | 3 | `enginemanagement` | Engine management - thrust, autothrottle, fuel | existing | Systems/engineManagement: thrustManagement/thrustManagement.py, fuelManagement/fuelControl.py and fuelMonitor.py | Ported in v1.8 (fmofp_engine). The engine model of ecu/engineControlUnit.py is simulation and runs in the plant (PLANT_ENGINE); this terminal commands the engines (ENG_THRUST_CMD) from the FMS thrust lever, ENG_CMD and its autothrottle, and reports what it measures. It hears the FMS flight data by broadcast (RT 31 SA 25) for the autothrottle's airspeed |
 | 4 | `enviornmentalcontrolsystem` | Environmental control system | existing | Systems/enviornmentalControlSystem | id keeps the repo's spelling |
 | 5 | `flightcontrolsys` | Flight control - FCC, GCAS, performance monitor | existing | Systems/flightControlSys | Ported in v1.1 (fmofp_fcs). From v1.8 it hears the engine computer's ENG_ENGINE_STATUS by broadcast (RT 31 SA 18), which gives FCS_PERF_STATUS its fuel efficiency |
-| 6 | `missionplanning` | Mission planning | existing | Systems/missionPlanning/missionService.py |  |
+| 6 | `missionplanning` | Mission computer - phase, route, targets, order of battle | existing | Systems/missionPlanning: missionService.py, missionControl.py (MissionControl), routeManagement/handleRoute.py, targeting/targeting.py, orderOfBattle/orderOfBattle.py | Ported in v1.16 (fmofp_mission). It hears the FMS flight data by broadcast (31/25) for the route's progress, takes MSN_CMD (the scenario engine's waypoints and phases, and the targeting and order-of-battle calls nothing in the Python made), and publishes MSN_STATUS and the MSN_PLAN block, broadcast to the MFD and the TSD. The MissionPlanningSystem class of missionControl.py, a second route in flat degrees that the service fed and never read, is not carried |
 | 7 | `nav` | Navigation - GPS position solver and GPS/dead-reckoning fusion | existing | Systems/nav: gps/globalPositionSystem.py (GPSReceiver, the solver) and dataFusion/fuseData.py | Ported in v1.2. The INS of Systems/nav/ins was a noise generator whose output nothing used; it is not carried (README section 2) |
 | 8 | `powermanagement` | Power management | existing | Systems/powerManagement |  |
 | 9 | `radar` | Radar computer - weather, TFR, SAR, targeting, AEWC, track fusion | existing | Systems/radarManagement | The five radars stay one terminal; each radar is a subaddress, as before. The weather radar is ported in v1.3 (SA 1, 6-7, 18-19), the terrain-following radar in v1.4 (SA 2, 14-15, 20-23) the targeting radar with the track fusion in v1.10 (SA 4, 8-11, 24-25), the AEWC radar in v1.12 (SA 5, 12-13) and the synthetic aperture radar in v1.13 (SA 3, 16-17, 26-27). The radar computer listens to the FMS flight data broadcast (31/25) for the synthetic aperture radar's imaging geometry |
@@ -30,7 +30,7 @@
 | 21 | `flightsurfaces` | Flight surfaces | new | Systems/flightSurfaces |  |
 | 22 | `defensive` | Defensive systems - RWR, chaff, flare, ECM | new | Systems/defensiveSys |  |
 | 23 | `flightdatamonitoring` | Flight data monitoring | new | Systems/flightDataMonitoring |  |
-| 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure. Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC). From v1.13 it also holds the ground scene the synthetic aperture radar images (PLANT_GROUND): roads, a river, a town with its buildings, forests, a lake, and the vehicles and the ship that move |
+| 27 | `plant` | Plant model - the simulated aircraft and world (test equipment, not aircraft software) | new | Systems/flightControlSys/flightControlComputer (the random-walk flight state), to become a Python plant process | Added in v1.1. Publishes what the sensors would measure (and, from v1.16, the RF environment the communications terminal measures, PLANT_RF). Each quantity moves to its real producer as that subsystem is ported (terrain clearance went to the radar in v1.4). From v1.4 it also publishes the terrain: the elevation profile ahead of the aircraft (PLANT_TERRAIN), which is what the terrain-following radar's antenna would measure. From v1.8 it also runs the two engines of engineControlUnit.py (PLANT_ENGINE), at the thrust the engine computer commands (PLANT_THRUST_CMD). From v1.10 it also flies the air traffic the targeting and AEWC radars generated (PLANT_TRAFFIC). From v1.13 it also holds the ground scene the synthetic aperture radar images (PLANT_GROUND): roads, a river, a town with its buildings, forests, a lake, and the vehicles and the ship that move |
 | 31 | `broadcast` | Broadcast address - every terminal that accepts a subaddress hears it | reserved |  | Not a terminal: MIL-STD-1553B address 31. A message or block here is the far end of a relay, stored by the terminals its listeners attribute names, each of which accepts that subaddress for broadcast (README section 8); nothing else stores it and nobody answers it. Added in v1.7 |
 
 RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
@@ -39,6 +39,11 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 
 | ID | RT | SA | Dir | Words | Rate (Hz) | Title | Status |
 |---|---|---|---|---|---|---|---|
+| [`COM_MODE_CMD`](#com_mode_cmd) | 2 | 10 | R | 1 | aperiodic | Communications mode command | DRAFT |
+| [`COM_STATUS`](#com_status) | 2 | 10 | T | 3 | 1 | Communications status | DRAFT |
+| [`COM_RF`](#com_rf) | 2 | 11 | R | 7 | 1 | RF environment, from the plant | DRAFT |
+| [`COM_CMD`](#com_cmd) | 2 | 12 | R | 6 | aperiodic | Communications command | DRAFT |
+| [`COM_LINK_STATUS`](#com_link_status) | 2 | 13 | T | 11 | 1 | Radio, satcom and data link status | DRAFT |
 | [`ENG_MODE_CMD`](#eng_mode_cmd) | 3 | 10 | R | 1 | aperiodic | Engine computer mode command | DRAFT |
 | [`ENG_STATUS`](#eng_status) | 3 | 10 | T | 3 | 1 | Engine computer status | DRAFT |
 | [`ENG_FMS_CONTROL`](#eng_fms_control) | 3 | 11 | R | 3 | 5 | FMS thrust lever as received by the engine computer | DRAFT |
@@ -56,6 +61,9 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | 5 | 14 | T | 4 | 5 | Ground collision avoidance alerts | DRAFT |
 | [`FCS_PERF_STATUS`](#fcs_perf_status) | 5 | 15 | T | 4 | 1 | Flight envelope monitoring | DRAFT |
 | [`FCS_TERRAIN`](#fcs_terrain) | 5 | 16 | R | 8 | 10 | Terrain clearance as received by the flight control computer | DRAFT |
+| [`MSN_MODE_CMD`](#msn_mode_cmd) | 6 | 10 | R | 1 | aperiodic | Mission computer mode command | DRAFT |
+| [`MSN_STATUS`](#msn_status) | 6 | 10 | T | 6 | 5 | Mission computer status | DRAFT |
+| [`MSN_CMD`](#msn_cmd) | 6 | 11 | R | 13 | aperiodic | Mission command | DRAFT |
 | [`NAV_SENSORS`](#nav_sensors) | 7 | 13 | R | 11 | 50 | Sensed flight state, for navigation | DRAFT |
 | [`NAV_GPS`](#nav_gps) | 7 | 14 | R | 25 | 1 | GPS pseudoranges, for navigation | DRAFT |
 | [`NAV_SOLUTION`](#nav_solution) | 7 | 15 | T | 8 | 10 | Navigation solution | DRAFT |
@@ -93,6 +101,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`FMS_ENERGY`](#fms_energy) | 12 | 22 | T | 6 | 1 | Energy maneuverability | DRAFT |
 | [`DSP_MFD_MODE_CMD`](#dsp_mfd_mode_cmd) | 13 | 12 | R | 1 | aperiodic | Multi-function display mode command | DRAFT |
 | [`DSP_MFD_STATUS`](#dsp_mfd_status) | 13 | 12 | T | 2 | 1 | Multi-function display status | DRAFT |
+| [`MFD_COM_LINK_STATUS`](#mfd_com_link_status) | 13 | 17 | R | 11 | 1 | Radio, satcom and data link status, for the MFD | DRAFT |
 | [`DSP_EICAS_MODE_CMD`](#dsp_eicas_mode_cmd) | 14 | 13 | R | 1 | aperiodic | EICAS mode command | DRAFT |
 | [`DSP_EICAS_STATUS`](#dsp_eicas_status) | 14 | 13 | T | 2 | 1 | EICAS status | DRAFT |
 | [`DSP_RADAR_MODE_CMD`](#dsp_radar_mode_cmd) | 15 | 14 | R | 1 | aperiodic | Weather radar display mode command | DRAFT |
@@ -114,6 +123,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`PLANT_WEATHER`](#plant_weather) | 27 | 3 | T | 32 | 1 | Weather truth from the plant | DRAFT |
 | [`PLANT_ENGINE`](#plant_engine) | 27 | 6 | T | 19 | 10 | Engine measurements from the plant | DRAFT |
 | [`PLANT_THRUST_CMD`](#plant_thrust_cmd) | 27 | 7 | R | 3 | 10 | Thrust command as received by the plant | DRAFT |
+| [`PLANT_RF`](#plant_rf) | 27 | 12 | T | 7 | 1 | RF environment: the radio field, the satellite, the link, from the plant | DRAFT |
 | [`BCAST_RDR_WX_STATUS`](#bcast_rdr_wx_status) | 31 | 1 | R | 2 | 5 | Weather radar status, broadcast to the displays | DRAFT |
 | [`BCAST_RDR_WX_SCAN`](#bcast_rdr_wx_scan) | 31 | 2 | R | 10 | 5 | Weather radar scan summary, broadcast to the displays | DRAFT |
 | [`BCAST_RDR_TFR_STATUS`](#bcast_rdr_tfr_status) | 31 | 3 | R | 2 | 5 | Terrain-following radar status, broadcast to the displays | DRAFT |
@@ -128,6 +138,7 @@ RT 31 is broadcast. Unused: 24, 25, 26, 28, 29, 30.
 | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) | 31 | 25 | R | 21 | 10 | FMS flight data, broadcast | DRAFT |
 | [`BCAST_FMS_STATUS`](#bcast_fms_status) | 31 | 26 | R | 3 | 5 | FMS status, broadcast to the displays | DRAFT |
 | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) | 31 | 27 | R | 8 | 10 | Attitude command status, broadcast to the displays | DRAFT |
+| [`BCAST_MSN_STATUS`](#bcast_msn_status) | 31 | 28 | R | 6 | 5 | Mission status, broadcast to the displays | DRAFT |
 | [`TERM_CMD`](#term_cmd) | all | 29 | R | 1 | aperiodic | Terminal command | DRAFT |
 | [`TERM_STATUS`](#term_status) | all | 29 | T | 5 | 1 | Terminal status | DRAFT |
 
@@ -155,6 +166,8 @@ The descriptor and segment framing is in README.md section 8. A block's payload 
 | `MFD_RDR_AEWC_TRACKS` | 13 | R | 22 | 23 | 10 | AEWC tracks and sectors, for the MFD | as [`RDR_AEWC_TRACKS`](#rdr_aewc_tracks) (relayed copy) |
 | `MFD_RDR_SAR_IMAGE` | 13 | R | 26 | 27 | 25 | SAR image, for the MFD | as [`RDR_SAR_IMAGE`](#rdr_sar_image) (relayed copy) |
 | `BCAST_RDR_FUSED_TRACKS` | 31 | R | 22 | 23 | 25 | Fused air tracks, broadcast to the displays | as [`RDR_FUSED_TRACKS`](#rdr_fused_tracks) (relayed copy) |
+| `MSN_PLAN` | 6 | T | 12 | 13 | 10 | Mission plan: the route, the targets, the order of battle | [header 3 words + 3 sections, at most 382 words](#msn_plan) |
+| `BCAST_MSN_PLAN` | 31 | R | 13 | 14 | 10 | Mission plan, broadcast to the displays | as [`MSN_PLAN`](#msn_plan) (relayed copy) |
 
 ## Relays (RT-to-RT transfers)
 
@@ -187,7 +200,7 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`RDR_TFR_ELEVATION`](#rdr_tfr_elevation) | `BCAST_RDR_TFR_ELEVATION` (broadcast, heard by RT 13, 15) | block: 4 + 32 per frame | 25 |
 | [`FCS_GCAS_ALERTS`](#fcs_gcas_alerts) | [`BCAST_FCS_GCAS_ALERTS`](#bcast_fcs_gcas_alerts) (broadcast, heard by RT 13, 14) | 4 | 5 |
 | [`FCS_PERF_STATUS`](#fcs_perf_status) | [`BCAST_FCS_PERF_STATUS`](#bcast_fcs_perf_status) (broadcast, heard by RT 13, 14) | 4 | 1 |
-| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 3, 9, 11, 13, 14, 16) | 21 | 10 |
+| [`FMS_FLIGHT_DATA`](#fms_flight_data) | [`BCAST_FMS_FLIGHT_DATA`](#bcast_fms_flight_data) (broadcast, heard by RT 3, 6, 9, 11, 13, 14, 16) | 21 | 10 |
 | [`FMS_STATUS`](#fms_status) | [`BCAST_FMS_STATUS`](#bcast_fms_status) (broadcast, heard by RT 11, 14, 16, 17) | 3 | 5 |
 | [`FMS_ATTITUDE_STATUS`](#fms_attitude_status) | [`BCAST_FMS_ATTITUDE_STATUS`](#bcast_fms_attitude_status) (broadcast, heard by RT 11, 16) | 8 | 10 |
 | [`FMS_CONTROL_STATUS`](#fms_control_status) | [`ENG_FMS_CONTROL`](#eng_fms_control) | 3 | 5 |
@@ -205,6 +218,10 @@ A relay between two block streams forwards the descriptor and each segment the s
 | [`PLANT_GROUND`](#plant_ground) | `RDR_SAR_SCENE` | block: 4 + 32 per frame | 10 |
 | [`RDR_SAR_STATUS`](#rdr_sar_status) | [`BCAST_RDR_SAR_STATUS`](#bcast_rdr_sar_status) (broadcast, heard by RT 13, 15) | 2 | 5 |
 | [`RDR_SAR_IMAGE`](#rdr_sar_image) | `MFD_RDR_SAR_IMAGE` | block: 4 + 32 per frame | 25 |
+| [`PLANT_RF`](#plant_rf) | [`COM_RF`](#com_rf) | 7 | 1 |
+| [`COM_LINK_STATUS`](#com_link_status) | [`MFD_COM_LINK_STATUS`](#mfd_com_link_status) | 11 | 1 |
+| [`MSN_STATUS`](#msn_status) | [`BCAST_MSN_STATUS`](#bcast_msn_status) (broadcast, heard by RT 13, 16) | 6 | 5 |
+| [`MSN_PLAN`](#msn_plan) | `BCAST_MSN_PLAN` (broadcast, heard by RT 13, 16) | block: 4 + 32 per frame | 10 |
 
 ## Mode codes
 
@@ -645,6 +662,199 @@ sar_processor.ChangeDetector's change_type: the sign of a region's mean log-rati
 | 1 | ADDITION |  | Mean log-ratio above 0.3: a new bright return |
 | 2 | REMOVAL |  | Mean log-ratio below -0.3: a return that went away |
 | 3 | CHANGE |  | In between |
+
+### `mission_phase` (3 bits)
+
+MissionControl's phase (missionService.set_phase, advance_phase): PLANNING, INGRESS, OBJECTIVE, EGRESS, COMPLETE, advanced in that order and never past COMPLETE
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | PLANNING |  |  |
+| 1 | INGRESS |  |  |
+| 2 | OBJECTIVE |  |  |
+| 3 | EGRESS |  |  |
+| 4 | COMPLETE |  |  |
+
+### `waypoint_type` (3 bits)
+
+handleRoute.WaypointType: NAV navigation (the default), IP initial point, TGT target, EGR egress, ALT alternate, REF refuel, HOME recovery airfield
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NAV |  |  |
+| 1 | IP |  |  |
+| 2 | TGT |  |  |
+| 3 | EGR |  |  |
+| 4 | ALT |  |  |
+| 5 | REF |  |  |
+| 6 | HOME |  |  |
+
+### `target_status` (3 bits)
+
+targeting.TargetStatus: DESIGNATED when added, ACQUIRED by an acquire or the first radar update, TRACKING by the next radar update, ENGAGED with a weapon, BDA_PENDING then DESTROYED or back to ACQUIRED by the damage assessment, LOST when a tracked target's quality decays below 0.1
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | DESIGNATED |  |  |
+| 1 | ACQUIRED |  |  |
+| 2 | TRACKING |  |  |
+| 3 | ENGAGED |  |  |
+| 4 | BDA_PENDING |  |  |
+| 5 | DESTROYED |  |  |
+| 6 | LOST |  |  |
+
+### `target_kind` (4 bits)
+
+What a designated target is (the Python's free-text target type, POINT by default)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  |  |
+| 1 | POINT |  |  |
+| 2 | SAM |  |  |
+| 3 | AIRFIELD |  |  |
+| 4 | BRIDGE |  |  |
+| 5 | VEHICLE |  |  |
+| 6 | SHIP |  |  |
+| 7 | BUILDING |  |  |
+| 8 | RADAR |  |  |
+| 9 | ARMOR |  |  |
+
+### `affiliation` (2 bits)
+
+orderOfBattle.Unit.affiliation: friendly, enemy or neutral; an unknown affiliation is filed with the neutral forces, as the Python did
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  |  |
+| 1 | FRIENDLY |  |  |
+| 2 | ENEMY |  |  |
+| 3 | NEUTRAL |  |  |
+
+### `unit_kind` (4 bits)
+
+What a unit of the order of battle is (the Python's free-text unit type)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  |  |
+| 1 | FIGHTER |  |  |
+| 2 | BOMBER |  |  |
+| 3 | TANKER |  |  |
+| 4 | AWACS |  |  |
+| 5 | HELICOPTER |  |  |
+| 6 | SAM_SITE |  |  |
+| 7 | RADAR |  |  |
+| 8 | AIRFIELD |  |  |
+| 9 | ARMOR |  |  |
+| 10 | SHIP |  |  |
+| 11 | INFANTRY |  |  |
+
+### `unit_status` (2 bits)
+
+A unit's status (orderOfBattle.Unit.status, 'Operational' when added)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | UNKNOWN |  |  |
+| 1 | OPERATIONAL |  |  |
+| 2 | DEGRADED |  |  |
+| 3 | DESTROYED |  |  |
+
+### `weapon` (3 bits)
+
+The weapon a target is engaged with (targeting.engage_target's free-text weapon_system; the SMS's stores)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | GUN |  |  |
+| 2 | AIM_120 |  |  |
+| 3 | AIM_9 |  |  |
+| 4 | JDAM |  |  |
+| 5 | JASSM |  |  |
+| 6 | MK_82 |  |  |
+| 7 | AGM_88 |  |  |
+
+### `mission_command` (4 bits)
+
+What MSN_CMD asks of the mission computer: missionService.py's entry points (the scenario engine's waypoint and phase injections, the targeting and order-of-battle calls nothing in the Python ever made)
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | SET_PHASE |  | set_phase |
+| 2 | ADVANCE_PHASE |  | advance_phase |
+| 3 | ADD_WAYPOINT |  | add_waypoint: appended to the route |
+| 4 | REMOVE_WAYPOINT |  | RouteManager.remove_waypoint |
+| 5 | CLEAR_ROUTE |  | RouteManager.clear_route |
+| 6 | DESIGNATE_TARGET |  | designate_target: a target and a TGT waypoint before the nearest waypoint ahead |
+| 7 | ACQUIRE_TARGET |  | Targeting.acquire |
+| 8 | ENGAGE_TARGET |  | engage_target with a weapon |
+| 9 | DISENGAGE_TARGET |  | Targeting.disengage_target |
+| 10 | ASSESS_DAMAGE |  | mark_bda_pending then assess_damage: DESTROYED, or back to ACQUIRED |
+| 11 | ADD_UNIT |  | add_unit to the order of battle |
+| 12 | REMOVE_UNIT |  | OrderOfBattle.remove_unit |
+| 13 | SET_UNIT_STATUS |  | OrderOfBattle.update_status |
+| 14 | OPTIMISE_ROUTE |  | optimise_route: deviate the route from every enemy unit of threat level 2 or more |
+| 15 | REMOVE_TARGET |  | Targeting.remove_target |
+
+### `radio_mode` (2 bits)
+
+CommsService.set_radio_mode: AM, FM, USB, LSB
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | AM |  |  |
+| 1 | FM |  |  |
+| 2 | USB |  |  |
+| 3 | LSB |  |  |
+
+### `satcom_state` (2 bits)
+
+CommsService's satcom connection_status: disconnected, acquiring (after acquire_satellite), connected
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | DISCONNECTED |  |  |
+| 1 | ACQUIRING |  |  |
+| 2 | CONNECTED |  |  |
+
+### `datalink_mode` (2 bits)
+
+CommsService.set_datalink_mode: line of sight or beyond
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | LOS |  |  |
+| 1 | BLOS |  |  |
+
+### `link_state` (2 bits)
+
+The data link's link_status: active while the satcom is connected
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | INACTIVE |  |  |
+| 1 | ACTIVE |  |  |
+
+### `comms_command` (4 bits)
+
+What COM_CMD asks of the communications terminal: CommsService's manual controls (set_radio_frequency, set_radio_mode, set_radio_volume, set_radio_squelch, transmit_radio, acquire_satellite, send_satcom, set_datalink_mode, set_datalink_channel, send_datalink), which nothing in the Python ever called
+
+| Value | Name | Legacy value | Note |
+|---|---|---|---|
+| 0 | NONE |  |  |
+| 1 | SET_RADIO_FREQUENCY |  |  |
+| 2 | SET_RADIO_MODE |  |  |
+| 3 | SET_RADIO_VOLUME |  |  |
+| 4 | SET_RADIO_SQUELCH |  |  |
+| 5 | RADIO_TRANSMIT |  | transmit_radio: FAILED unless the radio is active |
+| 6 | ACQUIRE_SATELLITE |  |  |
+| 7 | SATCOM_SEND |  | send_satcom: FAILED unless connected |
+| 8 | SET_DATALINK_MODE |  |  |
+| 9 | SET_DATALINK_CHANNEL |  |  |
+| 10 | DATALINK_SEND |  | send_datalink: one packet sent; FAILED unless the link is active |
 
 ## Messages
 
@@ -2045,6 +2255,202 @@ The tanks of fuelControl.FuelManagementSystem.setup_aircraft (Main Left and Main
 | 5 | 15-0 | `burn_rate` | uint | LSB 1 kg/h, range 0 to 65535 | All tanks; saturates |
 | 6 | 15-0 | `transferred` | uint | LSB 1 kg, range 0 to 65535 | Since reset; saturates |
 
+### MSN_STATUS
+
+**Mission computer status** — RT 6 · SA 10 · transmit (terminal to bus) · 6 words · 5 Hz
+
+The terminal's state and command handling as the other subsystems report them, plus what missionService.get_data() summarised: the phase (MissionControl), the route's progress (RouteManager.get_nav_data: the active waypoint's index, the distance and bearing to it), and the counts of waypoints, active targets and units by affiliation. The plan itself is the MSN_PLAN block. mission_cmd_status is the outcome of the last MSN_CMD.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last MSN_MODE_CMD processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last MSN_MODE_CMD was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13-11 | `phase` | enum | enum `mission_phase` |  |
+| 1 | 10-7 | `mission_cmd_status` | enum | enum `cmd_status` | Outcome of the last MSN_CMD |
+| 1 | 6 | `position_valid` | bool |  | 1 = the route's progress is measured from a valid FMS position (BCAST_FMS_FLIGHT_DATA, position SSM NORMAL) |
+| 1 | 5 | `route_active` | bool |  | 1 = a waypoint lies ahead (active_index below waypoint_count) |
+| 1 | 4-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+| 2 | 15-11 | `waypoint_count` | uint | raw counts | Waypoints in the route (at most 16) |
+| 2 | 10-6 | `active_index` | uint | raw counts | RouteManager._active_idx: the waypoint being flown to; equals waypoint_count once the route is flown |
+| 2 | 5-1 | `target_count` | uint | raw counts | Targets neither destroyed nor lost (Targeting.get_prioritised) |
+| 2 | 0 | `spare_2` | spare |  |  |
+| 3 | 15-11 | `friendly_units` | uint | raw counts | OrderOfBattle.summary() |
+| 3 | 10-6 | `enemy_units` | uint | raw counts |  |
+| 3 | 5-1 | `neutral_units` | uint | raw counts | Neutral and unknown affiliations |
+| 3 | 0 | `spare_3` | spare |  |  |
+| 4 | 15-0 | `distance_to_next` | uint | LSB 1/10 nm, range 0 to 6553.5 | get_nav_data's distance_to_next_nm: great-circle, from the FMS position to the active waypoint; 0 without one |
+| 5 | 15-0 | `bearing_to_next` | uint | LSB 360/65536 deg, range 0 to 359.9945 | get_nav_data's bearing_to_next_deg, true; 0 without an active waypoint |
+
+### MSN_MODE_CMD
+
+**Mission computer mode command** — RT 6 · SA 10 · receive (bus to terminal) · 1 words · aperiodic
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### MSN_CMD
+
+**Mission command** — RT 6 · SA 11 · receive (bus to terminal) · 13 words · aperiodic
+
+missionService.py's entry points on the bus (the scenario engine injected waypoints and phases through them; the targeting and order-of-battle calls had no caller). The fields a command does not use are ignored. ADD_WAYPOINT takes the name, position, altitude, type and fly-over flag; DESIGNATE_TARGET the kind, position, altitude and priority (the waypoint it inserts is named TGT-nnnn after the target's id); ADD_UNIT the kind, affiliation, status, threat level, position and altitude; the target and unit commands name their object by the id the mission computer gave it (MSN_PLAN); SET_PHASE takes the phase, ENGAGE_TARGET the weapon, ASSESS_DAMAGE the verdict. The outcome is MSN_STATUS.mission_cmd_status: ACCEPTED, REJECTED_INVALID for an unknown command or an unusable parameter, FAILED when the route or a table is full or the id is not found or the target's status does not allow the step.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `command` | enum | enum `mission_command` |  |
+| 0 | 11-9 | `waypoint_type` | enum | enum `waypoint_type` | ADD_WAYPOINT |
+| 0 | 8 | `fly_over` | bool |  | ADD_WAYPOINT: Waypoint.fly_over (informational, as in the Python) |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-8 | `id` | uint | raw counts | The waypoint, target or unit the command names (0 = none) |
+| 1 | 7-5 | `priority` | uint | raw counts | DESIGNATE_TARGET: 1 is the highest; the Python's default was 3 |
+| 1 | 4-2 | `weapon` | enum | enum `weapon` | ENGAGE_TARGET |
+| 1 | 1 | `destroyed` | bool |  | ASSESS_DAMAGE: 1 = destroyed, 0 = survived (back to ACQUIRED) |
+| 1 | 0 | `spare_1` | spare |  |  |
+| 2 | 15-12 | `target_kind` | enum | enum `target_kind` | DESIGNATE_TARGET |
+| 2 | 11-8 | `unit_kind` | enum | enum `unit_kind` | ADD_UNIT |
+| 2 | 7-6 | `affiliation` | enum | enum `affiliation` | ADD_UNIT |
+| 2 | 5-4 | `unit_status` | enum | enum `unit_status` | ADD_UNIT, SET_UNIT_STATUS (UNKNOWN on ADD_UNIT reads as OPERATIONAL, the Python's default) |
+| 2 | 3-1 | `threat_level` | uint | raw counts | ADD_UNIT: 0-5 |
+| 2 | 0 | `spare_2` | spare |  |  |
+| 3-4 | 31-0 | `latitude` | sint | LSB 180/2147483648 deg, range -90 to 90 | ADD_WAYPOINT, DESIGNATE_TARGET, ADD_UNIT: WGS-84 |
+| 5-6 | 31-0 | `longitude` | sint | LSB 180/2147483648 deg, range -180 to 179.9999999 |  |
+| 7 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 |  |
+| 8 | 15-0 | `name_0` | uint | raw counts | ADD_WAYPOINT: the name, eight ASCII characters in four words, the first of each pair in the high byte, 0 padding |
+| 9 | 15-0 | `name_1` | uint | raw counts |  |
+| 10 | 15-0 | `name_2` | uint | raw counts |  |
+| 11 | 15-0 | `name_3` | uint | raw counts |  |
+| 12 | 15-13 | `phase` | enum | enum `mission_phase` | SET_PHASE |
+| 12 | 12-0 | `spare_12` | spare |  |  |
+
+### BCAST_MSN_STATUS
+
+**Mission status, broadcast to the displays** — RT 31 · SA 28 · receive (bus to terminal) · 6 words · 5 Hz
+
+The MFD's mission page header and route progress, the TSD's route (v1.16). Subaddress 28 carried the energy maneuverability until v1.15.
+
+Same layout as [`MSN_STATUS`](#msn_status).
+
+### COM_STATUS
+
+**Communications status** — RT 2 · SA 10 · transmit (terminal to bus) · 3 words · 1 Hz
+
+The terminal's state and command handling, the three links' availability (CommsService.get_data: the radio active, the satcom connected, the data link active), the outcome of the last COM_CMD and the counts of radio and satcom transmissions it accepted. The links' details are COM_LINK_STATUS.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `last_cmd_seq` | uint | raw counts | cmd_seq of the last COM_MODE_CMD processed (see Command sequence rule) |
+| 1 | 15 | `cmd_rejected` | bool |  | 1 = the last COM_MODE_CMD was rejected |
+| 1 | 14 | `mode_transition` | bool |  | 1 = a commanded mode change is still in progress |
+| 1 | 13 | `radio_active` | bool |  | 1 = the radio field strength is above 20 % (CommsService._simulate) |
+| 1 | 12 | `satcom_connected` | bool |  |  |
+| 1 | 11 | `datalink_active` | bool |  | 1 = the data link is up, which it is while the satcom is connected |
+| 1 | 10-7 | `comms_cmd_status` | enum | enum `cmd_status` | Outcome of the last COM_CMD |
+| 1 | 6-1 | `spare_1` | spare |  |  |
+| 1 | 0 | `healthy` | bool |  | 1 = healthy (legacy health_status, bit 0) |
+| 2 | 15-8 | `radio_transmissions` | uint | raw counts | RADIO_TRANSMIT commands accepted, mod 256 |
+| 2 | 7-0 | `satcom_transmissions` | uint | raw counts | SATCOM_SEND commands accepted, mod 256 |
+
+### COM_MODE_CMD
+
+**Communications mode command** — RT 2 · SA 10 · receive (bus to terminal) · 1 words · aperiodic
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `requested_state` | enum | enum `terminal_state` |  |
+| 0 | 11-8 | `spare_0` | spare |  |  |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+
+### COM_RF
+
+**RF environment, from the plant** — RT 2 · SA 11 · receive (bus to terminal) · 7 words · 1 Hz
+
+PLANT_RF relayed to the communications terminal: what its radio, satcom receiver and data link would measure.
+
+Same layout as [`PLANT_RF`](#plant_rf).
+
+### COM_CMD
+
+**Communications command** — RT 2 · SA 12 · receive (bus to terminal) · 6 words · aperiodic
+
+CommsService's manual controls on the bus. SET_RADIO_FREQUENCY takes the frequency (rounded to a kHz, as set_radio_frequency rounded to three decimals), SET_RADIO_MODE the mode, SET_RADIO_VOLUME the volume (held to 0-100), SET_RADIO_SQUELCH the squelch (0-9), SET_DATALINK_MODE the mode, SET_DATALINK_CHANNEL the channel (held to 1-20); the three send commands name a message by number and a priority (the text itself stays with the sender: a 1553 word is not a message body). The outcome is COM_STATUS.comms_cmd_status: ACCEPTED, REJECTED_INVALID for an unknown command or an unusable frequency, FAILED for a transmission the link cannot carry (the radio squelched, the satcom not connected, the data link inactive).
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-12 | `command` | enum | enum `comms_command` |  |
+| 0 | 11-10 | `radio_mode` | enum | enum `radio_mode` | SET_RADIO_MODE |
+| 0 | 9-8 | `datalink_mode` | enum | enum `datalink_mode` | SET_DATALINK_MODE |
+| 0 | 7-0 | `cmd_seq` | uint | raw counts | Incremented by the sender for each new command |
+| 1 | 15-9 | `volume` | uint | raw counts | SET_RADIO_VOLUME: 0-100 |
+| 1 | 8-5 | `squelch` | uint | raw counts | SET_RADIO_SQUELCH: 0-9 |
+| 1 | 4-0 | `channel` | uint | raw counts | SET_DATALINK_CHANNEL: 1-20 |
+| 2-3 | 31-0 | `frequency` | sint | LSB 1/1000 MHz, range 0 to 2000 | SET_RADIO_FREQUENCY: above 0 |
+| 4 | 15-0 | `message_id` | uint | raw counts | RADIO_TRANSMIT, SATCOM_SEND, DATALINK_SEND: the sender's number for the message |
+| 5 | 15-14 | `priority` | uint | raw counts | DATALINK_SEND: send_datalink's priority (2 by default in the Python) |
+| 5 | 13-0 | `spare_5` | spare |  |  |
+
+### COM_LINK_STATUS
+
+**Radio, satcom and data link status** — RT 2 · SA 13 · transmit (terminal to bus) · 11 words · 1 Hz
+
+CommsService.get_data()'s three dictionaries, once a second as its loop ran: the radio's settings, field strength and whether it is active (above 20 %); the satcom's state and, while connected, the satellite's number, signal, data rate and latency the plant reports; the data link's state, mode and channel, its packet counters (the plant's background traffic while the link is up, plus one per DATALINK_SEND) and error rate. The MFD's communications page reads it by relay (MFD_COM_LINK_STATUS).
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0-1 | 31-0 | `frequency` | sint | LSB 1/1000 MHz, range 0 to 2000 | The radio's frequency; 118.000 at start |
+| 2 | 15-14 | `radio_mode` | enum | enum `radio_mode` |  |
+| 2 | 13 | `radio_active` | bool |  | 1 = field strength above 20 % |
+| 2 | 12-6 | `volume` | uint | raw counts | 0-100; 50 at start |
+| 2 | 5-2 | `squelch` | uint | raw counts | 0-9; 3 at start |
+| 2 | 1-0 | `spare_2` | spare |  |  |
+| 3 | 15-0 | `radio_signal` | uint | LSB 1/100 %, range 0 to 100 | The radio field strength the plant reports |
+| 4 | 15-14 | `satcom_state` | enum | enum `satcom_state` |  |
+| 4 | 13-10 | `satellite_id` | uint | raw counts | 1-12 while connected, 0 otherwise |
+| 4 | 9-8 | `datalink_state` | enum | enum `link_state` |  |
+| 4 | 7-6 | `datalink_mode` | enum | enum `datalink_mode` |  |
+| 4 | 5-1 | `channel` | uint | raw counts | 1-20; 1 at start |
+| 4 | 0 | `spare_4` | spare |  |  |
+| 5 | 15-0 | `satcom_signal` | uint | LSB 1/100 %, range 0 to 100 | While connected; 0 otherwise |
+| 6 | 15-0 | `data_rate` | uint | LSB 1/10 kbps, range 0 to 6553.5 | While connected; 0 otherwise |
+| 7 | 15-0 | `latency` | uint | LSB 1 ms, range 0 to 65535 | While connected; 0 otherwise |
+| 8 | 15-0 | `packets_sent` | uint | raw counts | mod 65536 |
+| 9 | 15-0 | `packets_received` | uint | raw counts | mod 65536 |
+| 10 | 15-0 | `error_rate` | uint | LSB 1/100 %, range 0 to 655.35 | The link's error rate the plant reports, while the link is up |
+
+### MFD_COM_LINK_STATUS
+
+**Radio, satcom and data link status, for the MFD** — RT 13 · SA 17 · receive (bus to terminal) · 11 words · 1 Hz
+
+COM_LINK_STATUS relayed to the MFD for its communications page (mfd.draw_comms_page). One consumer, so its own relay (v1.15's rule); SA 17 is a broadcast number the MFD never listens to.
+
+Same layout as [`COM_LINK_STATUS`](#com_link_status).
+
+### PLANT_RF
+
+**RF environment: the radio field, the satellite, the link, from the plant** — RT 27 · SA 12 · transmit (terminal to bus) · 7 words · 1 Hz
+
+What CommsService._simulate drew once a second, as the world the communications terminal measures (v1.16, fmofp_plant.rf): the VHF field strength at the aircraft (a random walk of 3 % a second from 0); whether a satellite is in view (it comes into view with the Python's 1 % chance a second and stays), with its number, signal (40-80 % then a 1 % walk), data rate (50-200 kbps then a 5 kbps walk) and latency (200-600 ms then a 10 ms walk, never under 200); the data link's error rate (a 0.1 % walk, never negative) and the packets the network offers in and out each second (0-2 each).
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-0 | `radio_field` | uint | LSB 1/100 %, range 0 to 100 |  |
+| 1 | 15 | `satellite_available` | bool |  | 1 = a satellite is in view |
+| 1 | 14-11 | `satellite_id` | uint | raw counts | 1-12 while in view, 0 otherwise |
+| 1 | 10-0 | `spare_1` | spare |  |  |
+| 2 | 15-0 | `satellite_signal` | uint | LSB 1/100 %, range 0 to 100 |  |
+| 3 | 15-0 | `satellite_data_rate` | uint | LSB 1/10 kbps, range 0 to 6553.5 |  |
+| 4 | 15-0 | `satellite_latency` | uint | LSB 1 ms, range 0 to 65535 |  |
+| 5 | 15-0 | `link_error_rate` | uint | LSB 1/100 %, range 0 to 655.35 |  |
+| 6 | 15-8 | `packets_in` | uint | raw counts | Packets the network offers this second |
+| 6 | 7-0 | `packets_out` | uint | raw counts | Packets the aircraft's background traffic sends this second |
+
 ## Block payloads
 
 ### RDR_WX_PRODUCTS
@@ -2451,6 +2857,72 @@ The ground the synthetic aperture radar images (v1.13): the plant's training ran
 | 1-2 | 31-0 | `latitude` | sint | LSB 180/2147483648 deg, range -90 to 90 | Of the centre |
 | 3-4 | 31-0 | `longitude` | sint | LSB 180/2147483648 deg, range -180 to 179.9999999 |  |
 | 5 | 15-0 | `radius` | uint | LSB 1/4 m, range 0 to 16383.75 |  |
+
+### MSN_PLAN
+
+**Mission plan: the route, the targets, the order of battle** — RT 6 · descriptor SA 12 · segment SA 13 · 10 Hz · payload at most 382 words
+
+What missionService.get_data(), get_nav_data() and get_oob() handed the MFD's mission page and the TSD (v1.16): RouteManager.get_full_route() (every waypoint with its name, type, position, altitude and ETE, in route order, those already passed flagged), Targeting.get_prioritised() (the targets neither destroyed nor lost, by priority then track quality), and every unit of the order of battle with its affiliation, kind, status and threat level. Published when a command or the route's progress changes it, no sooner than 75 frames after the last publication (its thirteen segments take 65 frames at 10 Hz), and every 150 frames while a route is being flown, as the ETEs move.
+
+**Header (3 words)**, followed by one count word per section in the order below.
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `plan_seq` | uint | raw counts | The publication's number, 1-255 round and round |
+| 0 | 7-5 | `phase` | enum | enum `mission_phase` |  |
+| 0 | 4-0 | `active_index` | uint | raw counts | RouteManager._active_idx, as MSN_STATUS |
+| 1 | 15-0 | `distance_to_next` | uint | LSB 1/10 nm, range 0 to 6553.5 | To the active waypoint; 0 without one |
+| 2 | 15-0 | `bearing_to_next` | uint | LSB 360/65536 deg, range 0 to 359.9945 | True; 0 without an active waypoint |
+
+**Section `waypoint` — **: up to 16 records of 11 words. RouteManager.get_full_route(): the route in order
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `id` | uint | raw counts | Waypoint.id: the number the route gave it, counted up from 1 |
+| 0 | 7-5 | `type` | enum | enum `waypoint_type` |  |
+| 0 | 4 | `fly_over` | bool |  |  |
+| 0 | 3 | `passed` | bool |  | 1 = behind the active waypoint (its ETE was None) |
+| 0 | 2-0 | `spare_0` | spare |  |  |
+| 1 | 15-0 | `name_0` | uint | raw counts | Eight ASCII characters in four words, the first of each pair in the high byte, 0 padding |
+| 2 | 15-0 | `name_1` | uint | raw counts |  |
+| 3 | 15-0 | `name_2` | uint | raw counts |  |
+| 4 | 15-0 | `name_3` | uint | raw counts |  |
+| 5-6 | 31-0 | `latitude` | sint | LSB 180/2147483648 deg, range -90 to 90 |  |
+| 7-8 | 31-0 | `longitude` | sint | LSB 180/2147483648 deg, range -180 to 179.9999999 |  |
+| 9 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 |  |
+| 10 | 15-0 | `ete` | uint | LSB 1/10 min, range 0 to 6553.5 | Waypoint.ete_min: the cumulative time to it at the ground speed; 0 when passed or without a position |
+
+**Section `target` — **: up to 8 records of 9 words. Targeting.get_prioritised(): active targets by priority, then by track quality
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `id` | uint | raw counts | The number the mission computer gave it (the Python's T0001 is 1) |
+| 0 | 7-4 | `kind` | enum | enum `target_kind` |  |
+| 0 | 3-1 | `status` | enum | enum `target_status` |  |
+| 0 | 0 | `spare_0` | spare |  |  |
+| 1 | 15-13 | `priority` | uint | raw counts |  |
+| 1 | 12-10 | `weapon` | enum | enum `weapon` | While engaged; NONE otherwise |
+| 1 | 9-0 | `track_quality` | uint | LSB 1/1000, range 0 to 1 | Target.track_quality: 0 when designated, 0.5 when acquired, the radar's when updated, decaying while stale |
+| 2-3 | 31-0 | `latitude` | sint | LSB 180/2147483648 deg, range -90 to 90 |  |
+| 4-5 | 31-0 | `longitude` | sint | LSB 180/2147483648 deg, range -180 to 179.9999999 |  |
+| 6 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 |  |
+| 7 | 15-0 | `speed` | uint | LSB 1/10 kt, range 0 to 6553.5 |  |
+| 8 | 15-0 | `heading` | uint | LSB 360/65536 deg, range 0 to 359.9945 |  |
+
+**Section `unit` — **: up to 16 records of 8 words. OrderOfBattle.get_all_units(): every unit, in the order added
+
+| Word | Bits | Field | Type | Scaling | Notes |
+|---|---|---|---|---|---|
+| 0 | 15-8 | `id` | uint | raw counts | The number the mission computer gave it |
+| 0 | 7-4 | `kind` | enum | enum `unit_kind` |  |
+| 0 | 3-2 | `affiliation` | enum | enum `affiliation` |  |
+| 0 | 1-0 | `status` | enum | enum `unit_status` |  |
+| 1 | 15-13 | `threat_level` | uint | raw counts | 0-5 |
+| 1 | 12-0 | `heading` | uint | LSB 360/8192 deg, range 0 to 359.956 |  |
+| 2-3 | 31-0 | `latitude` | sint | LSB 180/2147483648 deg, range -90 to 90 |  |
+| 4-5 | 31-0 | `longitude` | sint | LSB 180/2147483648 deg, range -180 to 179.9999999 |  |
+| 6 | 15-0 | `altitude` | uint | LSB 1 ft, range 0 to 65535 |  |
+| 7 | 15-0 | `speed` | uint | LSB 1/10 kt, range 0 to 6553.5 |  |
 
 ## Where every legacy message type went
 

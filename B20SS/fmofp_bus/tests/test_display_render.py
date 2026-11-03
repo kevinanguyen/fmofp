@@ -22,7 +22,8 @@ from fmofp_bus.icd import messages as m
 from fmofp_bus.icd.enums import (AewcMode, SarMode, ClearanceLevel, CountermeasuresState, FmsFlightMode, GcasStatus, ShearSeverity,
                                  Ssm, TargetingMode, TargetingState, TerminalState, TfrMode, WeaponsState, WeatherMode)
 from fmofp_bus.tests.test_display_feeds import (FakeTerminal, flight_payload, sample_aewc, sample_elevation, sample_fused, sample_sar_image,
-                                                sample_products, sample_tracks)
+                                                sample_link, sample_mission_status, sample_plan, sample_products,
+                                                sample_tracks)
 from fmofp_display.flight_feed import FlightDataFeed
 from fmofp_display.radar_feed import RadarFeed
 from fmofp_display.systems_feed import SystemsFeed
@@ -495,6 +496,79 @@ class DisplayWindowsTest(unittest.TestCase):
                 targeting=TargetingState.READY, weapons=WeaponsState.READY)))
             sms._poll_data()
             self.assertEqual(("TRAIN", "ACTIVE"), (sms._master_arm, sms._ecm), "READY weapons are the TRAIN master arm")
+        finally:
+            window.timer.stop()
+            window.close()
+            self.app_module.uninstall_system_sources()
+
+    def test_the_mfd_comms_and_mission_pages_and_the_tsd_route_draw_the_bus_data(self):
+        terminal = StubTerminal()
+        terminal.rt = 13
+        systems = SystemsFeed(terminal)
+        radar = RadarFeed(terminal, self.coordinator)
+        window = self.app_module.MfdWindow(terminal, radar, systems)
+        try:
+            window.show()
+            self.app.processEvents()
+            mfd = window.mfd
+            pages = window._pages
+            empty = {}
+            for page in (pages.COMMS, pages.MISSION):
+                mfd.current_page = page
+                window.tick()
+                mfd.update()
+                self.app.processEvents()
+                empty[page] = mfd.grab().toImage()
+            terminal.put(sample_link())
+            terminal.put(sample_mission_status())
+            terminal.put_block(b.BcastMsnPlan, sample_plan(), 3)
+            terminal.put(m.BcastFmsFlightData(payload=flight_payload(latitude=0.1, longitude=0.0)))
+            mfd.current_page = pages.COMMS
+            window.tick()
+            mfd.update()
+            self.app.processEvents()
+            self.assertFalse(mfd._paint_error)
+            self.assertNotEqual(empty[pages.COMMS], mfd.grab().toImage(), "the link status changed the page")
+            self.assertEqual(243.0, systems.comms.get_data()["radio"]["frequency"])
+            mfd.current_page = pages.MISSION
+            for tab in ("ROUTE", "TARGETS", "OOB"):
+                mfd._mission_tab = tab
+                window.tick()
+                mfd.update()
+                self.app.processEvents()
+                self.assertFalse(mfd._paint_error, tab)
+                self.assertNotEqual(empty[pages.MISSION], mfd.grab().toImage(), tab)
+            self.assertEqual("INGRESS", systems.mission.get_data()["phase"])
+            self.assertEqual(["IP", "TURN"], [w["name"] for w in systems.mission.get_nav_data()["route"]])
+            self.assertEqual("E001", systems.mission.get_oob()["enemy"][0]["id"])
+            self.assertIn("MSN INGRESS wp 1/2", window.status.text())
+            self.assertIn("COM radio ACTIVE sat connected", window.status.text())
+        finally:
+            window.timer.stop()
+            window.close()
+            self.app_module.uninstall_system_sources()
+
+        # The TSD draws the route's names and the enemy unit as a hostile contact once it knows its own position.
+        terminal = StubTerminal()
+        terminal.rt = 16
+        systems = SystemsFeed(terminal)
+        window = self.app_module.TsdWindow(terminal, systems)
+        try:
+            window.show()
+            self.app.processEvents()
+            tsd = window.tsd
+            terminal.put(m.BcastFmsFlightData(payload=flight_payload(latitude=0.1, longitude=0.0, heading=0.0)))
+            terminal.put(sample_mission_status())
+            terminal.put_block(b.BcastMsnPlan, sample_plan(), 3)
+            tsd._poll_data()
+            window.tick()
+            self.app.processEvents()
+            self.assertFalse(getattr(tsd, "_paint_error", False))
+            self.assertEqual(["IP", "TURN"], [w["name"] for w in tsd._waypoints])
+            contacts = [t for t in tsd._threats if t.get("identity") in ("ENEMY", "FRIENDLY")]
+            self.assertEqual([("SAM_SITE", True, "E001"), ("TANKER", False, "F002")],
+                             [(t["type"], t["hostile"], t["name"]) for t in contacts])
+            self.assertAlmostEqual(1.94, contacts[0]["range_nm"], delta=0.1)  # 1.8 nm north, 0.7 nm east
         finally:
             window.timer.stop()
             window.close()

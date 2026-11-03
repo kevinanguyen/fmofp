@@ -88,3 +88,30 @@ target_link_libraries(fmofp_engine PRIVATE ofp::engine ofp::rt_process ofp::bc o
 
 add_executable(fmofp_engine_tool engine/tools/engine_tool.cpp)
 target_link_libraries(fmofp_engine_tool PRIVATE ofp::engine ofp::warnings)
+
+# The mission computer, RT 6: the route and its progress, the designated
+# targets, the order of battle and the mission phase (missionService.py with
+# MissionControl, RouteManager, Targeting and OrderOfBattle). fmofp_mission_tool
+# exposes the three managers on stdin/stdout for the oracle tests.
+add_library(ofp_mission STATIC mission/src/mission_computer.cpp)
+add_library(ofp::mission ALIAS ofp_mission)
+add_dependencies(ofp_mission ofp_icd_generate)
+target_include_directories(ofp_mission PUBLIC mission/include)
+target_link_libraries(ofp_mission PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
+
+add_executable(fmofp_mission mission/src/main.cpp)
+target_link_libraries(fmofp_mission PRIVATE ofp::mission ofp::rt_process ofp::bc ofp::warnings)
+
+add_executable(fmofp_mission_tool mission/tools/mission_tool.cpp)
+target_link_libraries(fmofp_mission_tool PRIVATE ofp::mission ofp::warnings)
+
+# Communications, RT 2: the radio, satcom and data-link state and controls of
+# CommsService; what the links measure comes from the plant's RF environment.
+add_library(ofp_comms STATIC comms/src/comms_computer.cpp)
+add_library(ofp::comms ALIAS ofp_comms)
+add_dependencies(ofp_comms ofp_icd_generate)
+target_include_directories(ofp_comms PUBLIC comms/include)
+target_link_libraries(ofp_comms PUBLIC ofp::bus ofp::icd PRIVATE ofp::flight)
+
+add_executable(fmofp_comms comms/src/main.cpp)
+target_link_libraries(fmofp_comms PRIVATE ofp::comms ofp::rt_process ofp::bc ofp::warnings)

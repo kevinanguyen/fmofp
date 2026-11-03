@@ -96,6 +96,9 @@ pipelines:
               - export FMOFP_RADAR_TOOL=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_radar_tool
               - export FMOFP_ENGINE=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_engine
               - export FMOFP_ENGINE_TOOL=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_engine_tool
+              - export FMOFP_MISSION=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_mission
+              - export FMOFP_MISSION_TOOL=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_mission_tool
+              - export FMOFP_COMMS=$(pwd)/ofp/build/linux-gcc/partitions/fmofp_comms
               - export QT_QPA_PLATFORM=offscreen
               - python3 -m unittest discover -s fmofp_bus/tests -t . -v
               - cd ofp
