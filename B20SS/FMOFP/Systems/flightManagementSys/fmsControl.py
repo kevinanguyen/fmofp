@@ -1,5 +1,4 @@
 import threading
-import time
 import math
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.flightManagementSys.flightManagementSystem import get_flightManagementSystem

@@ -14,7 +14,6 @@ Usage:
 """
 
 import threading
-import time
 from typing import Any, Dict, Optional
 
 from FMOFP.Utils.logger.sys_logger import get_logger

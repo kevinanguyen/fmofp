@@ -8,7 +8,7 @@ import numpy as np
 import random
 import math
 import time
-from typing import Dict, Tuple, Any, Optional, List
+from typing import Dict, Tuple, Any
 from FMOFP.Utils.logger.sys_logger import get_logger
 logger = get_logger()
 

@@ -2,7 +2,7 @@
 Weather radar display implementation with node-based state management.
 """
 from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer
-from PyQt6.QtGui import QPainter, QColor, QBrush, QLinearGradient, QPainterPath, QPen, QFont, QRadialGradient
+from PyQt6.QtGui import QPainter, QColor, QBrush, QLinearGradient, QPen, QFont, QRadialGradient
 # Import rendering components using the function-based approach to avoid circular imports
 from FMOFP.Interfaces.userInterface.displays.radar.rendering import get_animation_controller
 from FMOFP.Interfaces.userInterface.displays.radar.rendering import get_spatial_grid, get_dirty_region_tracker
@@ -759,7 +759,7 @@ class WeatherRadarDisplay(BaseRadarDisplay):
                     if count > 1:
                         logger.info(f"[WEATHER_DISPLAY] Processing {count} precipitation data messages")
                     else:
-                        logger.info(f"[WEATHER_DISPLAY] Processing precipitation data")
+                        logger.info("[WEATHER_DISPLAY] Processing precipitation data")
 
                 # Ensure visual elements are set to show precipitation data
                 # This ensures precipitation data is always visible regardless of visual state
@@ -980,7 +980,7 @@ class WeatherRadarDisplay(BaseRadarDisplay):
                             vil_data_found = True
                     elif hasattr(data.additional_info, 'weather_data'):
                         weather_data = data.additional_info.weather_data
-                        logger.debug(f"[WEATHER_DISPLAY] Found weather_data attribute in additional_info")
+                        logger.debug("[WEATHER_DISPLAY] Found weather_data attribute in additional_info")
 
                         if hasattr(weather_data, 'vil_data') and isinstance(weather_data.vil_data, list):
                             vil_data_list = weather_data.vil_data
@@ -1262,7 +1262,7 @@ class WeatherRadarDisplay(BaseRadarDisplay):
                 logger.debug(f"[WEATHER_DISPLAY] Storing VIL data: {len(self._vil_data) if hasattr(self, '_vil_data') and self._vil_data else 0} points")
 
             elif "cells" in node_name:
-                logger.debug(f"[WEATHER_DISPLAY] Storing cells data")
+                logger.debug("[WEATHER_DISPLAY] Storing cells data")
                 self._cell_data = data
 
             # Request display update - force repaint
@@ -1428,7 +1428,7 @@ class WeatherRadarDisplay(BaseRadarDisplay):
                             pos = precip.get('position', (0,0))
                             logger.info(f"[WEATHER_DISPLAY] Drawing precipitation at {pos}")
                         else:
-                            logger.info(f"[WEATHER_DISPLAY] Drawing precipitation (non-dictionary data)")
+                            logger.info("[WEATHER_DISPLAY] Drawing precipitation (non-dictionary data)")
                         self._last_precip_log_time = current_time
 
             # Draw cell data if available
@@ -1436,7 +1436,7 @@ class WeatherRadarDisplay(BaseRadarDisplay):
                 for cell in self._cell_data:
                     self._draw_storm_cell(painter, center, radius, cell)
                     if current_time - self._last_cell_log_time >= 5.0:
-                        logger.info(f"[WEATHER_DISPLAY] Drawing weather cell")
+                        logger.info("[WEATHER_DISPLAY] Drawing weather cell")
                         self._last_cell_log_time = current_time
 
             # Log completion

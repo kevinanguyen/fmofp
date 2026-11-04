@@ -18,12 +18,11 @@ layer to relay them.
 Singleton: get_mission_message_handler()
 """
 
-import asyncio
 import threading
 import time
 import traceback
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.core.event_driven_communication import get_event_bus, Event

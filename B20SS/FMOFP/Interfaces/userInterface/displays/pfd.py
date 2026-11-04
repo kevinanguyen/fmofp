@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QRectF, QPointF, QLineF, Qt, QTimer
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QLinearGradient, QPainterPath
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QLinearGradient, QPainterPath
 from .base_display import BaseDisplay, DisplayType
 from .data_validity import FieldValidity, draw_invalid_overlay
 
@@ -11,7 +11,6 @@ from .data_validity import FieldValidity, draw_invalid_overlay
 # G-FORCE 1.0 / AOA 0.0 / NORMAL next to them in normal colours.
 UNKNOWN_READING_TEXT = "----"
 UNKNOWN_READING_COLOR = QColor(255, 176, 0)
-import math
 import threading
 import time
 import traceback

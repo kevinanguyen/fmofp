@@ -10,7 +10,7 @@ import asyncio
 import threading
 import time
 import traceback
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Union
 import queue
 
 # Import display-local modules
@@ -21,20 +21,10 @@ from .display_command_map import (
     SHOW_REQUEST_MAP,
     MODE_REQUEST_MAP)
 from .display_message_types import (
-    DISPLAY_COMMAND_TYPE_MODE,
-    DISPLAY_COMMAND_TYPE_MODE_CHANGE,
-    DISPLAY_COMMAND_TYPE_MODE_CHANGE_COMPLETE,
     DISPLAY_VIL_DATA,
     DISPLAY_PRECIPITATION_DATA,
-    DISPLAY_ECHO_TOP_DATA,
     translate_message_type,
-    is_precipitation_message,
     is_vil_message
-)
-from .display_address_utils import (
-    DISPLAY_RT_ADDRESS,
-    get_rt_address_name,
-    get_subaddress_name
 )
 
 # Import display types and modes
@@ -283,7 +273,7 @@ class DisplayMessageHandler:
                         message.message_type = DISPLAY_PRECIPITATION_DATA
                         subaddress_info['message_type'] = message.message_type
                         logger.info(f"[DISPLAY_HANDLER] Set message_type to {DISPLAY_PRECIPITATION_DATA} based on additional_info")
-                        logger.info(f"[WEATHER_DISPLAY] Processing precipitation data")
+                        logger.info("[WEATHER_DISPLAY] Processing precipitation data")
 
             # Log message details
             logger.info(f"[DISPLAY_HANDLER] Enqueueing message: id={subaddress_info['id']}, "
@@ -585,7 +575,7 @@ class DisplayMessageHandler:
                 logger.info(f"[DISPLAY_HANDLER] Added request_id to message: {request_id}")
                 
             # Log routing attempt
-            logger.info(f"[DISPLAY_HANDLER] Routing message:")
+            logger.info("[DISPLAY_HANDLER] Routing message:")
             logger.info(f"[DISPLAY_HANDLER]   System: {subaddress_info.get('source_system', None)}")
             logger.info(f"[DISPLAY_HANDLER]   Message type: {subaddress_info.get('command_type')}")
             logger.info(f"[DISPLAY_HANDLER]   Command word: {subaddress_info.get('command_word')}")
@@ -685,7 +675,7 @@ class DisplayMessageHandler:
         logger.info(f"[DISPLAY_HANDLER] Starting message processor thread (ID: {thread_id}, Name: {thread_name})")
         
         # Log initial component states
-        logger.info(f"[DISPLAY_HANDLER] Component states:")
+        logger.info("[DISPLAY_HANDLER] Component states:")
         logger.info(f"[DISPLAY_HANDLER] - routing_service: {self.routing_service is not None}")
         logger.info(f"[DISPLAY_HANDLER] - message_router: {self.message_router is not None}")
         logger.info(f"[DISPLAY_HANDLER] - tree_manager: {self.tree_manager is not None}")
@@ -722,7 +712,7 @@ class DisplayMessageHandler:
                     # Periodically log queue size and thread state
                     if current_time - last_queue_check > queue_check_interval:
                         queue_size = self.message_queue.qsize()
-                        logger.info(f"[DISPLAY_HANDLER] Thread state check:")
+                        logger.info("[DISPLAY_HANDLER] Thread state check:")
                         logger.info(f"[DISPLAY_HANDLER] - Running: {self._running}")
                         logger.info(f"[DISPLAY_HANDLER] - Queue size: {queue_size}")
                         logger.info(f"[DISPLAY_HANDLER] - Messages processed: {messages_processed}")

@@ -265,7 +265,7 @@ class FCSCompletionMessageHandler:
 
             # Send the formatted message
             logger.info(f"[FCS_COMP] Sending formatted message: {formatted_message}")
-            logger.info(f"[FCS_COMP] Message trace: RT_sender -> BC_Listener -> Bus_Controller -> Unified Router -> Display System")
+            logger.info("[FCS_COMP] Message trace: RT_sender -> BC_Listener -> Bus_Controller -> Unified Router -> Display System")
             send_result = self.rt_sender.RT_send_message(formatted_message)
 
             if send_result:

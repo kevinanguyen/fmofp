@@ -8,9 +8,6 @@ with summary statistics and detailed test results. It also provides recommendati
 
 import json
 import sys
-import os
-from datetime import datetime
-from pprint import pprint
 
 def colorize(text, color_code):
     """Colorize text for terminal output"""
@@ -51,7 +48,7 @@ def display_header(data):
     """Display header with test run information"""
     print()
     print(cyan("=" * 80))
-    print(cyan(f"PREDEFINED MESSAGES TEST RESULTS"))
+    print(cyan("PREDEFINED MESSAGES TEST RESULTS"))
     print(cyan("=" * 80))
     
     print(f"Start Time: {data['start_time']}")

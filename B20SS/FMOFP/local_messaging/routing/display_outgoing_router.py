@@ -51,7 +51,7 @@ class DisplayOutgoingRouter:
         """
         try:
             # Log the message being routed
-            self.logger.info(f"[LOCAL_DISP_OUTGOING] Routing message to display system")
+            self.logger.info("[LOCAL_DISP_OUTGOING] Routing message to display system")
             
             # Convert message to dictionary if needed
             message_dict = message
@@ -69,7 +69,7 @@ class DisplayOutgoingRouter:
             
             # Route based on command type - this is the primary routing mechanism
             if command_type == 'precipitation_data':
-                self.logger.warning(f"[LOCAL_DISP_OUTGOING] Routing precipitation data message")
+                self.logger.warning("[LOCAL_DISP_OUTGOING] Routing precipitation data message")
                 # Create a task for the async method and add a callback to handle the result
                 loop = asyncio.get_event_loop()
                 task = loop.create_task(self._route_precipitation_data(message))
@@ -79,9 +79,9 @@ class DisplayOutgoingRouter:
                     try:
                         result = future.result()
                         if result:
-                            self.logger.warning(f"[LOCAL_DISP_OUTGOING] Successfully routed precipitation data")
+                            self.logger.warning("[LOCAL_DISP_OUTGOING] Successfully routed precipitation data")
                         else:
-                            self.logger.error(f"[LOCAL_DISP_OUTGOING] Failed to route precipitation data")
+                            self.logger.error("[LOCAL_DISP_OUTGOING] Failed to route precipitation data")
                     except Exception as e:
                         self.logger.error(f"[LOCAL_DISP_OUTGOING] Error in precipitation data routing: {e}")
                         self.logger.error(traceback.format_exc())
@@ -90,7 +90,7 @@ class DisplayOutgoingRouter:
                 task.add_done_callback(handle_result)
                 return True
             elif message_type == 'weather_radarPrecipitationResponse':
-                self.logger.warning(f"[LOCAL_DISP_OUTGOING] Routing precipitation response message")
+                self.logger.warning("[LOCAL_DISP_OUTGOING] Routing precipitation response message")
                 # Create a task for the async method and add a callback to handle the result
                 loop = asyncio.get_event_loop()
                 task = loop.create_task(self._route_precipitation_data(message))
@@ -100,9 +100,9 @@ class DisplayOutgoingRouter:
                     try:
                         result = future.result()
                         if result:
-                            self.logger.warning(f"[LOCAL_DISP_OUTGOING] Successfully routed precipitation response")
+                            self.logger.warning("[LOCAL_DISP_OUTGOING] Successfully routed precipitation response")
                         else:
-                            self.logger.error(f"[LOCAL_DISP_OUTGOING] Failed to route precipitation response")
+                            self.logger.error("[LOCAL_DISP_OUTGOING] Failed to route precipitation response")
                     except Exception as e:
                         self.logger.error(f"[LOCAL_DISP_OUTGOING] Error in precipitation response routing: {e}")
                         self.logger.error(traceback.format_exc())
@@ -112,23 +112,23 @@ class DisplayOutgoingRouter:
                 return True
                 
             elif command_type == 'vil_data' or (message_type and 'vil' in message_type.lower() and 'precipitation' not in message_type.lower()):
-                self.logger.info(f"[LOCAL_DISP_OUTGOING] Routing VIL data message")
+                self.logger.info("[LOCAL_DISP_OUTGOING] Routing VIL data message")
                 return self._route_vil_data(message)
                 
             elif command_type == 'mode_change' or command_type == 'mode_change_completion':
-                self.logger.info(f"[LOCAL_DISP_OUTGOING] Routing mode change message")
+                self.logger.info("[LOCAL_DISP_OUTGOING] Routing mode change message")
                 # Check if this is a completion message
                 is_completion = (command_type == 'mode_change_completion' or 
                                 message_type == 'weather_radarModeChangeCompletion')
                 return self._route_mode_change(message, is_completion)
                 
             elif command_type == 'show_display':
-                self.logger.info(f"[LOCAL_DISP_OUTGOING] Routing show display message")
+                self.logger.info("[LOCAL_DISP_OUTGOING] Routing show display message")
                 return self._route_show_display(message)
                 
             else:
                 # For all other message types, use the DisplayResponseService
-                self.logger.info(f"[LOCAL_DISP_OUTGOING] Routing generic message to DisplayResponseService")
+                self.logger.info("[LOCAL_DISP_OUTGOING] Routing generic message to DisplayResponseService")
                 
                 # Extract metadata from message
                 request_id = message_dict.get('request_id')
@@ -164,7 +164,7 @@ class DisplayOutgoingRouter:
                 try:
                     # Create a task to handle the display command
                     asyncio.create_task(self._send_to_display_response_service(command_data))
-                    self.logger.info(f"[LOCAL_DISP_OUTGOING] Successfully created task to route message to DisplayResponseService")
+                    self.logger.info("[LOCAL_DISP_OUTGOING] Successfully created task to route message to DisplayResponseService")
                     return True
                 except Exception as e:
                     self.logger.error(f"[LOCAL_DISP_OUTGOING] Error creating task to route to DisplayResponseService: {e}")
@@ -190,7 +190,7 @@ class DisplayOutgoingRouter:
         try:
             # Send the command to the DisplayResponseService
             await self.response_service.handle_display_command(command_data, from_display_handler=True)
-            self.logger.info(f"[LOCAL_DISP_OUTGOING] Successfully sent command to DisplayResponseService")
+            self.logger.info("[LOCAL_DISP_OUTGOING] Successfully sent command to DisplayResponseService")
             return True
         except Exception as e:
             self.logger.error(f"[LOCAL_DISP_OUTGOING] Error sending to DisplayResponseService: {e}")
@@ -330,7 +330,7 @@ class DisplayOutgoingRouter:
                 # Check if this message has already been processed
                 if 'metadata' in message_dict and isinstance(message_dict['metadata'], dict):
                     if message_dict['metadata'].get('_processed_by_display_response'):
-                        logger.warning(f"[LOCAL_DISP_OUTGOING] Skipping already processed mode change completion message")
+                        logger.warning("[LOCAL_DISP_OUTGOING] Skipping already processed mode change completion message")
                         return True
                 
                 # Create command data for DisplayResponseService
@@ -389,7 +389,7 @@ class DisplayOutgoingRouter:
             # If this is a completion message, ensure command_type is set to mode_change
             if is_completion and (command_type == 'mode_change_completion'):
                 command_type = 'mode_change'
-                self.logger.info(f"[LOCAL_DISP_OUTGOING] Setting command_type to 'mode_change' for completion message")
+                self.logger.info("[LOCAL_DISP_OUTGOING] Setting command_type to 'mode_change' for completion message")
             
             # Get message type for transformation
             message_type = get_message_type(message_dict)
@@ -484,8 +484,8 @@ class DisplayOutgoingRouter:
                         # the `try:` block, reached before any `except` binds `e`, so the
                         # original interpolation referenced an undefined name. Found via
                         # `ruff check --select F821`.
-                        raise Exception(f"Cannot convert to RadarDisplayMode: both mode "
-                                         f"and mode_value are missing/None")
+                        raise Exception("Cannot convert to RadarDisplayMode: both mode "
+                                         "and mode_value are missing/None")
                 except Exception as e:
                     raise Exception(f"Error converting mode_value {mode_value} to RadarDisplayMode: {e}")
 
@@ -518,9 +518,9 @@ class DisplayOutgoingRouter:
                     try:
                         mode_change_request = future.result()
                         if mode_change_request:
-                            self.logger.info(f"[LOCAL_DISP_OUTGOING] Message sent successfully to display system")
+                            self.logger.info("[LOCAL_DISP_OUTGOING] Message sent successfully to display system")
                         else:
-                            self.logger.error(f"[LOCAL_DISP_OUTGOING] Failed to send message to display system")
+                            self.logger.error("[LOCAL_DISP_OUTGOING] Failed to send message to display system")
                     except Exception as e:
                         self.logger.error(f"[LOCAL_DISP_OUTGOING] Error in send_request callback: {e}")
                         self.logger.error(traceback.format_exc())
@@ -616,9 +616,9 @@ class DisplayOutgoingRouter:
                 try:
                     result = future.result()
                     if result:
-                        self.logger.info(f"[LOCAL_DISP_OUTGOING] VIL data sent successfully to display system")
+                        self.logger.info("[LOCAL_DISP_OUTGOING] VIL data sent successfully to display system")
                     else:
-                        self.logger.error(f"[LOCAL_DISP_OUTGOING] Failed to send VIL data to display system")
+                        self.logger.error("[LOCAL_DISP_OUTGOING] Failed to send VIL data to display system")
                 except Exception as e:
                     self.logger.error(f"[LOCAL_DISP_OUTGOING] Error in send_request callback: {e}")
                     self.logger.error(traceback.format_exc())
@@ -807,7 +807,7 @@ class DisplayOutgoingRouter:
                 # Return success since we've successfully sent the message
                 return True
             else:
-                self.logger.error(f"[LOCAL_DISP_OUTGOING] Failed to send precipitation data through DisplayMessageHandler")
+                self.logger.error("[LOCAL_DISP_OUTGOING] Failed to send precipitation data through DisplayMessageHandler")
                 return False
             
         except Exception as e:
@@ -857,9 +857,9 @@ class DisplayOutgoingRouter:
                 try:
                     result = future.result()
                     if result:
-                        self.logger.info(f"[LOCAL_DISP_OUTGOING] Show display command sent successfully")
+                        self.logger.info("[LOCAL_DISP_OUTGOING] Show display command sent successfully")
                     else:
-                        self.logger.error(f"[LOCAL_DISP_OUTGOING] Failed to send show display command")
+                        self.logger.error("[LOCAL_DISP_OUTGOING] Failed to send show display command")
                 except Exception as e:
                     self.logger.error(f"[LOCAL_DISP_OUTGOING] Error in send_request callback: {e}")
                     self.logger.error(traceback.format_exc())
@@ -932,9 +932,9 @@ class DisplayOutgoingRouter:
                 try:
                     result = future.result()
                     if result:
-                        self.logger.info(f"[LOCAL_DISP_OUTGOING] Generic message sent successfully to display system")
+                        self.logger.info("[LOCAL_DISP_OUTGOING] Generic message sent successfully to display system")
                     else:
-                        self.logger.error(f"[LOCAL_DISP_OUTGOING] Failed to send generic message to display system")
+                        self.logger.error("[LOCAL_DISP_OUTGOING] Failed to send generic message to display system")
                 except Exception as e:
                     self.logger.error(f"[LOCAL_DISP_OUTGOING] Error in send_request callback: {e}")
                     self.logger.error(traceback.format_exc())

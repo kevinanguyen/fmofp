@@ -1,16 +1,13 @@
 """
 Holographic Primary Flight Display with advanced 3D visualization and tactical overlays
 """
-from PyQt6.QtCore import QRectF, QPointF, QLineF, Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QPainterPath, QLinearGradient, QRadialGradient, QTransform
+from PyQt6.QtCore import QRectF, QPointF, QLineF, Qt, QTimer, QEasingCurve
+from PyQt6.QtGui import QPainter, QColor, QFont, QPainterPath, QLinearGradient
 from .holographic_display import HolographicDisplay
 from .base_display import DisplayType
-from .visual.enhanced_theme_manager import get_enhanced_theme_manager, EnhancedDisplayTheme
-from .visual.enhanced_effects import get_enhanced_visual_effects
+from .visual.enhanced_theme_manager import EnhancedDisplayTheme
 import math
 import time
-import random
-import threading
 import traceback
 from FMOFP.Utils.logger.sys_logger import get_logger
 

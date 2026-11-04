@@ -21,10 +21,10 @@ import time
 import math
 import random
 import traceback
-from typing import Dict, Any, List, Tuple, Optional
-from PyQt6.QtCore import Qt, QRect, QPoint, QPointF, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QLinearGradient, QRadialGradient, QPainterPath
-from .mfd import MultiFunctionDisplay, RadarData, RadarType
+from typing import Dict, Any, List
+from PyQt6.QtCore import Qt, QRect, QPointF, QRectF
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QLinearGradient, QPainterPath
+from .mfd import MultiFunctionDisplay
 from .visual.enhanced_effects import get_enhanced_visual_effects
 from .visual.theme_manager import get_theme_manager
 from FMOFP.Utils.logger.sys_logger import get_logger

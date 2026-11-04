@@ -6,13 +6,8 @@ This utility analyzes the Messages.py file and its related message classes to pr
 a comprehensive summary of available predefined messages for easy reference.
 """
 
-import importlib
 import inspect
-import sys
-import os
 import asyncio
-from pprint import pprint
-import re
 
 def colorize(text, color_code):
     """Colorize text for terminal output"""

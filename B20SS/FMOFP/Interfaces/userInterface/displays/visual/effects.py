@@ -1,9 +1,9 @@
 """
 Visual effects utilities for enhanced display rendering
 """
-from PyQt6.QtCore import QPointF, QRectF, Qt, QEasingCurve, QPropertyAnimation
+from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QLinearGradient, QRadialGradient
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Optional, List
 from .theme_manager import get_theme_manager
 from FMOFP.Utils.logger.sys_logger import get_logger
 

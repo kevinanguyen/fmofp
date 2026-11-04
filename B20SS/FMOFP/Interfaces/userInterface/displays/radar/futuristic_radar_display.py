@@ -2,15 +2,15 @@
 Futuristic radar display with advanced visual effects
 """
 from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer, QEasingCurve
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QFont, QFontMetrics
-from typing import Dict, List, Optional, Tuple, Any
+from PyQt6.QtGui import QPainter, QColor, QBrush, QPainterPath
+from typing import Dict, List
 import math
 import time
 import random
 from .base_radar_display import BaseRadarDisplay
-from ..visual.theme_manager import get_theme_manager, DisplayTheme
+from ..visual.theme_manager import DisplayTheme
 from ..visual.effects import VisualEffects
-from ..visual.animation_controller import AnimationController, TransitionGroup
+from ..visual.animation_controller import AnimationController
 from ..visual.settings_panel import SettingsPanel
 from FMOFP.Utils.logger.sys_logger import get_logger
 

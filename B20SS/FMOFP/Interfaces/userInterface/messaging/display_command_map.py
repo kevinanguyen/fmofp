@@ -5,17 +5,9 @@ Defines command word constants and utilities for the display system.
 Uses centralized message types and address utilities instead of dynamic registration.
 """
 
-import os
-from typing import Dict, Optional
+from typing import Dict
 from ..displays.base_display import DisplayType
 from .display_address_utils import (
-    DISPLAY_SYSTEM_ID,
-    PFD_SUBADDRESS,
-    MFD_SUBADDRESS,
-    EICAS_SUBADDRESS,
-    RADAR_DISPLAY_SUBADDRESS,
-    TSD_SUBADDRESS,
-    SMS_SUBADDRESS,
     DISPLAY_SUBADDRESS_MAP,
     get_display_subaddress
 )

@@ -18,9 +18,9 @@ flagged here so a future maintainer doesn't mistake this for an
 unfinished feature waiting to be wired up.
 """
 from PyQt6.QtCore import QRectF, QPointF, QLineF, Qt, QTimer
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QPainterPath, QLinearGradient
+from PyQt6.QtGui import QPainter, QPen, QColor, QPainterPath, QLinearGradient
 from .pfd import PrimaryFlightDisplay
-from .visual.theme_manager import get_theme_manager, DisplayTheme
+from .visual.theme_manager import DisplayTheme
 from .visual.effects import VisualEffects
 import math
 import time

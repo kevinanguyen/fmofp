@@ -4,18 +4,7 @@ Base module for predefined messages.
 Contains base class and initialization logic.
 """
 
-import asyncio
-import sys
-import logging
-import io
-import traceback
-import time
-import re
-import uuid
-from typing import List, Optional, Dict, Tuple, Any, Union
 
-from FMOFP.core.system_manager import get_system_manager
-from FMOFP.local_messaging.radar_display_modes import RadarDisplayMode
 # Story C10.1: a second import bound `get_display_message_handler` to
 # DisplayMessageHandler's function on the line above this one. Two DIFFERENT
 # modules were bound to one name, and the alias below — being later — is what

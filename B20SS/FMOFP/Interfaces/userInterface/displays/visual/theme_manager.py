@@ -1,12 +1,12 @@
 """
 Theme manager for display visual enhancements
 """
-from enum import Enum, auto
-from typing import Dict, Any, Optional, List
+from enum import Enum
+from typing import Dict, Any, List
 import json
 import traceback
 import os
-from PyQt6.QtGui import QColor, QFont, QGradient, QLinearGradient
+from PyQt6.QtGui import QColor, QFont, QLinearGradient
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

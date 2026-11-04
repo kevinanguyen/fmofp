@@ -9,7 +9,7 @@ mode handling across system and display boundaries.
 
 import logging
 from enum import Enum
-from typing import Optional, Tuple, Union, Dict, Any, Type
+from typing import Optional, Tuple, Union, Dict, Any
 
 # Import the RadarDisplayMode enum
 from FMOFP.local_messaging.radar_display_modes import RadarDisplayMode
@@ -17,12 +17,12 @@ from FMOFP.local_messaging.radar_display_modes import RadarDisplayMode
 # Try to import display-specific enums if available
 try:
     from FMOFP.Interfaces.userInterface.displays.radar.display_radar_enums import (
-        BaseDisplayRadarMode,
-        DisplayWeatherRadarMode,
-        DisplayTFRRadarMode,
-        DisplaySARRadarMode,
-        DisplayTargetingRadarMode,
-        DisplayAEWCRadarMode,
+        BaseDisplayRadarMode,  # noqa: F401
+        DisplayWeatherRadarMode,  # noqa: F401
+        DisplayTFRRadarMode,  # noqa: F401
+        DisplaySARRadarMode,  # noqa: F401
+        DisplayTargetingRadarMode,  # noqa: F401
+        DisplayAEWCRadarMode,  # noqa: F401
         get_display_mode_class
     )
     HAS_DISPLAY_ENUMS = True
@@ -97,41 +97,41 @@ def get_radar_display_mode(
                     if hasattr(RadarDisplayMode, 'weather_radar_modes'):
                         if isinstance(RadarDisplayMode.weather_radar_modes, dict):
                             mode_map = RadarDisplayMode.weather_radar_modes
-                            logger.debug(f"Using weather_radar_modes map")
+                            logger.debug("Using weather_radar_modes map")
                         else:
-                            logger.warning(f"weather_radar_modes is not a dictionary, using global mode_map")
+                            logger.warning("weather_radar_modes is not a dictionary, using global mode_map")
                 
                 elif 'tfr_radar' in radar_type:
                     if hasattr(RadarDisplayMode, 'tfr_radar_modes'):
                         if isinstance(RadarDisplayMode.tfr_radar_modes, dict):
                             mode_map = RadarDisplayMode.tfr_radar_modes
-                            logger.debug(f"Using tfr_radar_modes map")
+                            logger.debug("Using tfr_radar_modes map")
                         else:
-                            logger.warning(f"tfr_radar_modes is not a dictionary, using global mode_map")
+                            logger.warning("tfr_radar_modes is not a dictionary, using global mode_map")
                 
                 elif 'sar_radar' in radar_type:
                     if hasattr(RadarDisplayMode, 'sar_radar_modes'):
                         if isinstance(RadarDisplayMode.sar_radar_modes, dict):
                             mode_map = RadarDisplayMode.sar_radar_modes
-                            logger.debug(f"Using sar_radar_modes map")
+                            logger.debug("Using sar_radar_modes map")
                         else:
-                            logger.warning(f"sar_radar_modes is not a dictionary, using global mode_map")
+                            logger.warning("sar_radar_modes is not a dictionary, using global mode_map")
                 
                 elif 'targeting_radar' in radar_type:
                     if hasattr(RadarDisplayMode, 'targeting_radar_modes'):
                         if isinstance(RadarDisplayMode.targeting_radar_modes, dict):
                             mode_map = RadarDisplayMode.targeting_radar_modes
-                            logger.debug(f"Using targeting_radar_modes map")
+                            logger.debug("Using targeting_radar_modes map")
                         else:
-                            logger.warning(f"targeting_radar_modes is not a dictionary, using global mode_map")
+                            logger.warning("targeting_radar_modes is not a dictionary, using global mode_map")
                 
                 elif 'aewc_radar' in radar_type:
                     if hasattr(RadarDisplayMode, 'aewc_radar_modes'):
                         if isinstance(RadarDisplayMode.aewc_radar_modes, dict):
                             mode_map = RadarDisplayMode.aewc_radar_modes
-                            logger.debug(f"Using aewc_radar_modes map")
+                            logger.debug("Using aewc_radar_modes map")
                         else:
-                            logger.warning(f"aewc_radar_modes is not a dictionary, using global mode_map")
+                            logger.warning("aewc_radar_modes is not a dictionary, using global mode_map")
                 
                 else:
                     # For any other radar type, use the global map

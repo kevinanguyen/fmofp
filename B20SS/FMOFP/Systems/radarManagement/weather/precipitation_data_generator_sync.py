@@ -6,7 +6,6 @@ hard limits on data points, and aggressive downsampling for performance.
 """
 
 import numpy as np
-import uuid
 import time
 import math
 from typing import Dict, Tuple, List, Any, Optional
@@ -450,10 +449,6 @@ class PrecipitationDataGenerator:
         from FMOFP.Systems.radarManagement.radar_messaging.message_definitions import WeatherRadarPrecipitationResponse
         
         # Import message type constants
-        from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-            WEATHER_RADAR_PRECIPITATION_RESPONSE,
-            COMMAND_TYPE_PRECIPITATION_DATA
-        )
         
         # Create response message with the original request ID
         # Use "radar" as the system ID (not "weather_radar" which is a subaddress ID)

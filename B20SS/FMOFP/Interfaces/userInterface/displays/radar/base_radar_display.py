@@ -8,7 +8,7 @@ from typing import Dict, Optional
 import traceback
 from FMOFP.Utils.logger.sys_logger import get_logger
 from ..visual.theme_manager import get_theme_manager, DisplayTheme
-from ..visual.enhanced_theme_manager import get_enhanced_theme_manager, EnhancedDisplayTheme
+from ..visual.enhanced_theme_manager import get_enhanced_theme_manager
 from ..visual.effects import VisualEffects
 
 logger = get_logger()

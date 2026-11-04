@@ -10,7 +10,6 @@ from typing import Dict, Optional, List
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.local_messaging.messageConfigurations.weather_radar_data import PrecipitationData
 from FMOFP.local_messaging.message_types import WEATHER_RADAR_PRECIPITATION_RESPONSE, WEATHER_RADAR_PRECIPITATION_REQUEST
-from FMOFP.local_messaging.address_utils import get_rt_address, get_subaddress
 from FMOFP.local_messaging.routing.handlers.base_message_handler import BaseMessageHandler
 from FMOFP.Utils.common.radar_records import COLLECTION_RECORD_TYPE
 
@@ -395,7 +394,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
             precipitation_data.additional_info = additional_info
 
             # Verify object state
-            logger.debug(f"[PRECIP_CONVERT] Final object state:")
+            logger.debug("[PRECIP_CONVERT] Final object state:")
             logger.debug(f"[PRECIP_CONVERT] - position: {precipitation_data.position}")
             logger.debug(f"[PRECIP_CONVERT] - type: {precipitation_data.type}")
             logger.debug(f"[PRECIP_CONVERT] - rate: {precipitation_data.rate}")
@@ -567,7 +566,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
         """
         try:
             # Critical log for test verification
-            logger.debug(f"[PRECIP_RAW_STORE] Direct storage of raw precipitation data:")
+            logger.debug("[PRECIP_RAW_STORE] Direct storage of raw precipitation data:")
             logger.debug(f"[PRECIP_RAW_STORE] - request_id: {request_id}")
             logger.debug(f"[PRECIP_RAW_STORE] - position: ({position_x}, {position_y})")
             logger.debug(f"[PRECIP_RAW_STORE] - type: {precip_type}")
@@ -714,7 +713,6 @@ class PrecipitationDataHandler(BaseMessageHandler):
             # Decode scale factors from word 1 (written by DataResponseSender._encode_complex_objects)
             # High byte = rate_scale_code = int(log2(RATE_SCALE) * 16)
             # Low byte  = intensity_scale_code = int(log2(INTENSITY_SCALE) * 16)
-            import math
             scale_word = binary_data[1] if len(binary_data) > 1 else 0
             rate_scale_code      = (scale_word >> 8) & 0xFF
             intensity_scale_code = scale_word & 0xFF
@@ -736,19 +734,19 @@ class PrecipitationDataHandler(BaseMessageHandler):
 
             # Check if database table exists
             if not self._verify_table_exists():
-                logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Precipitation table doesn't exist - creating now")
+                logger.debug("[PRECIPITATION_FLOW_DEBUG] Precipitation table doesn't exist - creating now")
                 if not self._init_database_table():
-                    logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Failed to create precipitation table")
+                    logger.debug("[PRECIPITATION_FLOW_DEBUG] Failed to create precipitation table")
                     return False
-                logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Successfully created precipitation table")
+                logger.debug("[PRECIPITATION_FLOW_DEBUG] Successfully created precipitation table")
 
             # Verify database connection
             if not hasattr(self, 'radar_db') or self.radar_db is None:
-                logger.debug(f"[PRECIPITATION_FLOW_DEBUG] No database connection available")
+                logger.debug("[PRECIPITATION_FLOW_DEBUG] No database connection available")
                 from FMOFP.storage.DBM import DatabaseManager
                 db_manager = DatabaseManager('FMOFP/dbConfig.xml')
                 self.radar_db = db_manager.get_system_db('radar_management')
-                logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Re-established database connection")
+                logger.debug("[PRECIPITATION_FLOW_DEBUG] Re-established database connection")
 
             # Process and store all precipitation data objects
             stored_objects = 0
@@ -885,7 +883,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
                     logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Verification successful: {stored_count} objects found in database")
                     verification_success = True
                 else:
-                    logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Verification failed: No objects found in database")
+                    logger.debug("[PRECIPITATION_FLOW_DEBUG] Verification failed: No objects found in database")
                     verification_success = False
             except Exception as verify_error:
                 logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Verification error: {verify_error}")

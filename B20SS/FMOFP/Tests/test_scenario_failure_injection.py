@@ -24,7 +24,7 @@ from FMOFP.Systems.avionics.hardwareHealth.LRUstatus import (
     LRUStatusMonitor, HealthState,
 )
 import FMOFP.Systems.avionics.hardwareHealth.LRUstatus as lru_mod
-from FMOFP.Interfaces.scenarios.scenarioEngine import ScenarioEngine, ScenarioEvent
+from FMOFP.Interfaces.scenarios.scenarioEngine import ScenarioEngine
 
 PASS = 0
 FAIL = 0

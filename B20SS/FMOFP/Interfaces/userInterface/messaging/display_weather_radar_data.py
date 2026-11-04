@@ -9,7 +9,7 @@ Uses display-local message types and constants for consistent message handling.
 import time
 import uuid
 import traceback
-from typing import Dict, Any, Optional, Tuple, List, Union
+from typing import Dict, Any, Optional, Tuple, List
 
 # Import display-local modules
 from .display_message_types import (
@@ -84,7 +84,7 @@ class DisplayWeatherRadarVILData:
             # Note: We need to filter out anything in a default position (0.0, 0.0),
             # as it's broken data and in real life that wouldn't be accepted.
             if self.position == (0.0, 0.0):
-                logger.warning(f"DisplayWeatherRadarVILData created with default position (0.0, 0.0) - this is likely invalid data")
+                logger.warning("DisplayWeatherRadarVILData created with default position (0.0, 0.0) - this is likely invalid data")
                 self.metadata['invalid_position'] = True
         except Exception as e:
             logger.error(f"Error initializing DisplayWeatherRadarVILData: {str(e)}")
@@ -333,7 +333,7 @@ class DisplayPrecipitationData:
             # Note: We need to filter out anything in a default position (0.0, 0.0),
             # as it's broken data and in real life that wouldn't be accepted.
             if self.position == (0.0, 0.0):
-                logger.warning(f"DisplayPrecipitationData created with default position (0.0, 0.0) - this is likely invalid data")
+                logger.warning("DisplayPrecipitationData created with default position (0.0, 0.0) - this is likely invalid data")
                 self.metadata['invalid_position'] = True
         except Exception as e:
             logger.error(f"Error initializing DisplayPrecipitationData: {str(e)}")

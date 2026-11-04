@@ -8,7 +8,7 @@ configurable balancing rules (e.g. keep the main tanks fed from a center
 tank, or equalize main tanks against each other for lateral CG balance).
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

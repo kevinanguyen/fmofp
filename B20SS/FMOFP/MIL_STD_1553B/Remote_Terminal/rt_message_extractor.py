@@ -5,10 +5,6 @@ Extends the Universal Message Extractor with RT-specific field extraction logic.
 Specialized handling for MIL-STD-1553B message formats in the Remote Terminal context.
 """
 
-import sys
-import os
-import time
-from typing import Dict, Any, List, Union, Optional
 
 # Import the base class
 from FMOFP.Utils.common.universal_message_extractor import UniversalMessageExtractor

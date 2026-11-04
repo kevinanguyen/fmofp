@@ -4,7 +4,7 @@ Provides a centralized mechanism to reduce log spam while maintaining
 important information and statistics.
 """
 import time
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Tuple
 import threading
 
 class LogThrottler:

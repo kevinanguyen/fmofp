@@ -9,17 +9,12 @@ Uses enhanced address utilities to ensure consistent addressing for radar subsys
 
 import threading
 import time
-import uuid
 import traceback
 import math
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.radar_messaging.address_utils import (
-    get_rt_address,
-    get_subaddress,
-    get_rt_subaddress_pair_for_radar,
-    is_radar_subsystem,
-    get_system_id_for_addressing
+    get_rt_subaddress_pair_for_radar
 )
 
 from FMOFP.Utils.common.precipitation_scale import (
@@ -201,12 +196,6 @@ class DataResponseSender:
                 message_dict['metadata'] = {}
 
             # Use centralized constants for message types
-            from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-                WEATHER_RADAR_DATA,
-                WEATHER_RADAR_VIL_RESPONSE,
-                WEATHER_RADAR_PRECIPITATION_RESPONSE,
-                get_message_type
-            )
 
             # Update specific fields while preserving existing metadata
             message_dict['metadata'].update({
@@ -222,11 +211,11 @@ class DataResponseSender:
             if message_type and 'precipitation' in message_type.lower():
                 message_dict['metadata']['precipitation_message'] = True
                 message_dict['metadata']['data_type'] = 'precipitation'
-                logger.info(f"[DATA_SENDER] Added precipitation metadata flags")
+                logger.info("[DATA_SENDER] Added precipitation metadata flags")
             elif message_type and 'vil' in message_type.lower():
                 message_dict['metadata']['vil_message'] = True
                 message_dict['metadata']['data_type'] = 'vil'
-                logger.info(f"[DATA_SENDER] Added VIL metadata flags")
+                logger.info("[DATA_SENDER] Added VIL metadata flags")
 
             # Remove None values
             message_dict = {k: v for k, v in message_dict.items() if v is not None}
@@ -425,8 +414,7 @@ class DataResponseSender:
         # Use centralized message type constants
         from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
             WEATHER_RADAR_PRECIPITATION_RESPONSE,
-            COMMAND_TYPE_PRECIPITATION_DATA,
-            is_message_type
+            COMMAND_TYPE_PRECIPITATION_DATA
         )
 
         # Set default values for precipitation data using constants
@@ -453,9 +441,9 @@ class DataResponseSender:
 
         # Ensure we have data to work with
         if precipitation_data is None:
-            logger.warning(f"[DATA_SENDER] No precipitation data found in message, falling back to standard behavior")
+            logger.warning("[DATA_SENDER] No precipitation data found in message, falling back to standard behavior")
         else:
-            logger.info(f"[DATA_SENDER] Successfully extracted precipitation data for transmission")
+            logger.info("[DATA_SENDER] Successfully extracted precipitation data for transmission")
 
         # Create a copy of the message to avoid modifying the original
         if isinstance(message, dict):
@@ -464,7 +452,7 @@ class DataResponseSender:
             # Ensure the data is explicitly attached before sending
             if precipitation_data is not None:
                 message_copy['data'] = precipitation_data
-                logger.info(f"[DATA_SENDER] Attached precipitation data to message copy")
+                logger.info("[DATA_SENDER] Attached precipitation data to message copy")
 
             # Add additional metadata for precipitation data
             if 'metadata' not in message_copy:
@@ -480,11 +468,11 @@ class DataResponseSender:
             if 'request_id' in message_copy:
                 message_copy['metadata']['request_id'] = message_copy['request_id']
 
-            logger.info(f"[DATA_SENDER] Sending precipitation data response with enhanced metadata and preserved data objects")
+            logger.info("[DATA_SENDER] Sending precipitation data response with enhanced metadata and preserved data objects")
             return self.send_data_response(message_copy, **kwargs)
         else:
             # Handle object-style message
-            logger.info(f"[DATA_SENDER] Sending precipitation data response with object-style message")
+            logger.info("[DATA_SENDER] Sending precipitation data response with object-style message")
             # Add explicit data passing to kwargs to ensure it's included
             if precipitation_data is not None:
                 kwargs['data'] = precipitation_data
@@ -504,8 +492,7 @@ class DataResponseSender:
         # Use centralized message type constants
         from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
             WEATHER_RADAR_VIL_RESPONSE,
-            COMMAND_TYPE_VIL_DATA,
-            is_message_type
+            COMMAND_TYPE_VIL_DATA
         )
 
         # Set default values for VIL data using constants
@@ -525,7 +512,7 @@ class DataResponseSender:
             if 'request_id' in message:
                 message['metadata']['request_id'] = message['request_id']
 
-        logger.info(f"[DATA_SENDER] Sending VIL data response with enhanced metadata")
+        logger.info("[DATA_SENDER] Sending VIL data response with enhanced metadata")
         return self.send_data_response(message, **kwargs)
 
 # Global instance

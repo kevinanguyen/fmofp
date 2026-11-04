@@ -4,7 +4,7 @@ TFR Radar Message Definitions
 Contains radar-local message classes for Terrain Following Radar data.
 """
 
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple
 from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.radar_base_message import RadarBaseMessage
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
     TFR_RADAR_ELEVATION_PROFILE,

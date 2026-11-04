@@ -4,10 +4,8 @@ TFR (Terrain Following Radar) Messages Module
 Provides predefined messages for the TFR radar system.
 """
 
-import asyncio
 import uuid
 import traceback
-from typing import Dict, Optional, Any
 
 from FMOFP.Interfaces.predefinedMessages.message_base import PredefinedMessagesBase
 from FMOFP.Interfaces.predefinedMessages.radar_enums import tfr_radarMode
@@ -290,7 +288,7 @@ class TFRRadarMessages(PredefinedMessagesBase):
                     message.metadata['processed_by'].append('tfr_radar')
             
             # For logging purposes
-            self.logger.info(f"[TFR_RADAR] Message successfully processed")
+            self.logger.info("[TFR_RADAR] Message successfully processed")
             return True
             
         except Exception as e:

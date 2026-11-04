@@ -5,9 +5,8 @@ Maps FMS-specific command words and provides registration functions.
 Compatible with the main command_word_map system.
 """
 
-from typing import Dict, Callable
 from FMOFP.Utils.logger.sys_logger import get_logger
-from FMOFP.local_messaging.command_word_map import register_command_word, validate_command_word, extract_command_word
+from FMOFP.local_messaging.command_word_map import register_command_word
 
 logger = get_logger()
 
@@ -56,7 +55,6 @@ def register_fms_command_words():
     global FMS_COMMAND_WORDS, FMS_COMMAND_NAME_MAP
     
     # Access the address book to verify the system ID exists
-    from FMOFP.local_messaging.command_word_map import ADDRESS_BOOK
     
     # Define system address - should match address_book.xml
     # Use the primary ID directly to ensure consistency
@@ -264,7 +262,7 @@ def update_command_maps():
     DATA_REQUEST_MAP['flightManagementSystem'] = format(FMS_COMMAND_WORDS["FMS_FLIGHT_DATA"], '016b')
     DATA_REQUEST_MAP['fms'] = format(FMS_COMMAND_WORDS["FMS_FLIGHT_DATA"], '016b')
     
-    logger.info(f"Updated global command maps with FMS entries")
+    logger.info("Updated global command maps with FMS entries")
 
 # Create FMS data request map
 FMS_DATA_REQUEST_MAP = {}

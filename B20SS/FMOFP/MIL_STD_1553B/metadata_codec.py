@@ -12,10 +12,6 @@ import os
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.MIL_STD_1553B.message_schemas import (
     get_schema_for_message_type,
-    get_field_position,
-    extract_bit_range,
-    extract_bits,
-    set_bits,
     apply_schema_to_data_words,
     extract_fields_from_data_words,
     MODE_VALUE_MAP,
@@ -708,19 +704,19 @@ class MetadataCodec:
                     if 'data' in metadata and isinstance(metadata['data'], dict):
                         if 'weather' in metadata['data'] and isinstance(metadata['data']['weather'], dict) and 'precipitation' in metadata['data']['weather']:
                             precip_data = metadata['data']['weather']['precipitation']
-                            logger.info(f"Found precipitation data in data->weather->precipitation structure")
+                            logger.info("Found precipitation data in data->weather->precipitation structure")
                     # Check for direct weather -> precipitation structure
                     elif 'weather' in metadata and isinstance(metadata['weather'], dict) and 'precipitation' in metadata['weather']:
                         precip_data = metadata['weather']['precipitation']
-                        logger.info(f"Found precipitation data in weather->precipitation structure")
+                        logger.info("Found precipitation data in weather->precipitation structure")
                     # Check for direct precipitation field
                     elif 'precipitation' in metadata:
                         precip_data = metadata['precipitation']
-                        logger.info(f"Found precipitation data in direct precipitation field")
+                        logger.info("Found precipitation data in direct precipitation field")
                     # Finally fall back to data field (if it's not a dict, it might be the precipitation data directly)
                     elif 'data' in metadata and not isinstance(metadata['data'], dict):
                         precip_data = metadata['data']
-                        logger.info(f"Found precipitation data in data field")
+                        logger.info("Found precipitation data in data field")
 
                     # Log what we found
                     if isinstance(precip_data, list) and len(precip_data) > 0:
@@ -767,23 +763,23 @@ class MetadataCodec:
                     if 'data' in metadata and isinstance(metadata['data'], dict):
                         if 'weather' in metadata['data'] and isinstance(metadata['data']['weather'], dict) and 'vil' in metadata['data']['weather']:
                             vil_data = metadata['data']['weather']['vil']
-                            logger.info(f"Found VIL data in data->weather->vil structure")
+                            logger.info("Found VIL data in data->weather->vil structure")
                     # Check for direct weather -> VIL structure
                     elif 'weather' in metadata and isinstance(metadata['weather'], dict) and 'vil' in metadata['weather']:
                         vil_data = metadata['weather']['vil']
-                        logger.info(f"Found VIL data in weather->vil structure")
+                        logger.info("Found VIL data in weather->vil structure")
                     # Check for direct vil_data field
                     elif 'vil_data' in metadata:
                         vil_data = metadata['vil_data']
-                        logger.info(f"Found VIL data in direct vil_data field")
+                        logger.info("Found VIL data in direct vil_data field")
                     # Check for direct vil field
                     elif 'vil' in metadata:
                         vil_data = metadata['vil']
-                        logger.info(f"Found VIL data in direct vil field")
+                        logger.info("Found VIL data in direct vil field")
                     # Finally fall back to data field (if it's not a dict, it might be the VIL data directly)
                     elif 'data' in metadata and not isinstance(metadata['data'], dict):
                         vil_data = metadata['data']
-                        logger.info(f"Found VIL data in data field")
+                        logger.info("Found VIL data in data field")
 
                     # Log what we found
                     if isinstance(vil_data, list) and len(vil_data) > 0:
@@ -991,7 +987,7 @@ class MetadataCodec:
                     # FALLBACK: If message_type_code is 0, check if this might be a misalignment
                     # and try alternative approaches
                     if message_type_code == 0:
-                        logger.warning(f"[METADATA_CODEC] Found message_type_code 0, attempting fallback methods")
+                        logger.warning("[METADATA_CODEC] Found message_type_code 0, attempting fallback methods")
 
                         # Check if metadata dictionary already has message_type
                         if 'metadata' in metadata and isinstance(metadata['metadata'], dict) and 'message_type' in metadata['metadata']:
@@ -1020,7 +1016,7 @@ class MetadataCodec:
                         logger.error(f"[METADATA_CODEC] Unknown message type code: {message_type_code}")
                         # Use a safe default instead of throwing an error
                         metadata['message_type'] = 'display_mode_change'
-                        logger.warning(f"[METADATA_CODEC] Using safe default message_type: display_mode_change")
+                        logger.warning("[METADATA_CODEC] Using safe default message_type: display_mode_change")
 
                 # Decode command_type if present
                 if field_flags & FIELD_COMMAND_TYPE:
@@ -1115,10 +1111,10 @@ class MetadataCodec:
                         # This approach aligns with how the system processes other metadata fields
                         if 'precipitation' in command_type or 'precipitation' in message_type.lower():
                             metadata['command_name'] = 'DISPLAY_PRECIPITATION_DATA'
-                            logger.info(f"Resolved command_name 'DISPLAY_PRECIPITATION_DATA' from message/command type patterns")
+                            logger.info("Resolved command_name 'DISPLAY_PRECIPITATION_DATA' from message/command type patterns")
                         elif 'vil' in command_type or 'vil' in message_type.lower():
                             metadata['command_name'] = 'DISPLAY_VIL_DATA'
-                            logger.info(f"Resolved command_name 'DISPLAY_VIL_DATA' from message/command type patterns")
+                            logger.info("Resolved command_name 'DISPLAY_VIL_DATA' from message/command type patterns")
                         elif 'mode_change' in command_type:
                             # Extract radar type from message type if present
                             radar_type = None
@@ -1136,7 +1132,7 @@ class MetadataCodec:
                             else:
                                 # Default to weather radar
                                 metadata['command_name'] = 'WEATHER_RADAR_MODE_CHANGE'
-                                logger.info(f"Resolved default command_name 'WEATHER_RADAR_MODE_CHANGE' for mode change")
+                                logger.info("Resolved default command_name 'WEATHER_RADAR_MODE_CHANGE' for mode change")
 
                 # BACKUP METHOD: Check against known command registry values
                 if 'command_name' not in metadata:
@@ -1174,7 +1170,7 @@ class MetadataCodec:
             if 'command_type' in metadata and metadata['command_type'] == 'precipitation_data':
                 # Check if we have enough data words for precipitation data
                 if len(data_words) >= 4:  # Need at least header word + type word + a few data words
-                    logger.info(f"Detected precipitation data message, attempting to decode data")
+                    logger.info("Detected precipitation data message, attempting to decode data")
                     precipitation_data = []
 
                     # Skip header, type word, and extended flags if present

@@ -10,7 +10,7 @@ Uses display-local message types and constants for consistent message handling.
 import asyncio
 import threading
 import traceback
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Union
 import queue
 
 # Import display-local modules
@@ -19,11 +19,6 @@ from .display_message_router import DisplayMessageRouter
 from .display_message_types import (
     DISPLAY_COMMAND_TYPE_MODE,
     DISPLAY_COMMAND_TYPE_MODE_CHANGE,
-    DISPLAY_COMMAND_TYPE_MODE_CHANGE_COMPLETE,
-    DISPLAY_VIL_DATA,
-    DISPLAY_PRECIPITATION_DATA,
-    DISPLAY_ECHO_TOP_DATA,
-    translate_message_type,
     is_precipitation_message,
     is_vil_message
 )
@@ -44,7 +39,6 @@ class InterfaceDisplayMessageHandler:
     """Interface version of DisplayMessageHandler with proper async support."""
     def __init__(self):
         """Initialize display message handler."""
-        import uuid
         
         # Get display tree manager first to ensure it exists
         from ..displays.display_nodes.display_tree_manager import get_display_tree_manager
@@ -149,20 +143,20 @@ class InterfaceDisplayMessageHandler:
             with self._loop_lock:
                 self._event_loop = loop
             
-            logger.info(f"[INTERFACE_DISP_HDLR] Running _process_messages_thread in event loop")
+            logger.info("[INTERFACE_DISP_HDLR] Running _process_messages_thread in event loop")
             
             # Signal thread is now running and processing messages
             self._processor_running.set()
             
             loop.run_until_complete(self._process_messages_thread())
-            logger.info(f"[INTERFACE_DISP_HDLR] _process_messages_thread completed normally")
+            logger.info("[INTERFACE_DISP_HDLR] _process_messages_thread completed normally")
         except Exception as e:
             logger.error(f"[INTERFACE_DISP_HDLR] Error in _run_message_processor: {str(e)}")
             logger.error(traceback.format_exc())
             # Clear running flag on error
             self._processor_running.clear()
         finally:
-            logger.info(f"[INTERFACE_DISP_HDLR] Closing event loop")
+            logger.info("[INTERFACE_DISP_HDLR] Closing event loop")
             with self._loop_lock:
                 if self._event_loop == loop:
                     self._event_loop = None
@@ -413,7 +407,6 @@ class InterfaceDisplayMessageHandler:
         Enqueue a message for processing.
         Uses display-local message types and constants for consistent message handling.
         """
-        import uuid
         try:
             # First verify processor is running
             if not self._processor_running.is_set():

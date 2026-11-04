@@ -1,17 +1,14 @@
 """
 Holographic radar display with advanced 3D visualization and tactical overlays
 """
-from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QFont, QFontMetrics, QTransform
-from typing import Dict, List, Optional, Tuple, Any
+from PyQt6.QtCore import Qt, QRectF, QPointF, QEasingCurve
+from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath
+from typing import Dict, List
 import math
-import time
 import random
 from .futuristic_radar_display import FuturisticRadarDisplay
-from ..visual.theme_manager import get_theme_manager, DisplayTheme
+from ..visual.theme_manager import DisplayTheme
 from ..visual.enhanced_theme_manager import get_enhanced_theme_manager, EnhancedDisplayTheme
-from ..visual.effects import VisualEffects
-from ..visual.animation_controller import AnimationController, TransitionGroup
 from ..visual.holographic_settings_panel import HolographicSettingsPanel
 from FMOFP.Utils.logger.sys_logger import get_logger
 import sys

@@ -4,12 +4,7 @@ Enhanced Radar Display
 Integrates the advanced rendering engine with the WeatherRadarDisplay class.
 Provides a bridge between the existing display system and the new rendering capabilities.
 """
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt6.QtGui import QPainter, QColor, QImage, QPen, QBrush, QPainterPath
-from typing import Dict, List, Any, Optional, Tuple, TYPE_CHECKING
-import math
-import time
-import uuid
+from typing import Dict, List, Any, TYPE_CHECKING
 import copy
 
 from FMOFP.Utils.logger.sys_logger import get_logger

@@ -26,10 +26,6 @@ from FMOFP.local_messaging.message_types import (
     COMMAND_TYPE_MODE_CHANGE_COMPLETE,
     is_mode_change_message
 )
-from FMOFP.local_messaging.address_utils import (
-    get_rt_address,
-    get_subaddress
-)
 
 logger = get_logger()
 

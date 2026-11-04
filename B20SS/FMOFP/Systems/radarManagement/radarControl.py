@@ -9,9 +9,7 @@ import asyncio
 import threading
 import time
 from abc import ABC, abstractmethod
-from xml.etree import ElementTree as ET
-from typing import Dict, List, Optional
-import FMOFP.Utils.common.fetching as fetching
+from typing import Dict
 from FMOFP.Systems.radarManagement.weather.weather_radar import weather_radar
 from FMOFP.Systems.radarManagement.terrainFollowing.tfr_radar import tfr_radar, tfr_radarMode
 from FMOFP.Systems.radarManagement.targeting.targeting_radar import targeting_radar, targeting_radarMode

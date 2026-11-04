@@ -136,7 +136,7 @@ async def body(sm):
             held = fcs.control_inputs[control]
             check(f"{control} commanded {sent} is clamped to {expected}",
                   abs(held - expected) < 1e-9, f"held {held}")
-            check(f"...and the clamped call still returns True (saturation, not refusal)",
+            check("...and the clamped call still returns True (saturation, not refusal)",
                   ok is True, repr(ok))
 
         # ── an unknown control is refused ────────────────────────────────

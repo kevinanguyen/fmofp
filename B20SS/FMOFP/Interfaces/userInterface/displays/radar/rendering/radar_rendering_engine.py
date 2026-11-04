@@ -5,12 +5,9 @@ Provides advanced rendering capabilities for weather radar displays.
 Implements realistic visualization of weather phenomena.
 """
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt6.QtGui import QPainter, QColor, QImage, QPen, QBrush, QPainterPath
-from typing import Dict, List, Any, Optional, Tuple
+from PyQt6.QtGui import QPainter, QColor, QBrush
+from typing import Dict, List
 import math
-import time
-import uuid
-import numpy as np
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

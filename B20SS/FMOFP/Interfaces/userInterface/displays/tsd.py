@@ -23,7 +23,6 @@ Polls at 10 Hz.
 
 import math
 import threading
-import time
 import traceback
 from typing import Dict, List, Optional
 

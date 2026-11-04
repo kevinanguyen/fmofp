@@ -4,18 +4,13 @@ Flight Control System Data Messages
 Defines data message types for FCS communication.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Any, Optional
-import time
 import uuid
 
 from FMOFP.local_messaging.messageConfigurations.base_message import BaseMessage, register_message_type
 from FMOFP.local_messaging.command_word_map_fcs import get_fcs_command_word
 from FMOFP.local_messaging.message_types_fcs import (
     FCS_CONTROL_INPUT_REQUEST,
-    FCS_CONTROL_INPUT_RESPONSE,
-    FCS_STATUS_REQUEST,
-    FCS_STATUS_RESPONSE
+    FCS_CONTROL_INPUT_RESPONSE
 )
 
 class fcs_baseData(BaseMessage):

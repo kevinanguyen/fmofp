@@ -18,8 +18,6 @@ from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.aewc_data
 )
 # Import message type constants
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    AEWC_RADAR_TRACK_RESPONSE,
-    AEWC_RADAR_SECTOR_SCAN_RESPONSE,
     COMMAND_TYPE_TRACK_DATA,
     COMMAND_TYPE_SECTOR_SCAN_DATA
 )
@@ -342,9 +340,9 @@ class aewc_radar:
             )
 
             if success:
-                logger.info(f"[AEWC_RADAR] Mode change completion notification sent successfully")
+                logger.info("[AEWC_RADAR] Mode change completion notification sent successfully")
             else:
-                logger.error(f"[AEWC_RADAR] Failed to send mode change completion notification")
+                logger.error("[AEWC_RADAR] Failed to send mode change completion notification")
 
         except Exception as e:
             logger.error(f"[AEWC_RADAR] Error sending mode change completion: {str(e)}")
@@ -409,10 +407,10 @@ class aewc_radar:
 
                 # Send mode change completion notification if requested
                 if send_completion:
-                    logger.info(f"[AEWC_RADAR] Sending mode change completion notification (send_completion=True)")
+                    logger.info("[AEWC_RADAR] Sending mode change completion notification (send_completion=True)")
                     self._send_mode_change_completion(old_mode, mode, request_id)
                 else:
-                    logger.info(f"[AEWC_RADAR] Skipping mode change completion notification (send_completion=False)")
+                    logger.info("[AEWC_RADAR] Skipping mode change completion notification (send_completion=False)")
             return True
         except Exception as e:
             logger.error(f"Error setting mode for AEWC radar {self.name}: {str(e)}")
@@ -462,7 +460,7 @@ class aewc_radar:
                 logger.info(f"[AEWC_RADAR] Extracted mode value: {mode_value} from data: {mode_data}")
                 return mode_value
             else:
-                logger.error(f"[AEWC_RADAR] Empty mode data")
+                logger.error("[AEWC_RADAR] Empty mode data")
                 return 0
         except Exception as e:
             logger.error(f"[AEWC_RADAR] Error extracting mode value: {e}")
@@ -531,7 +529,7 @@ class aewc_radar:
                     self._handle_sector_scan_request(message)
 
             # For logging purposes
-            logger.info(f"[AEWC_RADAR] Message successfully processed synchronously")
+            logger.info("[AEWC_RADAR] Message successfully processed synchronously")
             return True
 
         except Exception as e:
@@ -577,7 +575,7 @@ class aewc_radar:
     def _handle_mode_change(self, message: MIL_STD_1553B_Message):
         """Handle mode change messages."""
         try:
-            logger.info(f"[AEWC_RADAR] Handling mode change message via parameter extraction")
+            logger.info("[AEWC_RADAR] Handling mode change message via parameter extraction")
 
             # Extract mode value and request_id
             mode_data = message.data

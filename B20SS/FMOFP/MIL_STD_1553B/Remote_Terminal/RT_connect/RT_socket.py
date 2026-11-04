@@ -11,15 +11,9 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 import atexit
 import time
 import select
-import traceback
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
 from FMOFP.MIL_STD_1553B.message_schemas import (
-    get_schema_for_message_type,
-    apply_schema_to_data_words,
-    extract_fields_from_data_words,
-    MODE_VALUE_MAP,
-    MODE_NAME_MAP
+    get_schema_for_message_type
 )
 from FMOFP.MIL_STD_1553B.metadata_codec import MetadataCodec
 from FMOFP.MIL_STD_1553B.bus_adapter import get_bus_adapter, get_listen_endpoint
@@ -204,7 +198,7 @@ class RT_sender:
                                 if field in ['rt_address', 'sub_address', 'message_type', 'command_type', 'command_name']:
                                     formatted_dict[field] = field_value
             
-            logger.info(f"Preprocessed MIL_STD_1553B_Message object to dictionary format")
+            logger.info("Preprocessed MIL_STD_1553B_Message object to dictionary format")
             return formatted_dict
         
         return message
@@ -405,7 +399,7 @@ class RT_sender:
                 transmission_dict['metadata'] = essential_metadata
             
             msg = json.dumps(transmission_dict).encode()
-            logger.info(f"RT_sender sending dict message with frames and essential metadata")
+            logger.info("RT_sender sending dict message with frames and essential metadata")
         elif isinstance(message, str) and len(message) == 20:
             # Status word
             transmission_dict = {
@@ -445,7 +439,7 @@ class RT_sender:
                 # For large messages, always use the block transfer protocol instead
                 # This ensures proper splitting and reassembly
                 if isinstance(message, dict) and 'data' in message:
-                    logger.info(f"Converting large message to block transfer format")
+                    logger.info("Converting large message to block transfer format")
 
                     # If message has frames but is still too large for direct transmission
                     # Ensure block transfer is used
@@ -509,16 +503,16 @@ class RT_sender:
                     logger.info(f"Sending simplified message with length: {len(payload)} bytes")
                 else:
                     # For non-dict messages, send as is and hope for the best
-                    logger.info(f"Sending non-dict message directly")
+                    logger.info("Sending non-dict message directly")
                     payload = msg
 
             if not self._bus_adapter.transmit(payload):
                 return False
 
-            logger.info(f"Message sent successfully")
+            logger.info("Message sent successfully")
 
             # Log message flow trace just like BC
-            logger.info(f"Message flow trace: RT_sender -> BC_Listener")
+            logger.info("Message flow trace: RT_sender -> BC_Listener")
 
             return True
         except Exception as e:
@@ -599,7 +593,7 @@ class RT_sender:
             
             # If the chunk is still too large, simplify further
             if msg_length > 900:
-                logger.warning(f"Chunk message exceeds safe buffer size, simplifying")
+                logger.warning("Chunk message exceeds safe buffer size, simplifying")
                 
                 # Create minimal version with only essential fields
                 simplified = {
@@ -625,7 +619,7 @@ class RT_sender:
                 
                 # If still too large, only send the frames
                 if simplified_length > 900:
-                    logger.warning(f"Simplified chunk still exceeds buffer size, sending frames only")
+                    logger.warning("Simplified chunk still exceeds buffer size, sending frames only")
                     frames_only = {
                         'frames': chunk_message['frames'],
                         'request_id': chunk_message.get('request_id')
@@ -637,7 +631,7 @@ class RT_sender:
             # (previously an inline socket; the default SocketBusAdapter has
             # identical connect/sendall/close and error-return semantics)
             if self._bus_adapter.transmit(msg):
-                logger.info(f"Chunk sent successfully")
+                logger.info("Chunk sent successfully")
                 return True
             return False
         except Exception as e:
@@ -658,7 +652,7 @@ class RT_sender:
             bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"RT_sender sending large message using block transfer protocol")
+            logger.info("RT_sender sending large message using block transfer protocol")
             
             # Extract frames, request_id, and metadata from message
             if not isinstance(message, dict) or 'frames' not in message:
@@ -676,7 +670,7 @@ class RT_sender:
                 if not metadata.get('is_transfer_init', False) and \
                    not metadata.get('is_transfer_data', False) and \
                    not metadata.get('is_transfer_complete', False):
-                    logger.info(f"Setting is_transfer_data flag to ensure proper block transfer handling")
+                    logger.info("Setting is_transfer_data flag to ensure proper block transfer handling")
                     metadata['is_transfer_data'] = True
                     
             # Validate all frames to ensure they're exactly 20 bits
@@ -851,7 +845,7 @@ class RT_sender:
                 
                 # Use _send_chunk for completion message to ensures the same 
                 # buffer handling and message formatting throughout the transfer protocol
-                logger.info(f"Using _send_chunk for completion message")
+                logger.info("Using _send_chunk for completion message")
                 completion_result = self._send_chunk(completion_message)
                 if not completion_result:
                     logger.error("Failed to send completion message")
@@ -1211,14 +1205,14 @@ class RT_Listener:
                                         if is_transfer_init or is_transfer_data or is_transfer_complete:
                                             # Log block transfer detection
                                             if is_transfer_init:
-                                                logger.info(f"[RT_LISTENER] Detected block transfer initialization from BC")
+                                                logger.info("[RT_LISTENER] Detected block transfer initialization from BC")
                                             elif is_transfer_data:
                                                 # Get sequence info if available
                                                 sequence_number = parsed_data.get('sequence_number') or metadata.get('sequence_number', 0)
                                                 total_sequences = parsed_data.get('total_sequences') or metadata.get('total_sequences', 0)
                                                 logger.info(f"[RT_LISTENER] Detected block transfer data from BC: sequence {sequence_number}/{total_sequences}")
                                             elif is_transfer_complete:
-                                                logger.info(f"[RT_LISTENER] Detected block transfer completion from BC")
+                                                logger.info("[RT_LISTENER] Detected block transfer completion from BC")
                                     
                                     frames = parsed_data.get('frames', [])
                                     request_id = parsed_data.get('request_id')

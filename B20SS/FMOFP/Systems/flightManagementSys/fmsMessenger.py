@@ -1,14 +1,12 @@
 import threading
 import time
 import traceback
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, List, Union
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.core.event_driven_communication import get_event_bus
-from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_connect.RT_socket import get_rt_sender, get_rt_listener
+from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_connect.RT_socket import get_rt_sender
 from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_messaging.message_queue_manager import get_message_queue_manager
 from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
-from FMOFP.Systems.flightManagementSys.flightManagementSystem import get_flightManagementSystem
-from FMOFP.Systems.flightManagementSys.fmsControl import get_fms_control
 
 logger = get_logger()
 
@@ -438,7 +436,7 @@ class FMSMessenger:
             # Forward the message to the FMS system
             if self.fms:
                 try:
-                    logger.info(f"[FMS_MSGR] Forwarding message to FMS system")
+                    logger.info("[FMS_MSGR] Forwarding message to FMS system")
                     # Just forward the message to the FMS - processing happens there
                     result = self.fms.receive_message(message)
                     logger.info(f"[FMS_MSGR] FMS processed message: {result}")
@@ -451,7 +449,7 @@ class FMSMessenger:
             # If no FMS or FMS processing failed, try FMS Control
             if self.fms_control:
                 try:
-                    logger.info(f"[FMS_MSGR] Forwarding message to FMS Control system")
+                    logger.info("[FMS_MSGR] Forwarding message to FMS Control system")
                     # Convert the message to something FMSControl can handle
                     if command_type:
                         # Extract parameters based on message format
@@ -462,7 +460,7 @@ class FMSMessenger:
                         logger.info(f"[FMS_MSGR] FMS Control processed command: {result}")
                         return True
                     else:
-                        logger.warning(f"[FMS_MSGR] No command type found in message, can't process via FMS Control")
+                        logger.warning("[FMS_MSGR] No command type found in message, can't process via FMS Control")
                         return False
                 except Exception as e:
                     logger.error(f"[FMS_MSGR] Error in FMS Control message processing: {e}")
@@ -470,7 +468,7 @@ class FMSMessenger:
                     return False
 
             # If neither FMS nor FMS Control could process the message
-            logger.warning(f"[FMS_MSGR] No handler available for message")
+            logger.warning("[FMS_MSGR] No handler available for message")
             return False
 
         except Exception as e:
@@ -701,7 +699,7 @@ class FMSMessenger:
                     logger.info(f"[FMS_MSGR] Starting message processing thread (ID: {thread_id})")
 
                     # Log which queues we're monitoring
-                    logger.info(f"[FMS_MSGR] Monitoring queues: 'fms' and 'flightmanagementsystem'")
+                    logger.info("[FMS_MSGR] Monitoring queues: 'fms' and 'flightmanagementsystem'")
 
                     # Log periodic status updates
                     last_status_log = time.time()
@@ -714,7 +712,7 @@ class FMSMessenger:
 
                             # Log periodic status
                             if should_log:
-                                logger.info(f"[FMS_MSGR] FMS Messenger thread still running, waiting for messages...")
+                                logger.info("[FMS_MSGR] FMS Messenger thread still running, waiting for messages...")
                                 logger.info(f"[FMS_MSGR] Messages processed: {message_count}, Successfully processed: {processed_count}")
 
                                 # Log queue sizes for monitoring

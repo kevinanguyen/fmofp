@@ -25,7 +25,7 @@ import math
 import random
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

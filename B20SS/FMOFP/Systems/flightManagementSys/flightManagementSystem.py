@@ -1,15 +1,10 @@
 import threading
 import time
-import json
 import math
 import traceback
-from datetime import datetime
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.core.event_driven_communication import get_event_bus
 from FMOFP.Systems.flightManagementSys.flightControlSys.flight_control_system import get_flight_control_system
-from FMOFP.Systems.flightManagementSys.flightControlSys.flight_dynamics_processor import get_flight_dynamics_processor
-from FMOFP.Systems.flightManagementSys.flightControlSys.control_surface_manager import get_control_surface_manager
-from FMOFP.Systems.flightManagementSys.flightControlSys.attitude_calculator import get_attitude_calculator
 from FMOFP.Systems.nav.gps.globalPositionSystem import GPSSystem
 from FMOFP.Systems.nav.dataFusion.fuseData import NavDataFusion
 

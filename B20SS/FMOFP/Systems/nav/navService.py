@@ -10,7 +10,6 @@ Owns GPS, INS, and NavDataFusion update loops:
 
 import threading
 import time
-from typing import Optional
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

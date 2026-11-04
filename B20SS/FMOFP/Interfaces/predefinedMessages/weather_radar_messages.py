@@ -6,7 +6,6 @@ Provides predefined messages for the weather radar system.
 
 import asyncio
 import uuid
-from typing import Dict, Optional, Any
 
 from FMOFP.Interfaces.predefinedMessages.message_base import PredefinedMessagesBase
 from FMOFP.Interfaces.predefinedMessages.radar_enums import weather_radarMode

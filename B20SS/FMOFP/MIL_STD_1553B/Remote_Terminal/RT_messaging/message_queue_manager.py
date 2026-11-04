@@ -368,13 +368,13 @@ class MessageQueueManager:
             
             # Log message types processed in this interval
             if self._interval_message_types:
-                logger.info(f"[MSG_Q_MGR] Message types processed in this interval:")
+                logger.info("[MSG_Q_MGR] Message types processed in this interval:")
                 for msg_type, count in self._interval_message_types.items():
                     logger.info(f"[MSG_Q_MGR]   - {msg_type}: {count}")
             
             # Log destinations in this interval
             if self._interval_destinations:
-                logger.info(f"[MSG_Q_MGR] Message destinations in this interval:")
+                logger.info("[MSG_Q_MGR] Message destinations in this interval:")
                 for dest, count in self._interval_destinations.items():
                     logger.info(f"[MSG_Q_MGR]   - {dest}: {count}")
             
@@ -479,14 +479,14 @@ class MessageQueueManager:
                     logger.info(f"[MSG_Q_MGR] Destinations determined by unified router: {destinations}")
                     return destinations
                 else:
-                    logger.warning(f"[MSG_Q_MGR] No destinations found by unified router")
-                    logger.error(f"[MSG_Q_MGR] Message will not be processed - NO FALLBACK TO LEGACY ROUTING")
+                    logger.warning("[MSG_Q_MGR] No destinations found by unified router")
+                    logger.error("[MSG_Q_MGR] Message will not be processed - NO FALLBACK TO LEGACY ROUTING")
                     # Do not fall back to legacy routing if unified router fails
                     return []
             except Exception as router_error:
                 logger.error(f"[MSG_Q_MGR] Error using unified router: {router_error}")
                 logger.error(traceback.format_exc())
-                logger.error(f"[MSG_Q_MGR] Message will not be processed - NO FALLBACK TO LEGACY ROUTING")
+                logger.error("[MSG_Q_MGR] Message will not be processed - NO FALLBACK TO LEGACY ROUTING")
                 # Even in case of exception, do not fall back to legacy routing
                 return []
             
@@ -499,7 +499,7 @@ class MessageQueueManager:
     def _legacy_determine_destinations(self, message) -> List[str]:
         """Legacy method to determine destinations (used as fallback only)."""
         try:
-            logger.info(f"[MSG_Q_MGR] Using legacy destination determination")
+            logger.info("[MSG_Q_MGR] Using legacy destination determination")
             
             destinations = []
             
@@ -523,7 +523,7 @@ class MessageQueueManager:
             if destinations:
                 logger.info(f"[MSG_Q_MGR] Legacy destinations determined: {destinations}")
             else:
-                logger.warning(f"[MSG_Q_MGR] No destinations found by legacy routing")
+                logger.warning("[MSG_Q_MGR] No destinations found by legacy routing")
                 
             return destinations
                 
@@ -537,17 +537,17 @@ class MessageQueueManager:
         try:
             # Check for VIL data messages
             if self._is_vil_message(message):
-                logger.info(f"[MSG_Q_MGR] Detected VIL data message")
+                logger.info("[MSG_Q_MGR] Detected VIL data message")
                 return ['radar', 'display']
                 
             # Check for precipitation data messages
             if self._is_precipitation_message(message):
-                logger.info(f"[MSG_Q_MGR] Detected precipitation data message")
+                logger.info("[MSG_Q_MGR] Detected precipitation data message")
                 return ['radar', 'display']
                 
             # Check for mode change messages
             if self._is_mode_change_message(message):
-                logger.info(f"[MSG_Q_MGR] Detected mode change message")
+                logger.info("[MSG_Q_MGR] Detected mode change message")
                 return ['radar', 'display']
                 
             return []
@@ -1022,9 +1022,9 @@ class MessageQueueManager:
                             
                             # Add final verification for critical fields
                             if not message_dict.get('request_id'):
-                                logger.warning(f"[MSG_Q_MGR] Critical field 'request_id' is missing or None after conversion!")
+                                logger.warning("[MSG_Q_MGR] Critical field 'request_id' is missing or None after conversion!")
                             if not message_dict.get('command_name'):
-                                logger.warning(f"[MSG_Q_MGR] Critical field 'command_name' is missing or None after conversion!")
+                                logger.warning("[MSG_Q_MGR] Critical field 'command_name' is missing or None after conversion!")
                             if isinstance(message_dict['metadata'], dict) and 'command_name' in message_dict['metadata']:
                                 # If command_name is in metadata, use it
                                 if 'command_name' not in message_dict:
@@ -1065,7 +1065,7 @@ class MessageQueueManager:
                                             raise ValueError(f"[MSG_Q_MGR] command name was not determined by command type {command_Type} and message type {message_Type}")
                                 # If not in metadata, try to infer from message type
                                 elif message_dict.get('message_type') and 'radarMode' in message_dict.get('message_type', ''):
-                                    logger.warning(f"[MSG_Q_MGR] Inferring command_name for mode change message")
+                                    logger.warning("[MSG_Q_MGR] Inferring command_name for mode change message")
                                     # Extract radar type from message_type (e.g., weather_radarModeChangeCompletion -> WEATHER_RADAR)
                                     if 'weather' in message_dict.get('message_type', '').lower():
                                         message_dict['command_name'] = 'WEATHER_RADAR_MODE_CHANGE_COMPLETION'

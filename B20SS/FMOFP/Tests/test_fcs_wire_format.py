@@ -410,7 +410,7 @@ def test_encode_1553b_delegates_to_one_encoding():
         R.check(f"{label}.encode_1553b() leads with its command word",
                 frames[0] == FCS_COMMAND_WORDS[command_name].value,
                 f"{frames[0]} vs {FCS_COMMAND_WORDS[command_name].value}")
-        R.check(f"...and the rest is exactly to_data_words()",
+        R.check("...and the rest is exactly to_data_words()",
                 frames[1:] == [int(w, 2) for w in msg.to_data_words()],
                 f"{frames[1:]} vs {msg.to_data_words()}")
 
@@ -666,7 +666,7 @@ def test_the_handlers_pack_through_the_shared_encoding():
             R.check(f"{name}.{mode_packer}({{{key!r}: 'COMBAT'}}) encodes COMBAT",
                     got == mode_words('COMBAT'),
                     f"{got} vs {mode_words('COMBAT')}")
-            R.check(f"...and not NORMAL, which is what the old default gave",
+            R.check("...and not NORMAL, which is what the old default gave",
                     got != mode_words('NORMAL'), str(got))
 
         try:
@@ -708,10 +708,10 @@ def test_the_two_mode_vocabularies_are_not_interchangeable():
     # the FMS packer used, so they fell through its default to 0 = NORMAL.
     for mode in ('STEALTH', 'TRAINING'):
         R.check(f"{mode} is a real FMS mode", mode in FMS_MODE_NAME_TO_VALUE)
-        R.check(f"...and was not in the FCS table the FMS packer used",
+        R.check("...and was not in the FCS table the FMS packer used",
                 mode not in MODE_NAME_TO_VALUE)
         words = fms_mode_data_words(mode)
-        R.check(f"...and now encodes as itself, not as NORMAL",
+        R.check("...and now encodes as itself, not as NORMAL",
                 words != [format(0, '016b')], str(words))
         R.check(f"...and decodes back to {mode}",
                 FMS_MODE_VALUE_TO_NAME[int(words[0], 2)] == mode)

@@ -5,7 +5,7 @@ and route it to the appropriate handler following consistent standards
 as per the messaging consistency implementation plan.
 '''
 
-from typing import Dict, Any, Tuple, List, Optional, Union
+from typing import Dict, Any, Optional, Union
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.radar_enums import weather_radarMode
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (

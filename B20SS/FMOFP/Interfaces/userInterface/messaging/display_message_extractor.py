@@ -6,21 +6,15 @@ Specialized handling for message formats in the display system context.
 Uses display-local message types and utilities for consistent message handling.
 """
 
-import sys
-import os
-import time
 import traceback
-from typing import Dict, Any, List, Union, Optional
 
 # Import the base class
 from FMOFP.Utils.common.universal_message_extractor import UniversalMessageExtractor
 
 # Import display-local modules
-from .display_metadata_decoder import DisplayMetadataDecoder
 from .display_message_types import (
-    DISPLAY_VIL_DATA, DISPLAY_PRECIPITATION_DATA, DISPLAY_ECHO_TOP_DATA, DISPLAY_STORM_CELL_DATA,
-    DISPLAY_COMMAND_TYPE_MODE, DISPLAY_COMMAND_TYPE_MODE_CHANGE, DISPLAY_COMMAND_TYPE_MODE_CHANGE_COMPLETE,
-    get_message_type, is_vil_message, is_precipitation_message, is_mode_change_message,
+    DISPLAY_VIL_DATA, DISPLAY_PRECIPITATION_DATA, DISPLAY_COMMAND_TYPE_MODE_CHANGE, DISPLAY_COMMAND_TYPE_MODE_CHANGE_COMPLETE,
+    is_vil_message, is_precipitation_message, is_mode_change_message,
     translate_message_type
 )
 
@@ -96,7 +90,7 @@ class DisplayMessageExtractor(UniversalMessageExtractor):
                     result['metadata']['display_data_type'] = 'precipitation'
                     result['metadata']['precipitation_data'] = True
                     
-                self.logger.info(f"[DISPLAY_EXTRACTOR] Processed precipitation data message")
+                self.logger.info("[DISPLAY_EXTRACTOR] Processed precipitation data message")
             
             # Special handling for VIL data
             elif is_vil_message(result):
@@ -114,7 +108,7 @@ class DisplayMessageExtractor(UniversalMessageExtractor):
                     result['metadata']['display_data_type'] = 'vil'
                     result['metadata']['vil_data'] = True
                     
-                self.logger.info(f"[DISPLAY_EXTRACTOR] Processed VIL data message")
+                self.logger.info("[DISPLAY_EXTRACTOR] Processed VIL data message")
             
             # Special handling for mode changes
             elif is_mode_change_message(result):
@@ -142,7 +136,7 @@ class DisplayMessageExtractor(UniversalMessageExtractor):
                     if result.get('mode_value'):
                         result['metadata']['mode_value'] = result['mode_value']
                         
-                self.logger.info(f"[DISPLAY_EXTRACTOR] Processed mode change message")
+                self.logger.info("[DISPLAY_EXTRACTOR] Processed mode change message")
             
             # Ensure display destination is set
             if not result.get('destination'):

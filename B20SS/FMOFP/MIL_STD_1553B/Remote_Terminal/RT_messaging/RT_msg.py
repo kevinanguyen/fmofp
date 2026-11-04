@@ -2,7 +2,6 @@
 RT Message Analyzer - Handles RT message processing according to MIL-STD-1553B
 """
 import time
-import copy
 import traceback
 from .RT_encode_decode.RT_words_encoder import RTWordsEncoder
 from .RT_encode_decode.RT_words_decoder import RTWordsDecoder
@@ -295,10 +294,10 @@ class RT_Message_Analyzer:
                     # Check if this is a block transfer message
                     if 'is_transfer_init' in extracted_metadata and extracted_metadata['is_transfer_init']:
                         command_word['is_transfer_init'] = True
-                        logger.info(f"[RT_MSG] Marked command word as block transfer initialization")
+                        logger.info("[RT_MSG] Marked command word as block transfer initialization")
                     elif metadata and 'is_transfer_init' in metadata and metadata['is_transfer_init']:
                         command_word['is_transfer_init'] = True
-                        logger.info(f"[RT_MSG] Marked command word as block transfer initialization from metadata")
+                        logger.info("[RT_MSG] Marked command word as block transfer initialization from metadata")
                     
                     logger.info(f"[RT_MSG] Added metadata to command word: {command_word}")
                     
@@ -406,7 +405,7 @@ class RT_Message_Analyzer:
                             'binary_data_preserved': True,
                             'binary_data_length': len(binary_data)
                         }]
-                        logger.debug(f"[TRANSFER_DATA_DEBUG] Created new data word with binary data array")
+                        logger.debug("[TRANSFER_DATA_DEBUG] Created new data word with binary data array")
                     else:
                         # Replace existing data words with a single entry
                         data_words = [{
@@ -420,7 +419,7 @@ class RT_Message_Analyzer:
                             'binary_data_preserved': True, 
                             'binary_data_length': len(binary_data)
                         }]
-                        logger.debug(f"[TRANSFER_DATA_DEBUG] Replaced data words with binary data array")
+                        logger.debug("[TRANSFER_DATA_DEBUG] Replaced data words with binary data array")
 
             # Generate and send status word acknowledgment if command word was successfully processed
             if command_word and command_word.get('rt_address') is not None:
@@ -528,7 +527,7 @@ class RT_Message_Analyzer:
                            metadata.get('command_type') == 'precipitation_data'):
                 message['precipitation_message'] = True
                 message['data_type'] = 'precipitation'
-                logger.info(f"[RT_MSG] Marked status word as precipitation data acknowledgment")
+                logger.info("[RT_MSG] Marked status word as precipitation data acknowledgment")
             
             # Create a metadata field at the dictionary level
             message['metadata'] = {

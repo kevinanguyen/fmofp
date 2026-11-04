@@ -6,7 +6,7 @@ Will be mirrored in remote systems for their use.
 """
 
 import enum
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict
 
 # Base message type enum
 class BaseMessageType(enum.Enum):

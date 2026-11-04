@@ -12,14 +12,13 @@ import threading
 import json
 import traceback
 import time
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.radar_messaging.base_message_handler import BaseMessageHandler
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
     WEATHER_RADAR_PRECIPITATION_RESPONSE,
     WEATHER_RADAR_PRECIPITATION_REQUEST,
     COMMAND_TYPE_PRECIPITATION_DATA,
-    COMMAND_TYPE_PRECIPITATION_COMPLETION,
     is_precipitation_message,
     is_message_type,
     get_message_type
@@ -31,9 +30,7 @@ from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.weather_d
 from FMOFP.Systems.radarManagement.radar_messaging.address_utils import (
     get_rt_address,
     get_subaddress,
-    get_rt_subaddress_pair_for_radar,
-    is_radar_subsystem,
-    get_system_id_for_addressing
+    get_rt_subaddress_pair_for_radar
 )
 
 logger = get_logger()
@@ -263,7 +260,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
                 }
             else:
                 # Handle alternative format (like from BC_transfer_aggregator)
-                logger.info(f"[PRECIP_STORE] Handling alternative format precipitation data")
+                logger.info("[PRECIP_STORE] Handling alternative format precipitation data")
                 # Log the available attributes to help debug
                 if isinstance(precip_data, dict):
                     logger.info(f"[PRECIP_STORE] Available dict keys: {precip_data.keys()}")
@@ -568,7 +565,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
                     metadata = message.get('metadata', {})
                     if metadata and isinstance(metadata, dict):
                         if metadata.get('precipitation_message') or metadata.get('data_type') == 'precipitation':
-                            logger.info(f"[PRECIP_HANDLER] Detected precipitation message from metadata flags")
+                            logger.info("[PRECIP_HANDLER] Detected precipitation message from metadata flags")
                             return True
 
                 logger.warning(f"[PRECIP_HANDLER] Message has no message_type: {message}")
@@ -588,10 +585,10 @@ class PrecipitationDataHandler(BaseMessageHandler):
                     if 'data' not in message:
                         if 'frames' in message and isinstance(message['frames'], list) and len(message['frames']) > 4:
                             # Message has frames which will be processed by transfer aggregator
-                            logger.info(f"[PRECIP_HANDLER] Precipitation message has frames instead of data")
+                            logger.info("[PRECIP_HANDLER] Precipitation message has frames instead of data")
                             return True
                         else:
-                            logger.warning(f"[PRECIP_HANDLER] Precipitation response missing data attribute and no frames")
+                            logger.warning("[PRECIP_HANDLER] Precipitation response missing data attribute and no frames")
                             return False
 
             logger.info(f"[PRECIP_HANDLER] Message validated as a valid precipitation message: {message_type}")
@@ -661,7 +658,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
             if isinstance(processed_message, dict) and 'data' in processed_message:
                 data = processed_message['data']
                 if isinstance(data, str):
-                    logger.info(f"[PRECIP_HANDLER] Converting string data to precipitation objects")
+                    logger.info("[PRECIP_HANDLER] Converting string data to precipitation objects")
                     # Handle string data format from BC/RT transfer
                     try:
                         # Try to convert string data to precipitation objects
@@ -680,7 +677,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
                                 logger.info(f"[PRECIP_HANDLER] Successfully parsed string data into {len(parsed_data)} objects")
                                 precip_objects = parsed_data
                         except Exception:
-                            logger.error(f"[PRECIP_HANDLER] Failed to parse string data, using empty list")
+                            logger.error("[PRECIP_HANDLER] Failed to parse string data, using empty list")
 
                         # Get request ID
                         request_id = processed_message.get('request_id', str(time.time()))
@@ -752,7 +749,7 @@ class PrecipitationDataHandler(BaseMessageHandler):
                 if isinstance(processed_message, dict):
                     metadata = processed_message.get('metadata', {})
                     if metadata.get('precipitation_message') or metadata.get('data_type') == 'precipitation':
-                        logger.info(f"[PRECIP_HANDLER] Processing non-standard precipitation message")
+                        logger.info("[PRECIP_HANDLER] Processing non-standard precipitation message")
 
                         # Extract precipitation data if available
                         if 'data' in processed_message:

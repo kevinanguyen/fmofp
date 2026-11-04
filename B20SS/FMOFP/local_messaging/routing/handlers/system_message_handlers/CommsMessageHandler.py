@@ -15,7 +15,6 @@ and are forwarded synchronously to the appropriate CommsService method.
 Singleton: get_comms_message_handler()
 """
 
-import asyncio
 import threading
 import time
 import traceback
@@ -34,7 +33,6 @@ from FMOFP.local_messaging.message_types import (
     COMMS_TRANSMIT_RADIO,
     COMMS_SEND_SATCOM,
     COMMS_SEND_DATALINK,
-    COMMS_DATA_UPDATE,
 )
 
 logger = get_logger()

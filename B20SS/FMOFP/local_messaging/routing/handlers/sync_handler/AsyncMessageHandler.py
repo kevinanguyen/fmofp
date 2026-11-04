@@ -638,7 +638,7 @@ class AsyncMessageHandler:
                     logger.warning(f"[Async] Forcing transition from {HandlerState.to_string(old_state)} to STOPPING")
                 # Special case: Allow forced transition to STOPPED from STARTING if startup failed
                 elif old_state == HandlerState.STARTING and new_state == HandlerState.STOPPED:
-                    logger.warning(f"[Async] Startup failed, forcing transition to STOPPED")
+                    logger.warning("[Async] Startup failed, forcing transition to STOPPED")
                 # Special case: Prevent RUNNING -> STOPPED transition due to validation failures or connection errors
                 elif old_state == HandlerState.RUNNING and new_state == HandlerState.STOPPED:
                     # Check if this is due to a validation failure
@@ -646,7 +646,7 @@ class AsyncMessageHandler:
                         logger.warning(f"[Async] Preventing transition to STOPPED due to validation failure: {self._last_validation_error}")
                         # Set to DEGRADED instead
                         new_state = HandlerState.DEGRADED
-                        logger.info(f"[Async] Redirecting to DEGRADED state instead")
+                        logger.info("[Async] Redirecting to DEGRADED state instead")
                         # Reset the validation error flag
                         self._last_validation_error = None
                     # Check if this is due to a connection error
@@ -654,7 +654,7 @@ class AsyncMessageHandler:
                         logger.warning(f"[Async] Preventing transition to STOPPED due to connection error: {getattr(self, '_last_error', None)}")
                         # Set to DEGRADED instead for connection errors
                         new_state = HandlerState.DEGRADED
-                        logger.info(f"[Async] Redirecting to DEGRADED state instead for connection error")
+                        logger.info("[Async] Redirecting to DEGRADED state instead for connection error")
                     else:
                         # Check worker health before allowing direct RUNNING -> STOPPED transition
                         worker_status = [w.is_alive() for w in self.workers]
@@ -665,7 +665,7 @@ class AsyncMessageHandler:
                             logger.warning(f"[Async] Preventing direct transition from {HandlerState.to_string(old_state)} to {HandlerState.to_string(new_state)} with {active_workers} active workers and pending messages")
                             # Force transition to STOPPING instead
                             new_state = HandlerState.STOPPING
-                            logger.info(f"[Async] Redirecting to STOPPING state instead")
+                            logger.info("[Async] Redirecting to STOPPING state instead")
                 else:
                     logger.warning(f"[Async] Invalid state transition from {HandlerState.to_string(old_state)} to {HandlerState.to_string(new_state)}")
                     # Log but allow transition to proceed - better to have an invalid transition than to block operation
@@ -1037,7 +1037,7 @@ class AsyncMessageHandler:
                             logger.error(f"[Async] Error processing buffered message: {e}")
                             logger.error(traceback.format_exc())
                     
-                    logger.info(f"[Async] Finished processing buffered messages")
+                    logger.info("[Async] Finished processing buffered messages")
             except Exception as e:
                 logger.error(f"[Async] Error starting AsyncMessageHandler: {str(e)}")
                 self.stop()
@@ -1293,7 +1293,7 @@ class AsyncMessageHandler:
                 except Exception as e:
                     logger.error(f"[Async] Error flushing buffered message: {str(e)}")
                     
-            logger.info(f"[Async] Finished flushing buffered messages")
+            logger.info("[Async] Finished flushing buffered messages")
             
         except Exception as e:
             logger.error(f"[Async] Error in buffer flush: {str(e)}")
@@ -1322,10 +1322,10 @@ class AsyncMessageHandler:
                 
                 # Misrouted status word
                 elif rt_address == 11 and system_name == 'radar':
-                    logger.warning(f"[Async] Display status word (RT=11) incorrectly routed to radar system")
+                    logger.warning("[Async] Display status word (RT=11) incorrectly routed to radar system")
                     return False
                 elif rt_address == 9 and system_name == 'display':
-                    logger.warning(f"[Async] Radar status word (RT=9) incorrectly routed to display system")
+                    logger.warning("[Async] Radar status word (RT=9) incorrectly routed to display system")
                     return False
 
             # Check if we have a database connection - only for radar systems
@@ -1438,7 +1438,7 @@ class AsyncMessageHandler:
                             try:
                                 # Try to get a high priority message with a short timeout
                                 system_name, message = self._get_high_priority_message(timeout=0.1)
-                                logger.info(f"[Async] Processing high priority message during STOPPING state")
+                                logger.info("[Async] Processing high priority message during STOPPING state")
                                 # Process the high priority message
                                 self._process_single_message(system_name, message, loop, worker_state)
                             except queue.Empty:
@@ -1521,7 +1521,7 @@ class AsyncMessageHandler:
             # Don't die - implement circuit breaker pattern
             try:
                 # Log the error but continue processing
-                logger.warning(f"[Async] Worker thread encountered connection error, implementing circuit breaker")
+                logger.warning("[Async] Worker thread encountered connection error, implementing circuit breaker")
                 
                 # Store connection error type for state management
                 with self._state_lock:
@@ -1687,7 +1687,7 @@ class AsyncMessageHandler:
                 return
             
             # Log message routing
-            logger.info(f"[Async] Routing message:")
+            logger.info("[Async] Routing message:")
             logger.info(f"[Async]   System: {system_name}")
             logger.info(f"[Async]   Message type: {message_type}")
             logger.info(f"[Async]   Command word: {validated_command}")
@@ -1920,7 +1920,7 @@ class AsyncMessageHandler:
             # Add command_type based on command_name if available
             if hasattr(data, 'command_name') and getattr(data, 'command_name'):
                 message['command_type'] = 'command'
-                logger.info(f"[Async] Set command_type to 'command' based on command_name")
+                logger.info("[Async] Set command_type to 'command' based on command_name")
             
             # Log the extracted metadata
             logger.info(f"[Async] Extracted metadata from BaseMessage: {', '.join(f'{k}={message[k]}' for k in message if k not in ['command_word', 'data', 'request_id', 'timestamp'])}")

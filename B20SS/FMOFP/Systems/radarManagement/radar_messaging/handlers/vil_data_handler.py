@@ -12,7 +12,7 @@ import threading
 import json
 import traceback
 import time
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.radar_messaging.base_message_handler import BaseMessageHandler
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
@@ -30,9 +30,7 @@ from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.weather_d
 from FMOFP.Systems.radarManagement.radar_messaging.address_utils import (
     get_rt_address, 
     get_subaddress, 
-    get_rt_subaddress_pair_for_radar,
-    is_radar_subsystem,
-    get_system_id_for_addressing
+    get_rt_subaddress_pair_for_radar
 )
 
 logger = get_logger()
@@ -517,7 +515,7 @@ class VILDataHandler(BaseMessageHandler):
             if is_message_type(message, WEATHER_RADAR_VIL_RESPONSE):
                 # Simple check for data attribute
                 if isinstance(message, dict) and 'data' not in message:
-                    logger.warning(f"[VIL_HANDLER] VIL response missing data attribute")
+                    logger.warning("[VIL_HANDLER] VIL response missing data attribute")
                     return False
             
             logger.info(f"[VIL_HANDLER] Message validated as a valid VIL message: {message_type}")

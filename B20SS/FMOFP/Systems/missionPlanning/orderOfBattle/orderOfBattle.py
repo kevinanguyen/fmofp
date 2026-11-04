@@ -1,8 +1,6 @@
-import sys
 import math
 import threading
 import xml.etree.ElementTree as ET
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

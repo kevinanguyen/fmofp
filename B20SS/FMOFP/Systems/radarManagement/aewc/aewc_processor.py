@@ -33,11 +33,10 @@ Mitigation actions (in order of aggression):
   4. Sector skip — temporarily abandon the jammed sector.
 """
 
-import math
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

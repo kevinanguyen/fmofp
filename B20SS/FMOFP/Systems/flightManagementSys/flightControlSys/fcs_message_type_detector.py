@@ -4,7 +4,7 @@ This module is designed to determine the type of FCS message received
 and route it to the appropriate handler following consistent standards.
 '''
 
-from typing import Dict, Any, Tuple, List, Optional, Union
+from typing import Dict, Any, Optional, Union
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.flightManagementSys.fms_messaging.message_types import (
     # FCS message types

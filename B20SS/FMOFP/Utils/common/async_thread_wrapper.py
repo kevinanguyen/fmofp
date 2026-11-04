@@ -7,7 +7,6 @@ asyncio event loops in dedicated threads that are properly registered with the t
 
 import asyncio
 import threading
-import traceback
 from typing import Optional, Callable, Coroutine
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.thread_manager import thread_manager

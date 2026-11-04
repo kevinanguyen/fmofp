@@ -8,8 +8,8 @@ File Relationships:
 - Provides theme mapping between base DisplayTheme and EnhancedDisplayTheme
 """
 from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QFont
-from typing import Dict, List, Optional, Tuple, Any, Callable
+from PyQt6.QtGui import QPainter, QColor
+from typing import List, Optional, Tuple, Any, Callable
 import math
 from .settings_panel import SettingsPanel, SettingsOption
 from .theme_manager import get_theme_manager, DisplayTheme
@@ -855,7 +855,7 @@ class HolographicSettingsPanel(SettingsPanel):
                 self.options.append(theme_option)
                 
                 # Log that we added the theme setting with a callback
-                logger.info(f"[HOLO_SETTINGS_PANEL] Added theme setting with direct lambda callback")
+                logger.info("[HOLO_SETTINGS_PANEL] Added theme setting with direct lambda callback")
                 
                 # Get the newly added theme option
                 for option in self.options:

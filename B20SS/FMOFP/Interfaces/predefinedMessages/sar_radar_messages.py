@@ -4,10 +4,8 @@ SAR (Synthetic Aperture Radar) Messages Module
 Provides predefined messages for the SAR radar system.
 """
 
-import asyncio
 import uuid
 import traceback
-from typing import Dict, Optional, Any
 
 from FMOFP.Interfaces.predefinedMessages.message_base import PredefinedMessagesBase
 from FMOFP.Interfaces.predefinedMessages.radar_enums import sar_radarMode
@@ -279,7 +277,7 @@ class SARRadarMessages(PredefinedMessagesBase):
                     message.metadata['processed_by'].append('sar_radar')
             
             # For logging purposes
-            self.logger.info(f"[SAR_RADAR] Message successfully processed")
+            self.logger.info("[SAR_RADAR] Message successfully processed")
             return True
             
         except Exception as e:

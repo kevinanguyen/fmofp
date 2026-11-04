@@ -174,7 +174,7 @@ class ModeNode(DisplayNode):
                 
                 # Log mode transition
                 logger.info(f"[MODE_NODE] {self.name} transitioned: {self.previous_mode} -> {current_mode}")
-                logger.info(f"[MODE_NODE] Mode transition complete")
+                logger.info("[MODE_NODE] Mode transition complete")
 
             # Notify subscribers OUTSIDE the `with self._lock` block — same
             # fix Round 12 applied to DisplayNode.update() in

@@ -30,7 +30,6 @@ from typing import Dict, List, Optional
 from PyQt6.QtCore import Qt, QPointF, QRectF, QTimer
 from PyQt6.QtGui import (
     QColor, QFont, QPainter, QPainterPath, QPen, QBrush,
-    QLinearGradient,
 )
 
 from .base_display import BaseDisplay, DisplayType

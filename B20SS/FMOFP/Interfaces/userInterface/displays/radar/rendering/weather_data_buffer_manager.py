@@ -5,8 +5,8 @@ Manages multiple buffer layers for different weather data types.
 Handles compositing and blending between layers.
 """
 from PyQt6.QtCore import QRectF, QSize, Qt
-from PyQt6.QtGui import QPainter, QImage, QColor
-from typing import Dict, List, Optional, Set, Tuple
+from PyQt6.QtGui import QPainter, QImage
+from typing import Dict, List, Optional
 import time
 
 from FMOFP.Utils.logger.sys_logger import get_logger

@@ -8,7 +8,6 @@ Enhanced to handle precipitation data and binary data preservation.
 """
 
 import time
-import logging
 import copy
 from typing import Dict, List, Optional, Any, Tuple
 
@@ -57,7 +56,7 @@ class RTTransferAggregator:
             logger.info(f"[RT_TRANSFER_AGG] Message contains frames list with {len(message['frames'])} frames")
             return True
             
-        logger.info(f"[RT_TRANSFER_AGG] Message is NOT a transfer message")
+        logger.info("[RT_TRANSFER_AGG] Message is NOT a transfer message")
         return False
         
     def is_binary_data_message(self, message: Any) -> bool:
@@ -167,7 +166,7 @@ class RTTransferAggregator:
             logger.info(f"[RT_TRANSFER_AGG] Detected binary data message via large frame count ({frame_count})")
             return True
         
-        logger.info(f"[RT_TRANSFER_AGG] Message does not contain binary data")
+        logger.info("[RT_TRANSFER_AGG] Message does not contain binary data")
         return False
     
     def _is_precipitation_message(self, message: Any) -> bool:
@@ -372,7 +371,7 @@ class RTTransferAggregator:
         
         # If no block boundaries found or just one block - return as is
         if len(status_word_indices) <= 1:
-            logger.info(f"[RT_TRANSFER_AGG] No preprocessing needed - single block detected")
+            logger.info("[RT_TRANSFER_AGG] No preprocessing needed - single block detected")
             return all_frames
         
         # 2. Extract frames, skipping headers in subsequent blocks
@@ -623,7 +622,7 @@ class RTTransferAggregator:
                 invalid_objects += 1
                 
         # Final summary with detailed statistics
-        logger.info(f"[RT_TRANSFER_AGG] Precipitation data extraction complete:")
+        logger.info("[RT_TRANSFER_AGG] Precipitation data extraction complete:")
         logger.info(f"[RT_TRANSFER_AGG] - Original frame count: {original_frame_count}")
         logger.info(f"[RT_TRANSFER_AGG] - Preprocessed frame count: {len(all_frames)}")
         logger.info(f"[RT_TRANSFER_AGG] - Expected object count: {count}")
@@ -795,7 +794,7 @@ class RTTransferAggregator:
                     
                     # Check if binary data was preserved correctly
                     if not isinstance(message_copy.get('data'), list) or not all(isinstance(item, int) for item in message_copy.get('data', [])):
-                        logger.error(f"[RT_TRANSFER_AGG] Binary data was corrupted during copy, restoring original")
+                        logger.error("[RT_TRANSFER_AGG] Binary data was corrupted during copy, restoring original")
                         message_copy['data'] = binary_data
                         
                         # Mark message to ensure data is preserved
@@ -855,7 +854,7 @@ class RTTransferAggregator:
                     
                     # Check if binary data was preserved correctly
                     if not isinstance(message_copy.data, list) or not all(isinstance(item, int) for item in message_copy.data):
-                        logger.error(f"[RT_TRANSFER_AGG] Binary data was corrupted in object during copy, restoring original")
+                        logger.error("[RT_TRANSFER_AGG] Binary data was corrupted in object during copy, restoring original")
                         message_copy.data = binary_data
                         
                         # Mark message to ensure data is preserved
@@ -1138,14 +1137,14 @@ class RTTransferAggregator:
             
             # If any condition indicates completeness, finalize the transfer
             if is_complete:
-                logger.info(f"[RT_TRANSFER_AGG] Transfer considered complete based on data presence or multiple messages")
+                logger.info("[RT_TRANSFER_AGG] Transfer considered complete based on data presence or multiple messages")
                 return self._finalize_transfer(request_id)
             
             # Otherwise, keep collecting
             return None
             
         # Not a transfer message we recognize
-        logger.info(f"[RT_TRANSFER_AGG] Message has no recognized transfer flags - passing through")
+        logger.info("[RT_TRANSFER_AGG] Message has no recognized transfer flags - passing through")
         return message  # Pass through unchanged
         
     def _finalize_transfer(self, request_id: str) -> Dict[str, Any]:
@@ -1186,7 +1185,7 @@ class RTTransferAggregator:
         if ('precipitation' in original_message_type.lower() or 
             self._is_precipitation_message(base_message)):
             precipitation_detected = True
-            logger.info(f"[RT_TRANSFER_AGG] Detected precipitation data from message types")
+            logger.info("[RT_TRANSFER_AGG] Detected precipitation data from message types")
         
         # precipitation detection based on frames analysis
         if not precipitation_detected and transfer['data_messages']:
@@ -1199,7 +1198,7 @@ class RTTransferAggregator:
         
         # Force correct message types for precipitation data
         if precipitation_detected:
-            logger.info(f"[RT_TRANSFER_AGG] Ensuring precipitation message types are correctly set")
+            logger.info("[RT_TRANSFER_AGG] Ensuring precipitation message types are correctly set")
             
             # Always set the correct message type for precipitation data
             original_message_type = 'weather_radarPrecipitationResponse'
@@ -1217,7 +1216,7 @@ class RTTransferAggregator:
             if ('vil' in original_message_type.lower() or
                 self._is_vil_message(base_message)):
                 vil_detected = True
-                logger.info(f"[RT_TRANSFER_AGG] Detected VIL data from message types")
+                logger.info("[RT_TRANSFER_AGG] Detected VIL data from message types")
             
             if not vil_detected and transfer['data_messages']:
                 # Check for large frame count in messages
@@ -1228,7 +1227,7 @@ class RTTransferAggregator:
                         break
 
             if vil_detected:
-                logger.info(f"[RT_TRANSFER_AGG] Ensuring VIL message types are correctly set")
+                logger.info("[RT_TRANSFER_AGG] Ensuring VIL message types are correctly set")
                 
                 # Always set the correct message type for VIL data
                 original_message_type = 'weather_radarVILResponse'
@@ -1292,7 +1291,7 @@ class RTTransferAggregator:
                     
         # ENHANCED: If no data found but this is precipitation data, extract from frames
         if len(all_data) == 0 and precipitation_detected:
-            logger.info(f"[RT_TRANSFER_AGG] No data found in data arrays, extracting from frames")
+            logger.info("[RT_TRANSFER_AGG] No data found in data arrays, extracting from frames")
             frame_data = self._extract_precipitation_data_from_frames(transfer['data_messages'])
             if frame_data:
                 all_data = frame_data

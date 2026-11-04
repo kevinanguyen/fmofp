@@ -320,7 +320,7 @@ class EventBus:
                 ])
 
                 # Log health metrics
-                logger.debug(f"EventBus Health Metrics:")
+                logger.debug("EventBus Health Metrics:")
                 logger.debug(f"- Basic Health: {basic_health}")
                 logger.debug(f"- Event Processing: {event_processing_ok}")
                 logger.debug(f"- Error Rate OK: {error_rate_ok}")

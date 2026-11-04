@@ -1,5 +1,3 @@
-import sys
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 # NOTE: previously imported FMOFP.local_messaging.Messaging.Messaging and

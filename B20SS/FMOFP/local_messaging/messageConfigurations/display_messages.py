@@ -5,7 +5,6 @@ Defines message formats for display system commands and responses.
 Follows similar pattern to radar messages but adapted for display operations.
 """
 
-from typing import Dict, Any
 from .base_message import BaseMessage
 from ...Interfaces.userInterface.displays.base_display import DisplayType, DisplayMode
 

@@ -1,12 +1,11 @@
 """
 Holographic weather radar display with realistic 3D visualization of precipitation and VIL data.
 """
-from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer, QEasingCurve, QEvent
-from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QRadialGradient, QTransform, QPainterPath, QImage, QLinearGradient
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer, QEasingCurve
+from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QRadialGradient, QPainterPath, QImage, QLinearGradient
 
 
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Any, Union
 import math
 import time
 import random
@@ -16,13 +15,10 @@ import traceback
 
 from .holographic_radar_display import HolographicRadarDisplay
 from FMOFP.Utils.logger.sys_logger import get_logger
-from FMOFP.core.event_driven_communication import get_event_bus, Event
 
 # Import rendering components
 from .rendering import get_animation_controller
 from .rendering import get_spatial_grid, get_dirty_region_tracker
-from .rendering.particle_system import ParticleSystem
-from .rendering.particle_renderer import ParticleRenderer
 
 logger = get_logger()
 
@@ -118,7 +114,7 @@ class RadarSelectionMenu:
                 {"name": "AEWC", "id": "aewc_radar", "status": "STANDBY", "available": False},
                 {"name": "TARGETING", "id": "targeting_radar", "status": "STANDBY", "available": False}
             ]
-            logger.info(f"[RADAR_MENU] Using fallback radar systems list")
+            logger.info("[RADAR_MENU] Using fallback radar systems list")
             return fallback_options
     
     def show(self, position=None):
@@ -1674,7 +1670,7 @@ class WeatherRadarHolographicDisplay(HolographicRadarDisplay):
                         vil_data_found = True
                 elif hasattr(data.additional_info, 'weather_data'):
                     weather_data = data.additional_info.weather_data
-                    logger.info(f"[WEATHER_HOLO] Found weather_data attribute in additional_info")
+                    logger.info("[WEATHER_HOLO] Found weather_data attribute in additional_info")
                     
                     if hasattr(weather_data, 'vil_data') and isinstance(weather_data.vil_data, list):
                         vil_data_list = weather_data.vil_data
@@ -1849,7 +1845,7 @@ class WeatherRadarHolographicDisplay(HolographicRadarDisplay):
                         cell_data_found = True
                 elif hasattr(data.additional_info, 'weather_data'):
                     weather_data = data.additional_info.weather_data
-                    logger.info(f"[WEATHER_HOLO] Found weather_data attribute in additional_info")
+                    logger.info("[WEATHER_HOLO] Found weather_data attribute in additional_info")
                     
                     if hasattr(weather_data, 'cell_data') and isinstance(weather_data.cell_data, list):
                         cell_data_list = weather_data.cell_data

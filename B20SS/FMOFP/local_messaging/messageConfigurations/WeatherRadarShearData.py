@@ -6,7 +6,6 @@ Defines message type for weather radar wind shear data communication.
 from dataclasses import dataclass, field
 import time
 from typing import Dict, Any
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.local_messaging.messageConfigurations.base_message import BaseMessage
 
 @dataclass

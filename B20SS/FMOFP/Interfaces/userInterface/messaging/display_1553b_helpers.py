@@ -7,16 +7,7 @@ from typing import Dict, Tuple, Union
 from ..displays.base_display import DisplayType, DisplayMode
 from .display_address_utils import (
     DISPLAY_RT_ADDRESS,
-    get_display_rt_address,
-    get_display_subaddress,
-    get_display_id_by_subaddress
-)
-from .display_message_types import (
-    get_command_type,
-    DISPLAY_COMMAND_TYPE_SHOW,
-    DISPLAY_COMMAND_TYPE_MODE,
-    DISPLAY_COMMAND_TYPE_DATA,
-    DISPLAY_COMMAND_TYPE_STATUS
+    get_display_subaddress
 )
 from FMOFP.Utils.logger.sys_logger import get_logger
 

@@ -155,9 +155,9 @@ class UserCLI:
         radar_num = int(input("Which radar would you like to select? (1-5)? "))
         selected_radar = radar_options.get(radar_num)
 
-        logger.info(f"  Which command would you like to send?")
-        logger.info(f"  1) Radar System Status Request")
-        logger.info(f"  2) Radar Mode Change Request")
+        logger.info("  Which command would you like to send?")
+        logger.info("  1) Radar System Status Request")
+        logger.info("  2) Radar Mode Change Request")
         command_num = int(input("Enter command (1-2)? "))
 
         if command_num == 1:

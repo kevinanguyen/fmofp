@@ -5,10 +5,8 @@ Provides a central access point to all predefined message types in the FMOFP sys
 This module handles the initialization and aggregation of all message subsystems.
 """
 
-import asyncio
-import logging
 import traceback
-from typing import Dict, Any, Optional, Tuple, Union
+from typing import Union
 
 # Import all message subsystems
 from FMOFP.Interfaces.predefinedMessages.weather_radar_messages import WeatherRadarMessages
@@ -25,8 +23,7 @@ from FMOFP.Interfaces.predefinedMessages.radar_enums import (
     tfr_radarMode,
     sar_radarMode,
     targeting_radarMode,
-    aewc_radarMode,
-    RadarMode
+    aewc_radarMode
 )
 
 # Import radar message handler

@@ -13,18 +13,6 @@ from FMOFP.Utils.common.operation_tracker import track_operation
 from FMOFP.local_messaging.address_utils import get_rt_address, get_subaddress
 from FMOFP.local_messaging.message_types import (
     # Weather Radar Messages
-    WEATHER_RADAR_MODE_CHANGE_REQUEST,
-    WEATHER_RADAR_MODE_CHANGE_RESPONSE,
-    WEATHER_RADAR_STATUS_REQUEST,
-    WEATHER_RADAR_STATUS_RESPONSE,
-    WEATHER_RADAR_VIL_REQUEST,
-    WEATHER_RADAR_VIL_RESPONSE,
-    WEATHER_RADAR_PRECIPITATION_REQUEST,
-    WEATHER_RADAR_PRECIPITATION_RESPONSE,
-    
-    # Helper functions
-    get_message_type,
-    is_message_type,
     is_vil_message,
     is_precipitation_message,
     is_mode_change_message
@@ -33,13 +21,8 @@ from FMOFP.local_messaging.message_types import (
 # Import Flight Control System message types from local file
 from FMOFP.local_messaging.message_types_fcs import (
     FCS_CONTROL_INPUT_REQUEST,
-    FCS_CONTROL_INPUT_RESPONSE,
-    FCS_ORIENTATION_DATA_REQUEST,
-    FCS_ORIENTATION_DATA_RESPONSE,
     FCS_STATUS_REQUEST,
-    FCS_STATUS_RESPONSE,
-    FCS_MODE_CHANGE_REQUEST,
-    FCS_MODE_CHANGE_RESPONSE
+    FCS_MODE_CHANGE_REQUEST
 )
 
 # Import Flight Control System command words

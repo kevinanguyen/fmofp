@@ -11,7 +11,7 @@ Each schema defines:
 - metadata_fields: List of metadata fields that should be included
 """
 
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Optional, Tuple
 
 # ===== CONSTANTS FOR MESSAGE TYPES =====
 

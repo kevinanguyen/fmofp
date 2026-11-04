@@ -3,9 +3,7 @@ System Manager for Flight Management Operating Flight Program
 """
 import threading
 import time
-import traceback
 import asyncio
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.Systems.radarManagement.radarControl import get_radar_management_system
 from FMOFP.Systems.radarManagement.radar_messaging.radarMessenger import get_radar_messenger
 from FMOFP.Interfaces.userInterface.messaging.displayMessenger import get_display_messenger
@@ -413,17 +411,17 @@ class SystemManager:
 
                         # Check if actual display exists in container
                         if display_id == 'pfd' and (not hasattr(display_container, 'pfd') or not display_container.pfd):
-                            logger.error(f"PFD container has no display instance")
-                            raise RuntimeError(f"PFD container has no display instance")
+                            logger.error("PFD container has no display instance")
+                            raise RuntimeError("PFD container has no display instance")
                         elif display_id == 'mfd' and (not hasattr(display_container, 'mfd') or not display_container.mfd):
-                            logger.error(f"MFD container has no display instance")
-                            raise RuntimeError(f"MFD container has no display instance")
+                            logger.error("MFD container has no display instance")
+                            raise RuntimeError("MFD container has no display instance")
                         elif display_id == 'radar_display' and (not hasattr(display_container, 'display') or not display_container.display):
-                            logger.error(f"Radar display container has no display instance")
-                            raise RuntimeError(f"Radar display container has no display instance")
+                            logger.error("Radar display container has no display instance")
+                            raise RuntimeError("Radar display container has no display instance")
                         elif display_id == 'hud' and (not hasattr(display_container, 'hud') or not display_container.hud):
-                            logger.error(f"HUD container has no display instance")
-                            raise RuntimeError(f"HUD container has no display instance")
+                            logger.error("HUD container has no display instance")
+                            raise RuntimeError("HUD container has no display instance")
 
                         # If we get here, the container exists but is not running
                         raise RuntimeError(f"Display {display_id} not running")
@@ -431,32 +429,32 @@ class SystemManager:
                     # Additional verification for actual display inside container
                     if display_id == 'pfd':
                         if not hasattr(display_container, 'pfd') or not display_container.pfd:
-                            logger.error(f"PFD container has no display instance")
-                            raise RuntimeError(f"PFD container has no display instance")
+                            logger.error("PFD container has no display instance")
+                            raise RuntimeError("PFD container has no display instance")
                         if hasattr(display_container.pfd, 'is_running') and not display_container.pfd.is_running():
-                            logger.error(f"PFD display inside container is not running")
-                            raise RuntimeError(f"PFD display inside container is not running")
+                            logger.error("PFD display inside container is not running")
+                            raise RuntimeError("PFD display inside container is not running")
                     elif display_id == 'mfd':
                         if not hasattr(display_container, 'mfd') or not display_container.mfd:
-                            logger.error(f"MFD container has no display instance")
-                            raise RuntimeError(f"MFD container has no display instance")
+                            logger.error("MFD container has no display instance")
+                            raise RuntimeError("MFD container has no display instance")
                         if hasattr(display_container.mfd, 'is_running') and not display_container.mfd.is_running():
-                            logger.error(f"MFD display inside container is not running")
-                            raise RuntimeError(f"MFD display inside container is not running")
+                            logger.error("MFD display inside container is not running")
+                            raise RuntimeError("MFD display inside container is not running")
                     elif display_id == 'radar_display':
                         if not hasattr(display_container, 'display') or not display_container.display:
-                            logger.error(f"Radar display container has no display instance")
-                            raise RuntimeError(f"Radar display container has no display instance")
+                            logger.error("Radar display container has no display instance")
+                            raise RuntimeError("Radar display container has no display instance")
                         if hasattr(display_container.display, 'is_running') and not display_container.display.is_running():
-                            logger.error(f"Radar display inside container is not running")
-                            raise RuntimeError(f"Radar display inside container is not running")
+                            logger.error("Radar display inside container is not running")
+                            raise RuntimeError("Radar display inside container is not running")
                     elif display_id == 'hud':
                         if not hasattr(display_container, 'hud') or not display_container.hud:
-                            logger.error(f"HUD container has no display instance")
-                            raise RuntimeError(f"HUD container has no display instance")
+                            logger.error("HUD container has no display instance")
+                            raise RuntimeError("HUD container has no display instance")
                         if hasattr(display_container.hud, 'is_running') and not display_container.hud.is_running():
-                            logger.error(f"HUD display inside container is not running")
-                            raise RuntimeError(f"HUD display inside container is not running")
+                            logger.error("HUD display inside container is not running")
+                            raise RuntimeError("HUD display inside container is not running")
 
                     logger.info(f"Display {display_id} running verified (both container and display)")
 

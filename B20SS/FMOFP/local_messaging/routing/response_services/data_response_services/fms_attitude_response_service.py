@@ -11,7 +11,7 @@ Provides:
 import asyncio
 import time
 import traceback
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.async_task import cancel_and_await
 from FMOFP.local_messaging.messageConfigurations.fms_attitude_data import create_fms_attitude_data_message
@@ -281,7 +281,7 @@ class FMSAttitudeResponseService:
                             # Route to display system after storage
                             await self._route_to_display(attitude_data)
                         else:
-                            logger.error(f"Failed to store FMS attitude data")
+                            logger.error("Failed to store FMS attitude data")
                             # Log failure details
                             logger.error(f"Failed data: {attitude_data}")
                             # Put the data back in queue for retry

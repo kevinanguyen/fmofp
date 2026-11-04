@@ -7,9 +7,6 @@ This module provides message classes for FMS data including:
 - Maneuver requests
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
-import time
 import uuid
 
 from FMOFP.local_messaging.messageConfigurations.base_message import BaseMessage, register_message_type
@@ -24,14 +21,6 @@ from FMOFP.local_messaging.message_types import (
 )
 
 # Import existing message utility functions as reference
-from FMOFP.local_messaging.messageConfigurations.fms_attitude_data import (
-    create_fms_attitude_data_message,
-    encode_fms_attitude_data
-)
-from FMOFP.local_messaging.messageConfigurations.fms_navigation_data import (
-    create_fms_navigation_data_message,
-    encode_fms_navigation_data
-)
 
 class fms_attitudeUpdateRequest(BaseMessage):
     """Attitude update request message"""

@@ -342,7 +342,7 @@ class EnhancedRadarResponseService:
         """
         try:
             # Log incoming acknowledgment
-            logger.info(f"[STORE] Storing command acknowledgment:")
+            logger.info("[STORE] Storing command acknowledgment:")
             logger.info(f"[STORE]   timestamp: {ack.timestamp}")
             logger.info(f"[STORE]   command_type: {ack.command_type}")
             logger.info(f"[STORE]   radar_type: {ack.radar_type}")
@@ -384,7 +384,7 @@ class EnhancedRadarResponseService:
             )
             
             # Log database operation
-            logger.info(f"[STORE] Executing database query:")
+            logger.info("[STORE] Executing database query:")
             logger.info(f"[STORE]   Query: {query}")
             logger.info(f"[STORE]   Parameters: {params}")
             
@@ -612,7 +612,7 @@ class EnhancedRadarResponseService:
 
             # Convert radar_type from integer to string if needed
             if isinstance(ack.radar_type, int):
-                ack.radar_type = f"weather_radar"  # Default to weather_radar for now
+                ack.radar_type = "weather_radar"  # Default to weather_radar for now
             
             # Store acknowledgment directly
             loop = asyncio.get_event_loop()
@@ -691,7 +691,7 @@ class EnhancedRadarResponseService:
                 mode_value = None
 
             # Log acknowledgment details
-            logger.info(f"[STORE] Created acknowledgment object:")
+            logger.info("[STORE] Created acknowledgment object:")
             logger.info(f"[STORE]   timestamp: {ack.timestamp}")
             logger.info(f"[STORE]   command_type: {ack.command_type}")
             logger.info(f"[STORE]   radar_type: {ack.radar_type}")
@@ -1016,7 +1016,7 @@ class EnhancedRadarResponseService:
             
             # Skip direct DisplayMessageHandler communication to break the loop
             # Just use DisplayResponseService instead for storage and forwarding
-            logger.warning(f"[RDR_RESPSE_SERV] Skipping direct DisplayMessageHandler call to prevent message loops")
+            logger.warning("[RDR_RESPSE_SERV] Skipping direct DisplayMessageHandler call to prevent message loops")
             
             # Store completion in DisplayResponseService for tracking
             from FMOFP.local_messaging.routing.response_services.system_response_services.DisplayResponseService import get_display_response_service
@@ -1055,7 +1055,7 @@ class EnhancedRadarResponseService:
                 
                 # Store command in response service
                 await display_response_service.handle_display_command(command_data, from_display_handler=True)
-                logger.warning(f"[RDR_RESPSE_SERV] Mode change command stored in DisplayResponseService")
+                logger.warning("[RDR_RESPSE_SERV] Mode change command stored in DisplayResponseService")
             
             return True
         except Exception as e:
@@ -1112,7 +1112,7 @@ class EnhancedRadarResponseService:
             
             # If still no radar_type, use a default
             if not radar_type:
-                logger.warning(f"[RDR_RESPSE_SERV] No radar_type or display_type found in message, using default: 'weather_radar'")
+                logger.warning("[RDR_RESPSE_SERV] No radar_type or display_type found in message, using default: 'weather_radar'")
                 radar_type = 'weather_radar'  # Default radar type
             
             # Ensure mode is never NULL
@@ -1150,7 +1150,7 @@ class EnhancedRadarResponseService:
             )
 
             # Log mode change data
-            logger.info(f"Storing mode change data:")
+            logger.info("Storing mode change data:")
             logger.info(f"  timestamp: {mode_data.timestamp}")
             logger.info(f"  radar_type: {mode_data.radar_type}")
             logger.info(f"  mode: {mode_data.mode}")

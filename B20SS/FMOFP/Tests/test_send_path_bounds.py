@@ -46,7 +46,7 @@ for _p in (_B20SS, os.path.join(_B20SS, 'FMOFP')):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from FMOFP.Tests import code_only  # shared source-inspection helper
+from FMOFP.Tests import code_has, code_only  # shared source-inspection helpers
 
 import inspect
 import subprocess
@@ -343,12 +343,126 @@ def test_done_callback_results_are_not_defects():
             "add_done_callback" in "\n".join(lines))
 
 
+
+def test_no_await_on_an_undefined_method():
+    R.section("H6 — send_request no longer awaits a method that does not exist")
+
+    import importlib
+
+    mod = importlib.import_module(
+        "FMOFP.local_messaging.routing.handlers.system_message_handlers."
+        "RadarMessageHandler")
+    src = inspect.getsource(mod)
+
+    # The name occurred exactly once in the repository: at the await itself.
+    R.check("_wait_for_response is not called anywhere in the module's code",
+            not code_has(src, "self._wait_for_response("),
+            "still awaited")
+    R.check("...and is still not defined, which is why calling it was the bug",
+            not code_has(src, "def _wait_for_response"))
+    # code_has ignores comments and strings, so the docstring that RECORDS
+    # the removal must not make this pass by accident.
+    R.check("the removal is recorded in prose, where code_has cannot see it",
+            "_wait_for_response" in src and not code_has(src, "_wait_for_response"))
+
+    sig = inspect.signature(mod.RadarMessageHandler.send_request)
+    R.check("sync_response is gone from the signature",
+            "sync_response" not in sig.parameters, str(sig))
+    R.check("...and the remaining parameters are the three that were used",
+            [p for p in sig.parameters if p != "self"]
+            == ["radar_name", "request_type", "data"], str(sig))
+    R.check("the return annotation no longer promises a dict",
+            "Dict" not in str(sig.return_annotation), str(sig.return_annotation))
+
+    # A caller that passes it gets a TypeError at the CALL SITE, which is the
+    # point of removing rather than accepting-and-raising.
+    handler = mod.RadarMessageHandler.__new__(mod.RadarMessageHandler)
+    try:
+        handler.send_request("weather_radar", "status", None, True)
+        R.check("passing a fourth positional argument raises TypeError", False,
+                "it was accepted")
+    except TypeError:
+        R.check("passing a fourth positional argument raises TypeError", True)
+    except Exception as exc:  # noqa: BLE001
+        R.check(f"passing a fourth positional argument raises TypeError, not "
+                f"{type(exc).__name__}", False, str(exc))
+    try:
+        handler.send_request("weather_radar", "status", sync_response=True)
+        R.check("passing sync_response= raises TypeError", False,
+                "it was accepted")
+    except TypeError:
+        R.check("passing sync_response= raises TypeError", True)
+    except Exception as exc:  # noqa: BLE001
+        R.check(f"passing sync_response= raises TypeError, not "
+                f"{type(exc).__name__}", False, str(exc))
+
+
+def test_there_was_nothing_to_wait_on():
+    R.section("NON-TAUTOLOGICAL — why it was removed rather than implemented")
+
+    import ast
+    import importlib
+
+    mod = importlib.import_module(
+        "FMOFP.local_messaging.routing.handlers.system_message_handlers."
+        "RadarMessageHandler")
+
+    pending = mod.PendingRequest("status", "weather_radar", 0.0)
+    for slot in ("response", "completed", "result", "event"):
+        R.check(f"PendingRequest has no {slot!r} slot for a waiter to read",
+                not hasattr(pending, slot), str(sorted(vars(pending))))
+    for method in ("set_response", "set_completed"):
+        R.check(f"...and no {method}()", not hasattr(pending, method))
+
+    # The entries are only ever assigned whole and deleted. Nothing stores
+    # what came back, so a wait would have had nothing to return.
+    tree = ast.parse(inspect.getsource(mod))
+    assigned = deleted = attr_written = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if (isinstance(t, ast.Subscript)
+                        and isinstance(t.value, ast.Attribute)
+                        and t.value.attr == "pending_requests"):
+                    assigned += 1
+                if (isinstance(t, ast.Attribute)
+                        and isinstance(t.value, ast.Subscript)
+                        and isinstance(t.value.value, ast.Attribute)
+                        and t.value.value.attr == "pending_requests"):
+                    attr_written += 1
+        if isinstance(node, ast.Delete):
+            for t in node.targets:
+                if (isinstance(t, ast.Subscript)
+                        and isinstance(t.value, ast.Attribute)
+                        and t.value.attr == "pending_requests"):
+                    deleted += 1
+
+    R.check("pending_requests entries are assigned whole", assigned >= 1,
+            str(assigned))
+    R.check("...and deleted at several sites", deleted >= 3, str(deleted))
+    R.check("...and no field on an entry is ever written, so no response is "
+            "kept for a waiter", attr_written == 0, str(attr_written))
+
+    # And the scanner can see such a write when there is one, or the check
+    # above passes for the wrong reason.
+    planted = ast.parse("self.pending_requests[rid].response = msg")
+    planted_hits = sum(
+        1 for n in ast.walk(planted)
+        if isinstance(n, ast.Assign)
+        for t in n.targets
+        if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Subscript))
+    R.check("the scanner flags a planted response write", planted_hits == 1,
+            str(planted_hits))
+
+
 def main():
     print("=" * 60)
     print("  The bus send path: termination and bounds")
     print("=" * 60)
 
-    for test in (test_block_transfer_split_terminates,
+    for test in (test_no_await_on_an_undefined_method,
+                 test_there_was_nothing_to_wait_on,
+                 test_block_transfer_split_terminates,
                  test_both_senders_carry_the_fix,
                  test_bus_adapter_sets_a_socket_timeout,
                  test_handler_dispatch_does_not_time_out_by_construction,

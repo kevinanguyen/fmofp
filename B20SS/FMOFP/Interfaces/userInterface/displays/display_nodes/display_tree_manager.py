@@ -14,15 +14,6 @@ from .display_node_base import DisplayNode
 from .mode_node import ModeNode
 from .visual_node import VisualNode
 # Import display-local modules
-from ...messaging.display_message_types import (
-    WEATHER_RADAR_MODE_STANDBY,
-    WEATHER_RADAR_MODE_ACTIVE,
-    WEATHER_RADAR_MODE_CHANGE_REQUEST,
-    WEATHER_RADAR_MODE_CHANGE_RESPONSE
-)
-from ...messaging.display_address_utils import (
-    RADAR_DISPLAY_SUBADDRESS
-)
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()
@@ -242,7 +233,6 @@ class DisplayTreeManager:
                 try:
                     # Import here to avoid circular imports
                     from ..radar.weather_radar_display import WeatherRadarDisplay
-                    from ..radar.radar_display_data_coordinator import get_radar_display_data_coordinator
                     
                     # Find any existing WeatherRadarDisplay instances
                     # First, check if we can get the display instance from the widget system
@@ -250,7 +240,7 @@ class DisplayTreeManager:
                         from ..radar.weather_radar_widget import get_weather_radar_widget
                         widget = get_weather_radar_widget()
                         if widget and hasattr(widget, 'display') and isinstance(widget.display, WeatherRadarDisplay):
-                            logger.debug(f"[DISPLAY_TREE] Found WeatherRadarDisplay instance in widget")
+                            logger.debug("[DISPLAY_TREE] Found WeatherRadarDisplay instance in widget")
                             display = widget.display
                             # Add the display as a subscriber to the radar node
                             if hasattr(display, '_handle_data_update'):
@@ -287,12 +277,12 @@ class DisplayTreeManager:
                 mode.transition_timestamp = time.time()
                 mode.mode_history.append(("STANDBY", time.time()))
                 radar.add_child(mode)
-                logger.info(f"[DISPLAY_TREE] Created node: mode")
+                logger.info("[DISPLAY_TREE] Created node: mode")
                 
                 # Create visual node using VisualSettingsManager
                 visual = VisualNode("visual", radar)
                 radar.add_child(visual)
-                logger.info(f"[DISPLAY_TREE] Created node: visual")
+                logger.info("[DISPLAY_TREE] Created node: visual")
                 
                 # Initialize visual settings using the manager
                 from ..utils.visual_settings_manager import get_visual_settings_manager
@@ -303,13 +293,13 @@ class DisplayTreeManager:
                 
                 # Update the visual node with the settings
                 await visual.update(manager.get_settings())
-                logger.info(f"[DISPLAY_TREE] Initialized visual settings using VisualSettingsManager")
+                logger.info("[DISPLAY_TREE] Initialized visual settings using VisualSettingsManager")
                 
                 # Add data nodes for weather radar
                 if radar_type == "weather_radar":
                     data = DisplayNode("data", radar)
                     radar.add_child(data)
-                    logger.info(f"[DISPLAY_TREE] Created node: data")
+                    logger.info("[DISPLAY_TREE] Created node: data")
                     
                     for data_type in ["precipitation", "vil", "cells"]:
                         node = DisplayNode(data_type, data)
@@ -540,7 +530,7 @@ class DisplayTreeManager:
         mode.mode_enum = get_radar_enum(radar_type) or FallbackMode
         mode.transition_timestamp = time.time()
         mode.mode_history.append(("STANDBY", time.time()))
-        logger.info(f"[DISPLAY_TREE] Created node: mode")
+        logger.info("[DISPLAY_TREE] Created node: mode")
         return mode
 
     def create_visual_node(self, radar_type: str) -> VisualNode:

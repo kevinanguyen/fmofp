@@ -2,9 +2,8 @@
 Precipitation data processor for weather radar display.
 Handles various formats of precipitation data.
 """
-import time
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

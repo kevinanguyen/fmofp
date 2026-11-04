@@ -19,7 +19,6 @@ Consumed by:
 Singleton: get_sensor_data_fusion()
 """
 
-import math
 import threading
 import time
 from dataclasses import dataclass, field

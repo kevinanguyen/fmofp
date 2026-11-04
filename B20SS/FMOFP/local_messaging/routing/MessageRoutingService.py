@@ -276,7 +276,7 @@ class MessageRoutingService:
                             command_type='mode_change',
                             command_data=enhanced_command_data
                         )
-                        logger.warning(f"[DISPLAY_MODE] Sent mode change through display message handler")
+                        logger.warning("[DISPLAY_MODE] Sent mode change through display message handler")
                     else:
                         logger.error(f"[DISPLAY_MODE] Unknown mode: {mode}, cannot map to RadarDisplayMode")
             except Exception as handler_error:
@@ -336,7 +336,7 @@ class MessageRoutingService:
             logger.info(f"Retrieved {len(mode_changes)} mode changes for {radar_type}")
             return mode_changes
         except Exception as e:
-            logger.error(f"Error getting mode changes: {e}")
+            logger.error(f"Error getting mode changes: {e}", exc_info=True)
             return []
 
     async def get_command_acknowledgments(self, radar_type: Optional[str] = None,
@@ -353,7 +353,8 @@ class MessageRoutingService:
             logger.info(f"Retrieved {len(acknowledgments)} acknowledgments for {radar_type}")
             return acknowledgments
         except Exception as e:
-            logger.error(f"Error getting command acknowledgments: {e}")
+            logger.error(f"Error getting command acknowledgments: {e}",
+                         exc_info=True)
             return []
 
     async def _ensure_vil_service(self):
@@ -401,7 +402,6 @@ class MessageRoutingService:
             logger.warning("[LOC_MSG_RT_SERV_PRECIP_FLOW] Precipitation Response Service not found in system manager - creating fallback instance")
             # Create a new Precipitation Response Service instance
             from FMOFP.local_messaging.routing.response_services.data_response_services.precipitation_response_service import get_precipitation_response_service
-            from FMOFP.storage.DBM import DatabaseManager
 
             # Get the service using the singleton
             precip_service = get_precipitation_response_service()
@@ -518,7 +518,7 @@ class MessageRoutingService:
             from FMOFP.local_messaging.messageConfigurations.weather_radar_data import PrecipitationData
 
             # Log detailed message for debugging
-            logger.info(f"[PRECIPITATION_FLOW] Routing precipitation data to display system")
+            logger.info("[PRECIPITATION_FLOW] Routing precipitation data to display system")
             logger.info(f"[PRECIPITATION_FLOW] Precipitation data type: {type(precipitation_data)}")
 
             # Enhanced data conversion with better null handling
@@ -649,7 +649,7 @@ class MessageRoutingService:
                             # Try to convert to string and extract key information
                             data_str = str(data_point)
                             if 'position' in data_str or 'type' in data_str:
-                                logger.info(f"[PRECIPITATION_FLOW] Attempting to parse data from string representation")
+                                logger.info("[PRECIPITATION_FLOW] Attempting to parse data from string representation")
 
                                 # Create a default precipitation object and continue
                                 precip_obj = PrecipitationData(
@@ -1109,13 +1109,13 @@ class MessageRoutingService:
             # Check if this message is marked as already processed
             if isinstance(metadata, dict):
                 if metadata.get('_processed_by_routing_service'):
-                    logger.warning(f"[ROUTE] BREAKING LOOP - Message already processed by routing service")
+                    logger.warning("[ROUTE] BREAKING LOOP - Message already processed by routing service")
                     return True
                 if metadata.get('_prevent_rerouting'):
-                    logger.warning(f"[ROUTE] BREAKING LOOP - Message has _prevent_rerouting flag")
+                    logger.warning("[ROUTE] BREAKING LOOP - Message has _prevent_rerouting flag")
                     return True
                 if metadata.get('final_delivery_to_display'):
-                    logger.warning(f"[ROUTE] BREAKING LOOP - Message marked as final delivery")
+                    logger.warning("[ROUTE] BREAKING LOOP - Message marked as final delivery")
                     return True
 
                 # Mark message as processed by routing service
@@ -1137,7 +1137,7 @@ class MessageRoutingService:
                         self._routed_messages.pop()
 
             # Log message details for debugging
-            logger.info(f"[ROUTE] Routing message:")
+            logger.info("[ROUTE] Routing message:")
             logger.info(f"[ROUTE]   Message ID: {message_id}")
             logger.info(f"[ROUTE]   System: {getattr(message, 'destination', None)}")
             logger.info(f"[ROUTE]   Message type: {getattr(message, 'message_type', None)}")

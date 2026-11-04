@@ -1,4 +1,3 @@
-import FMOFP.Utils.common.fetching as fetching
 import time
 import threading
 from FMOFP.Utils.logger.sys_logger import get_logger

@@ -6,14 +6,12 @@ Maintains physical separation between Bus Controller and Remote Terminal systems
 """
 
 import time
-import logging
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.radar_command_map import (
     is_weather_data_command,
-    get_data_type_from_command,
-    WEATHER_DATA_TYPES
+    get_data_type_from_command
 )
 
 logger = get_logger()

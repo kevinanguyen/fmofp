@@ -8,7 +8,7 @@ Central coordination for routing FMS response messages.
 import asyncio
 import time
 import threading
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

@@ -10,7 +10,7 @@ All methods are thread-safe.
 
 import math
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Any, Tuple
 

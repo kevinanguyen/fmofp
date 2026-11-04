@@ -248,36 +248,26 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      - name: Lint with ruff (errors only)
+      - name: Lint with ruff
         # NOTE (production readiness re-analysis, August 2026): this step's
         # own output was piped through `|| true`, so it has never once been
         # able to fail a CI run, regardless of what ruff found -- a lint job
         # that can't fail isn't actually gating anything. Running this same
         # check manually against the repo for the first time this session
-        # found 70 real F821 (undefined-name) bugs across 13 files (missing
-        # imports, never-extracted variables -- the exact "NameError when
-        # this code path executes" class of bug this session has repeatedly
-        # found and fixed via live testing) plus 4 duplicate-dict-key
-        # findings, all silently accumulating behind this swallowed exit
-        # code the whole time. All 70+4 are now fixed (one, a reference to a
-        # SchemaManager class that was never implemented anywhere in dead,
-        # unreachable code, is deliberately left as a documented exception
-        # rather than fabricated). Narrowed --select from the F8 prefix down
-        # to F821 specifically (dropping F841/unused-variable and other F8x
-        # codes not yet triaged, to avoid this becoming a large unrelated
-        # cleanup) and removed `|| true`, so a future regression of this
-        # kind will actually fail CI instead of silently passing.
+        # found 70 real F821 (undefined-name) bugs across 13 files plus 4
+        # duplicate-dict-key findings, all silently accumulating behind this
+        # swallowed exit code. All are fixed, and `|| true` is gone.
         #
         # Story C10.1 (September 2026): `--ignore F811` removed. That flag
-        # suppressed exactly the rule that catches a name being defined twice,
-        # and it was hiding 17 real redefinitions -- including
-        # get_command_type/is_command_type defined twice in
-        # display_message_types.py with DIFFERENT bodies (the richer one dead),
-        # an entire duplicated enum+class block in legend_manager.py, and two
-        # duplicated push functions in radar_to_display_bridge.py. All are now
-        # removed and the selector passes clean without the flag, so keeping it
-        # would only let the same class of defect return unseen.
+        # suppressed exactly the rule that catches a name being defined
+        # twice, and it was hiding 17 real redefinitions.
+        #
+        # Story P2-2 (November 2026): the selector and the exclusions now
+        # live in pyproject.toml's [tool.ruff.lint], and this step passes NO
+        # flags at all. Two CI files each carrying their own flags is what
+        # P2-1 was about; one file carrying flags that disagree with the
+        # repo config is the same failure waiting to happen. The gate also
+        # no longer excludes B20SS/FMOFP/Tests -- it passes clean, so there
+        # was nothing left for the exclusion to protect.
         run: |
-          ruff check B20SS/FMOFP \
-            --select E9,F821,F7,F6 \
-            --exclude B20SS/FMOFP/Tests
+          ruff check B20SS/FMOFP

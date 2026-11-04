@@ -6,20 +6,15 @@ Manages LOCAL communication between the main system and the flight management sy
 NOT a remote communication system. (See fmsMessenger.py for FMS Messenger)
 """
 import asyncio
-import sys
 import time
 import uuid
 import traceback
 import threading
-from typing import Dict, Any, Optional, List, Tuple, Union
-import xml.etree.ElementTree as ET
-from FMOFP.local_messaging.routing.handlers.sync_handler.AsyncMessageHandler import AsyncMessageHandler
+from typing import Dict, Any, Optional
 from FMOFP.core.event_driven_communication import get_event_bus
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.local_messaging.messageConfigurations.fms_messages import (
-    create_fms_message, 
-    FMSModeChangeRequest, 
-    FMSCommandRequest
+    create_fms_message
 )
 # Import message loop prevention middleware
 from FMOFP.Utils.message_loop_prevention.middleware import get_loop_prevention_middleware, MessageLoopPreventionMiddleware
@@ -27,7 +22,6 @@ from FMOFP.Utils.message_loop_prevention.middleware import get_loop_prevention_m
 from FMOFP.MIL_STD_1553B.Messaging import send1553Msg
 from FMOFP.MIL_STD_1553B.Bus_Controller.BC_messaging.BC_msg import BC_construct
 from FMOFP.local_messaging.command_word_map_fms import FMS_COMMAND_WORDS
-from FMOFP.local_messaging.command_word_map import register_command_word, validate_command_word
 
 logger = get_logger()
 
@@ -41,7 +35,7 @@ from FMOFP.local_messaging.messageConfigurations.fms_tactical_data import (
     fms_mode_data_words,
 )
 from FMOFP.local_messaging.command_word_map import (
-    MODE_REQUEST_MAP, STATUS_REQUEST_MAP, DATA_REQUEST_MAP
+    MODE_REQUEST_MAP, STATUS_REQUEST_MAP
 )
 
 class PendingRequest:
@@ -364,7 +358,7 @@ class FMSMessageHandler:
                     maneuver_type = data.get('maneuver_type')
                 
                 if not maneuver_type:
-                    logger.error(f"[FMS_MSGR_HNDLR] Missing maneuver type")
+                    logger.error("[FMS_MSGR_HNDLR] Missing maneuver type")
                     return None
                 
                 # Map maneuver type to value - default is 0
@@ -384,7 +378,7 @@ class FMSMessageHandler:
                 if cmd_word_obj:
                     command_word = format(cmd_word_obj.value, '016b')
                 else:
-                    logger.error(f"[FMS_MSGR_HNDLR] No control input command word found")
+                    logger.error("[FMS_MSGR_HNDLR] No control input command word found")
                     return None
                     
                 # Pack control input data into data words
@@ -688,7 +682,7 @@ class FMSMessageHandler:
             # Create a handler that routes FCS mode change messages to the FCS handler
             async def handle_fcs_mode_change(message):
                 """Route mode change messages to FCS handler"""
-                logger.info(f"[FMS_HANDLER] Routing mode change message to FCS handler")
+                logger.info("[FMS_HANDLER] Routing mode change message to FCS handler")
                 if not fcs_handler:
                     logger.error("[FMS_HANDLER] FCS Message Handler not available")
                     return {"status": "ERROR", "message": "FCS Message Handler not available"}
@@ -697,7 +691,7 @@ class FMSMessageHandler:
             # Create a handler that routes FCS control input messages to the FCS handler
             async def handle_fcs_control_input(message):
                 """Route control input messages to FCS handler"""
-                logger.info(f"[FMS_HANDLER] Routing control input message to FCS handler")
+                logger.info("[FMS_HANDLER] Routing control input message to FCS handler")
                 if not fcs_handler:
                     logger.error("[FMS_HANDLER] FCS Message Handler not available")
                     return {"status": "ERROR", "message": "FCS Message Handler not available"}
@@ -706,7 +700,7 @@ class FMSMessageHandler:
             # Create a handler that routes FCS status request messages to the FCS handler
             async def handle_fcs_status(message):
                 """Route status request messages to FCS handler"""
-                logger.info(f"[FMS_HANDLER] Routing status request message to FCS handler")
+                logger.info("[FMS_HANDLER] Routing status request message to FCS handler")
                 if not fcs_handler:
                     logger.error("[FMS_HANDLER] FCS Message Handler not available")
                     return {"status": "ERROR", "message": "FCS Message Handler not available"}
@@ -715,7 +709,7 @@ class FMSMessageHandler:
             # Create a handler that routes FCS orientation data messages to the FCS handler
             async def handle_fcs_orientation(message):
                 """Route orientation data messages to FCS handler"""
-                logger.info(f"[FMS_HANDLER] Routing orientation data message to FCS handler")
+                logger.info("[FMS_HANDLER] Routing orientation data message to FCS handler")
                 if not fcs_handler:
                     logger.error("[FMS_HANDLER] FCS Message Handler not available")
                     return {"status": "ERROR", "message": "FCS Message Handler not available"}
@@ -842,7 +836,7 @@ class FMSMessageHandler:
             if self.loop_prevention:
                 should_process, enhanced_message = self.loop_prevention.process_message(message, "fms_mode_handler")
                 if not should_process:
-                    logger.warning(f"Breaking loop - FMS mode change message already processed")
+                    logger.warning("Breaking loop - FMS mode change message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                 # Use the enhanced message with loop prevention metadata
                 message = enhanced_message
@@ -912,7 +906,7 @@ class FMSMessageHandler:
             if self.loop_prevention:
                 should_process, enhanced_message = self.loop_prevention.process_message(message, "fms_attitude_handler")
                 if not should_process:
-                    logger.warning(f"Breaking loop - FMS attitude message already processed")
+                    logger.warning("Breaking loop - FMS attitude message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                 # Use the enhanced message with loop prevention metadata
                 message = enhanced_message
@@ -971,7 +965,7 @@ class FMSMessageHandler:
             if self.loop_prevention:
                 should_process, enhanced_message = self.loop_prevention.process_message(message, "fms_navigation_handler")
                 if not should_process:
-                    logger.warning(f"Breaking loop - FMS navigation message already processed")
+                    logger.warning("Breaking loop - FMS navigation message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                 # Use the enhanced message with loop prevention metadata
                 message = enhanced_message
@@ -1030,7 +1024,7 @@ class FMSMessageHandler:
             if self.loop_prevention:
                 should_process, enhanced_message = self.loop_prevention.process_message(message, "fms_status_handler")
                 if not should_process:
-                    logger.warning(f"Breaking loop - FMS status message already processed")
+                    logger.warning("Breaking loop - FMS status message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                 # Use the enhanced message with loop prevention metadata
                 message = enhanced_message
@@ -1101,7 +1095,7 @@ class FMSMessageHandler:
             if self.loop_prevention:
                 should_process, enhanced_message = self.loop_prevention.process_message(message, "fms_maneuver_handler")
                 if not should_process:
-                    logger.warning(f"Breaking loop - FMS maneuver message already processed")
+                    logger.warning("Breaking loop - FMS maneuver message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                 # Use the enhanced message with loop prevention metadata
                 message = enhanced_message
@@ -1164,7 +1158,7 @@ class FMSMessageHandler:
             if self.loop_prevention:
                 should_process, enhanced_message = self.loop_prevention.process_message(message, "fms_generic_handler")
                 if not should_process:
-                    logger.warning(f"Breaking loop - FMS generic message already processed")
+                    logger.warning("Breaking loop - FMS generic message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                 # Use the enhanced message with loop prevention metadata
                 message = enhanced_message
@@ -1217,8 +1211,8 @@ class FMSMessageHandler:
             # rather than raising once per expired request later.
             self._loop = None
             logger.warning(
-                f"[FMS_MSG_HNDLR] Started without a running event loop: request "
-                f"timeout notifications will be dropped until one is set"
+                "[FMS_MSG_HNDLR] Started without a running event loop: request "
+                "timeout notifications will be dropped until one is set"
             )
 
     def _notify_request_timed_out(self, request_id, response) -> bool:

@@ -2,8 +2,7 @@
 Display-specific mode change message definitions.
 """
 
-import time
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional
 from .display_message_base import DisplayBaseMessage
 from ..display_message_types import DISPLAY_MODE_CHANGE
 from FMOFP.Utils.logger.sys_logger import get_logger

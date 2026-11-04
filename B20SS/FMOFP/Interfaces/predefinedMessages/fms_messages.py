@@ -4,9 +4,7 @@ Flight Management System (FMS) Messages Module
 Provides predefined messages for the FMS system.
 """
 
-import asyncio
 import uuid
-from typing import Dict, Optional, Any
 
 from FMOFP.Interfaces.predefinedMessages.message_base import PredefinedMessagesBase
 from FMOFP.local_messaging.messageConfigurations.fms_data import (
@@ -366,7 +364,7 @@ class FMSMessages(PredefinedMessagesBase):
                     message.metadata['processed_by'].append('flightManagementSystem')
             
             # For logging purposes
-            self.logger.info(f"[FMS] Message successfully processed")
+            self.logger.info("[FMS] Message successfully processed")
             return True
             
         except Exception as e:

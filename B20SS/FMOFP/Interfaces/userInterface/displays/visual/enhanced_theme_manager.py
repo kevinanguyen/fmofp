@@ -3,8 +3,7 @@ Enhanced theme manager for advanced displays with holographic capabilities
 """
 from PyQt6.QtGui import QColor
 from enum import Enum, auto
-from typing import Dict, Any, Optional
-import math
+from typing import Any
 import time
 from FMOFP.Utils.logger.sys_logger import get_logger
 

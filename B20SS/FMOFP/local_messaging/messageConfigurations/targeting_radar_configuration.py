@@ -5,7 +5,7 @@ Defines configuration message types for targeting radar communication.
 """
 
 from .base_message import BaseMessage, register_message_type
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 class targeting_radarConfiguration(BaseMessage):
     def __init__(self, message_header, sending_system, destination, message_type, config_data: Dict, **kwargs):

@@ -6,7 +6,7 @@ of dense weather data by dividing the screen space into cells and only
 processing/rendering particles that are visible or relevant.
 """
 from PyQt6.QtCore import QRectF, QPointF
-from typing import Dict, Any, List, Tuple, Optional, Set, Callable
+from typing import Dict, Any, List, Tuple, Set
 import math
 import time
 from FMOFP.Utils.logger.sys_logger import get_logger

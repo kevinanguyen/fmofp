@@ -10,7 +10,6 @@ from typing import Dict, Any, Optional
 from FMOFP.Interfaces.userInterface.messaging.displayMessenger import get_display_messenger
 from FMOFP.Interfaces.userInterface.messaging.display_mil_std_1553b import DisplayMIL_STD_1553B_Message
 from FMOFP.Interfaces.userInterface.messaging.display_command_map import DISPLAY_SUBADDRESSES
-from FMOFP.Interfaces.userInterface.messaging.display_address_utils import get_display_rt_address
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

@@ -2,14 +2,12 @@
 Holographic display base class for advanced displays
 """
 from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer
-from PyQt6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath
+from PyQt6.QtGui import QPainter, QColor, QPainterPath
 from .base_display import BaseDisplay, DisplayType
 from .visual.enhanced_theme_manager import get_enhanced_theme_manager
 from .visual.enhanced_effects import get_enhanced_visual_effects
 import math
 import time
-import traceback
-from typing import Dict, List, Optional, Any, Tuple
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

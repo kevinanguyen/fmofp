@@ -6,10 +6,6 @@ Specialized handling for message formats in the radar system context, including
 precipitation, VIL data, and mode changes.
 """
 
-import sys
-import os
-import time
-from typing import Dict, Any, List, Union, Optional
 
 # Import the base class
 from FMOFP.Utils.common.universal_message_extractor import UniversalMessageExtractor

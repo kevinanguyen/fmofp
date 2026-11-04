@@ -8,7 +8,6 @@ Similar to RadarResponseService but adapted for display operations.
 import asyncio
 import traceback
 import time
-import sys
 import uuid
 from dataclasses import dataclass
 from typing import Dict, Optional, Any, List, Tuple, Union
@@ -418,7 +417,7 @@ class DisplayResponseService:
             from FMOFP.local_messaging.messageConfigurations.weather_radar_data import WeatherRadarVILData
             
             # Log detailed message for debugging
-            logger.info(f"[VIL_FLOW] Routing VIL data to display system")
+            logger.info("[VIL_FLOW] Routing VIL data to display system")
             logger.info(f"[VIL_FLOW] VIL data type: {type(vil_data)}")
             
             # Enhanced data conversion with better null handling
@@ -547,7 +546,7 @@ class DisplayResponseService:
                             # Try to convert to string and extract key information
                             data_str = str(data_point)
                             if 'position' in data_str or 'value' in data_str:
-                                logger.info(f"[VIL_FLOW] Attempting to parse data from string representation")
+                                logger.info("[VIL_FLOW] Attempting to parse data from string representation")
                                 
                                 # Create a default VIL object and continue
                                 vil_obj = WeatherRadarVILData(
@@ -936,7 +935,7 @@ class DisplayResponseService:
                 elif command.display_type == 'radar_display':
                     # Also map display_type for DisplayCommand objects
                     command.display_type = 'weather_radar'
-                    logger.info(f"[DISPLAY_RESPONSE] Mapped radar_display to weather_radar in DisplayCommand")
+                    logger.info("[DISPLAY_RESPONSE] Mapped radar_display to weather_radar in DisplayCommand")
                 
                 # Generate a unique transaction ID for this command if not present
                 if not command.additional_info:
@@ -1089,7 +1088,7 @@ class DisplayResponseService:
                                     command_data=enhanced_command_data
                                 )
                                 
-                                logger.debug(f"[DISPLAY_RESPONSE] Sent mode change request through proper channel (from completion message)")
+                                logger.debug("[DISPLAY_RESPONSE] Sent mode change request through proper channel (from completion message)")
                                 
                             else:
                                 logger.error(f"[DISPLAY_RESPONSE] Unknown mode: {mode}, cannot map to RadarDisplayMode for {radar_type}")
@@ -1108,7 +1107,7 @@ class DisplayResponseService:
                     
                     if is_status_word:
                         # This is just a status word acknowledgment, not a real mode change
-                        logger.debug(f"[DISPLAY_RESPONSE] Processing status word acknowledgment directly")
+                        logger.debug("[DISPLAY_RESPONSE] Processing status word acknowledgment directly")
                         # Store it but don't process it as a mode change or forward to AsyncMessageHandler
                         if not command.additional_info:
                             command.additional_info = {}
@@ -1183,7 +1182,7 @@ class DisplayResponseService:
                                     command_data=enhanced_command_data
                                 )
                                 
-                                logger.warning(f"[DISPLAY_RESPONSE] Sent mode change request through proper channel")
+                                logger.warning("[DISPLAY_RESPONSE] Sent mode change request through proper channel")
                             else:
                                 logger.error(f"[DISPLAY_RESPONSE] Unknown mode: {mode}, cannot map to RadarDisplayMode")
             
@@ -1270,7 +1269,7 @@ class DisplayResponseService:
             
             # Do not store acknowledged display commands
             if command.status == 'acknowledged' or command.additional_info.get('status') == 'acknowledged' or skip_storage == True:
-                logger.info(f"[DISPLAY_RESPONSE] Command status is acknowledged, skipping storage")
+                logger.info("[DISPLAY_RESPONSE] Command status is acknowledged, skipping storage")
                 skip_storage = True
             
             
@@ -1473,12 +1472,12 @@ class DisplayResponseService:
                 
                 # Route the event through the message routing service
                 await self.routing_service.route_event(event_data)
-                logger.warning(f"[DISPLAY_MODE] Published mode change event successfully")
+                logger.warning("[DISPLAY_MODE] Published mode change event successfully")
                 
                 # For completion messages, we don't need to send another mode change request
                 # This is the key fix to prevent the looping issue
                 if is_completion:
-                    logger.warning(f"[DISPLAY_MODE] Skipping additional mode change request for completion message")
+                    logger.warning("[DISPLAY_MODE] Skipping additional mode change request for completion message")
                     return
 
             logger.warning(f"[DISPLAY_MODE] Updated display mode state: {display_type} -> {mode}")

@@ -13,9 +13,6 @@ This class extracts and normalizes message fields from various formats including
 """
 
 import time
-import uuid
-import traceback
-from typing import Dict, Any, List, Tuple, Union, Optional
 
 # Import system logger
 try:
@@ -148,7 +145,7 @@ class UniversalMessageExtractor:
                         'raw_frame': message,
                         'message_type': 'data_word'
                     }
-                    self.logger.info(f"Normalized binary data word")
+                    self.logger.info("Normalized binary data word")
                 else:
                     # Other binary format
                     message = {
@@ -511,7 +508,7 @@ class UniversalMessageExtractor:
         # Import message definitions
         try:
             from FMOFP.local_messaging.messageConfigurations.message_definitions import (
-                MessageDefinitions, MessageHeaders
+                MessageDefinitions, MessageHeaders  # noqa: F401
             )
             using_message_definitions = True
         except ImportError:

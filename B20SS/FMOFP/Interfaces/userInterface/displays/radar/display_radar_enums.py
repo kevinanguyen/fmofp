@@ -7,7 +7,7 @@ the values defined in radar_display_modes.py to ensure consistent mode handling
 across system and display boundaries.
 """
 
-from enum import Enum, auto
+from enum import Enum
 from FMOFP.local_messaging.radar_display_modes import RadarDisplayMode
 
 class BaseDisplayRadarMode(Enum):

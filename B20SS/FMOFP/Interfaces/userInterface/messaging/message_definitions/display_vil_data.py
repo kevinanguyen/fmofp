@@ -2,8 +2,7 @@
 Display-specific VIL data message definitions.
 """
 
-import time
-from typing import Dict, Any, Optional, Tuple, List, Union
+from typing import Dict, Any, Optional, Tuple, List
 from .display_message_base import DisplayBaseMessage
 from ..display_message_types import DISPLAY_VIL_DATA
 from FMOFP.Utils.logger.sys_logger import get_logger

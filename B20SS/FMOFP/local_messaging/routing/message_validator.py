@@ -276,7 +276,7 @@ class MessageValidator:
             # We want at least one UUID field for proper message tracking
             return True
         else:
-            self.logger.warning(f"[MSG_VALIDATOR] No UUID fields found in message")
+            self.logger.warning("[MSG_VALIDATOR] No UUID fields found in message")
             
             # If no UUID fields, but command_name is present, still consider partially valid
             if command_name:

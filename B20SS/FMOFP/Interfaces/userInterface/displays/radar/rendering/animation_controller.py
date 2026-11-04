@@ -5,13 +5,12 @@ This module provides a more sophisticated animation system for weather radar
 visualization, including temporal buffering, animation phases, and configurable
 animation parameters.
 """
-from PyQt6.QtCore import QTimer, QObject, pyqtSignal, QRectF
-from typing import Dict, Any, List, Tuple, Optional, Callable
+from PyQt6.QtCore import QTimer, QObject, pyqtSignal
+from typing import Dict, Any, List, Tuple, Optional
 import time
 import math
 import random
 import copy
-import uuid
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

@@ -9,7 +9,7 @@ This is critical for compliance with the MIL-STD-1553B protocol, which requires 
 message type identification and handling.
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

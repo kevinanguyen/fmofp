@@ -26,7 +26,6 @@ for _p in (_B20SS, os.path.join(_B20SS, 'FMOFP')):
 from PyQt6.QtWidgets import QApplication as _QApp
 _APP = _QApp.instance() or _QApp(sys.argv)
 
-import time
 import traceback
 
 from FMOFP.Utils.logger.sys_logger import get_logger
@@ -336,7 +335,6 @@ def test_eicas_compute_alerts(r: _Results) -> None:
             any("VIBRATION HIGH" in t for t in reachable), str(reachable))
 
     # NON-TAUTOLOGICAL: the pre-fix generators could not reach those limits.
-    import math as _m
     psi_range  = (60 - 4, 60 + 4)
     temp_range = (92 - 8, 92 + 8)
     vib_range  = (0.2, 0.2 + 0.15)

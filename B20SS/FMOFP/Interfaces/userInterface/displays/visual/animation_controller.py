@@ -2,9 +2,8 @@
 Animation controller for smooth transitions and effects in displays
 """
 from PyQt6.QtCore import QTimer, QObject, QEasingCurve
-from typing import Dict, Any, Optional, Callable, List, Tuple
+from typing import Dict, Optional, Callable, List
 import time
-import math
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

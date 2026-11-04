@@ -4,9 +4,7 @@ AEWC (Airborne Early Warning and Control) Radar Messages Module
 Provides predefined messages for the AEWC radar system.
 """
 
-import asyncio
 import uuid
-from typing import Dict, Optional, Any
 
 from FMOFP.Interfaces.predefinedMessages.message_base import PredefinedMessagesBase
 from FMOFP.Interfaces.predefinedMessages.radar_enums import aewc_radarMode
@@ -325,7 +323,7 @@ class AEWCRadarMessages(PredefinedMessagesBase):
                     message.metadata['processed_by'].append('aewc_radar')
             
             # For logging purposes
-            self.logger.info(f"[AEWC_RADAR] Message successfully processed")
+            self.logger.info("[AEWC_RADAR] Message successfully processed")
             return True
             
         except Exception as e:

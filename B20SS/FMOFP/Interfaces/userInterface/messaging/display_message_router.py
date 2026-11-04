@@ -8,21 +8,12 @@ Includes message loop prevention to avoid circular message processing.
 
 import traceback
 import time
-import uuid
-from typing import Dict, Any, Optional, Tuple, List, Union
+from typing import Dict, Any, Optional
 from FMOFP.Utils.logger.sys_logger import get_logger
 from .display_message_types import (
-    DISPLAY_VIL_DATA, DISPLAY_PRECIPITATION_DATA, DISPLAY_ECHO_TOP_DATA, DISPLAY_STORM_CELL_DATA,
-    DISPLAY_COMMAND_TYPE_SHOW, DISPLAY_COMMAND_TYPE_MODE, DISPLAY_COMMAND_TYPE_DATA, DISPLAY_COMMAND_TYPE_STATUS,
-    DISPLAY_COMMAND_TYPE_MODE_CHANGE, DISPLAY_COMMAND_TYPE_MODE_CHANGE_COMPLETE,
-    DISPLAY_COMMAND_TYPE_VIL_DATA, DISPLAY_COMMAND_TYPE_PRECIPITATION_DATA,
-    get_message_type, get_command_type, is_message_type, is_command_type,
-    is_vil_message, is_precipitation_message, is_mode_change_message,
-    translate_message_type
-)
-from .display_address_utils import (
-    get_display_rt_address, get_display_subaddress,
-    get_subaddress_info, is_display_rt_address, is_display_subaddress
+    DISPLAY_VIL_DATA, DISPLAY_PRECIPITATION_DATA, DISPLAY_COMMAND_TYPE_SHOW, DISPLAY_COMMAND_TYPE_MODE, DISPLAY_COMMAND_TYPE_STATUS,
+    DISPLAY_COMMAND_TYPE_MODE_CHANGE, DISPLAY_COMMAND_TYPE_VIL_DATA, DISPLAY_COMMAND_TYPE_PRECIPITATION_DATA,
+    get_message_type, get_command_type, is_message_type, is_vil_message, is_precipitation_message, is_mode_change_message
 )
 from .display_mil_std_1553b import DisplayMIL_STD_1553B_Message
 
@@ -141,7 +132,7 @@ class DisplayMessageRouter:
         """
         try:
             # DATA FLOW TRACKING - Critical message flow logging
-            logger.info(f"[DATA_FLOW_TRACKING] ====== DisplayMessageRouter.route_message ENTRY ======")
+            logger.info("[DATA_FLOW_TRACKING] ====== DisplayMessageRouter.route_message ENTRY ======")
             logger.info(f"[DATA_FLOW_TRACKING] Message of type {type(message)} received for routing")
             
             # LOOP PREVENTION: Check if message has already been processed
@@ -181,11 +172,11 @@ class DisplayMessageRouter:
 
             if message_type is None:
                 logger.error("[DISPLAY_ROUTER] Could not determine message type for routing")
-                logger.error(f"[DATA_FLOW_TRACKING] ERROR: No message_type found for routing")
+                logger.error("[DATA_FLOW_TRACKING] ERROR: No message_type found for routing")
                 return False
             if command_type is None:
                 logger.error("[DISPLAY_ROUTER] Could not determine command type for routing")
-                logger.error(f"[DATA_FLOW_TRACKING] ERROR: No command_type found for routing")
+                logger.error("[DATA_FLOW_TRACKING] ERROR: No command_type found for routing")
                 return False
             
             # DETAILED MESSAGE CONTENT LOGGING
@@ -341,19 +332,19 @@ class DisplayMessageRouter:
                         if is_precipitation_data and 'precipitation_data' in self._handlers:
                             if not any(handler_type == 'precipitation_data' for handler_type, _ in applicable_handlers):
                                 applicable_handlers.append(('precipitation_data', self._handlers['precipitation_data']))
-                                logger.info(f"[DISPLAY_ROUTER] Added precipitation_data handler")
+                                logger.info("[DISPLAY_ROUTER] Added precipitation_data handler")
                     
                     # Handle VIL data
                     if self._contains_vil_data(message, metadata) or routing_type.lower() == 'vil_data':
                         if 'vil_data' in self._handlers:
                             if not any(handler_type == 'vil_data' for handler_type, _ in applicable_handlers):
                                 applicable_handlers.append(('vil_data', self._handlers['vil_data']))
-                                logger.info(f"[DISPLAY_ROUTER] Added vil_data handler")
+                                logger.info("[DISPLAY_ROUTER] Added vil_data handler")
                     
                     # Handle data messages
                     if routing_type.lower() == 'data' and 'data' in self._handlers:
                         applicable_handlers.append(('data', self._handlers['data']))
-                        logger.info(f"[DISPLAY_ROUTER] Added data handler")
+                        logger.info("[DISPLAY_ROUTER] Added data handler")
                     
                     # Try partial matching for data types
                     for registered_type, handler in self._handlers.items():
@@ -366,7 +357,7 @@ class DisplayMessageRouter:
                                 
                             # Special case for VIL data - ensure it's actually VIL data before routing
                             if 'vil' in registered_type.lower() and not self._contains_vil_data(message, metadata):
-                                logger.warning(f"[DISPLAY_ROUTER] Message doesn't contain VIL data, skipping VIL handler")
+                                logger.warning("[DISPLAY_ROUTER] Message doesn't contain VIL data, skipping VIL handler")
                                 continue
                                 
                             # Add to applicable handlers if not already added and is a data type
@@ -799,8 +790,8 @@ class DisplayMessageRouter:
         """
         try:
             # Log the message type and metadata
-            logger.info(f"[DISPLAY_ROUTE] Detected VIL data message")
-            logger.info(f"[VIL_FLOW] Display message router handling VIL data")
+            logger.info("[DISPLAY_ROUTE] Detected VIL data message")
+            logger.info("[VIL_FLOW] Display message router handling VIL data")
             
             # Extract the display tree manager reference
             if not self._tree_manager:
@@ -844,7 +835,7 @@ class DisplayMessageRouter:
                     # Convert non-list data to list for consistent handling
                     if not isinstance(vil_data, list):
                         vil_data = [vil_data]
-                        logger.info(f"[DISPLAY_ROUTE] Converted VIL data to list format with 1 item")
+                        logger.info("[DISPLAY_ROUTE] Converted VIL data to list format with 1 item")
             else:
                 logger.error("[DISPLAY_ROUTE] No VIL data found in message")
                 
@@ -1091,7 +1082,6 @@ class DisplayMessageRouter:
                 if isinstance(current_visual, dict):
                     # Import needed modules
                     import copy
-                    import uuid
                     
                     # Update with VIL display flags
                     visual_update = copy.deepcopy(current_visual)
@@ -1104,11 +1094,11 @@ class DisplayMessageRouter:
                     
                     # Update visual node to trigger display refresh
                     await visual_node.update(visual_update)
-                    logger.info(f"[DISPLAY_ROUTE] Forced visual update to show VIL")
+                    logger.info("[DISPLAY_ROUTE] Forced visual update to show VIL")
             
             # Notify subscribers of VIL data update with high importance logging
             radar_node.notify_subscribers()
-            logger.info(f"[DISPLAY_ROUTE] NOTIFICATION SENT: VIL data update to all subscribers")
+            logger.info("[DISPLAY_ROUTE] NOTIFICATION SENT: VIL data update to all subscribers")
             
             # Additionally, publish an event to ensure everything gets notified
             from FMOFP.core.event_driven_communication import get_event_bus, Event
@@ -1116,11 +1106,11 @@ class DisplayMessageRouter:
             event_data = {'type': 'vil_update', 'timestamp': time.time(), 'count': len(vil_data)}
             event = Event('weather_radar_update', event_data)
             event_bus.publish(event)
-            logger.info(f"[DISPLAY_ROUTE] Published weather_radar_update event for VIL data")
+            logger.info("[DISPLAY_ROUTE] Published weather_radar_update event for VIL data")
             
             # Log specific messages required for verification testing
-            logger.info(f"VIL data stored successfully")
-            logger.info(f"VIL data ready for display")
+            logger.info("VIL data stored successfully")
+            logger.info("VIL data ready for display")
             
             return True
             
@@ -1142,7 +1132,7 @@ class DisplayMessageRouter:
         """
         try:
             # Log the message type and metadata
-            logger.info(f"[DISPLAY_ROUTE] Detected precipitation data message")
+            logger.info("[DISPLAY_ROUTE] Detected precipitation data message")
             
             # Extract the display tree manager reference
             if not self._tree_manager:
@@ -1243,7 +1233,7 @@ class DisplayMessageRouter:
                     # Convert non-list data to list for consistent handling
                     if not isinstance(precipitation_data, list):
                         precipitation_data = [precipitation_data]
-                        logger.info(f"[DISPLAY_ROUTE] Converted precipitation data to list format")
+                        logger.info("[DISPLAY_ROUTE] Converted precipitation data to list format")
             # Get the radar display node
             radar_node = self._tree_manager.root.get_child("weather_radar")
             if not radar_node:
@@ -1394,7 +1384,6 @@ class DisplayMessageRouter:
                 # For raw integers (binary data), create a proper precipitation data object
                 if isinstance(item, int):
                     # Convert the integer to a dictionary with proper ID
-                    from ...userInterface.messaging.display_weather_radar_data import DisplayPrecipitationData
 
                     # Extract data from the binary format
                     pos_word = item
@@ -1509,11 +1498,11 @@ class DisplayMessageRouter:
                     
                     # Update visual node to trigger display refresh
                     await visual_node.update(visual_update)
-                    logger.info(f"[DISPLAY_ROUTE] Forced visual update to show precipitation")
+                    logger.info("[DISPLAY_ROUTE] Forced visual update to show precipitation")
             
             # Notify subscribers of precipitation data update with high importance logging
             radar_node.notify_subscribers()
-            logger.info(f"[DISPLAY_ROUTE] NOTIFICATION SENT: Precipitation data update to all subscribers")
+            logger.info("[DISPLAY_ROUTE] NOTIFICATION SENT: Precipitation data update to all subscribers")
             
             # Additionally, publish an event to ensure everything gets notified
             from FMOFP.core.event_driven_communication import get_event_bus, Event
@@ -1521,11 +1510,11 @@ class DisplayMessageRouter:
             event_data = {'type': 'precipitation_update', 'timestamp': time.time(), 'count': len(rich_precipitation_data)}
             event = Event('weather_radar_update', event_data)
             event_bus.publish(event)
-            logger.info(f"[DISPLAY_ROUTE] Published weather_radar_update event for precipitation data")
+            logger.info("[DISPLAY_ROUTE] Published weather_radar_update event for precipitation data")
             
             # Log specific messages required for verification testing
-            logger.info(f"Precipitation data stored successfully")
-            logger.info(f"Precipitation data ready for display")
+            logger.info("Precipitation data stored successfully")
+            logger.info("Precipitation data ready for display")
             
             return True
             
@@ -1556,7 +1545,7 @@ class DisplayMessageRouter:
                 from ..displays.display_nodes import DisplayNode
                 mode_node = DisplayNode("mode", parent=radar_node)
                 radar_node.add_child(mode_node)
-                logger.warning(f"[DISPLAY_ROUTE] Added child mode to radar node")
+                logger.warning("[DISPLAY_ROUTE] Added child mode to radar node")
             
             # Map mode value to mode name
             mode = None
@@ -1596,10 +1585,10 @@ class DisplayMessageRouter:
             await mode_node.update_state(mode_data)
             
             # Log specific messages needed by test
-            logger.info(f"Mode change in progress")
+            logger.info("Mode change in progress")
             logger.info(f"Mode transition to {mode}")
             logger.info(f"Mode updated to {mode}")
-            logger.info(f"Mode change completed")
+            logger.info("Mode change completed")
             
             # Get or create visual node for display updates
             visual_node = radar_node.get_child("visual")
@@ -1607,7 +1596,7 @@ class DisplayMessageRouter:
                 from ..displays.display_nodes import DisplayNode
                 visual_node = DisplayNode("visual", parent=radar_node)
                 radar_node.add_child(visual_node)
-                logger.warning(f"[DISPLAY_ROUTE] Added child visual to radar node")
+                logger.warning("[DISPLAY_ROUTE] Added child visual to radar node")
                 
             # Create visual data based on mode
             visual_data = {
@@ -1653,7 +1642,7 @@ class DisplayMessageRouter:
         """
         try:
             # Log the message type and metadata
-            logger.info(f"[DISPLAY_ROUTE] Detected mode change message")
+            logger.info("[DISPLAY_ROUTE] Detected mode change message")
             
             # Extract the display tree manager reference
             if not self._tree_manager:
@@ -1782,7 +1771,7 @@ class DisplayMessageRouter:
                 elif isinstance(data, str) and len(data) >= 16:
                     # Skip mode extraction for VIL completion messages
                     if hasattr(message, 'message_type') and ('vilcompletion' in message.message_type.lower() or 'vil_completion' in message.message_type.lower()):
-                        logger.info(f"[DISPLAY_ROUTE] Skipping mode extraction for VIL completion message")
+                        logger.info("[DISPLAY_ROUTE] Skipping mode extraction for VIL completion message")
                     # Only extract mode from binary data for mode change messages
                     elif (hasattr(message, 'message_type') and 'mode' in message.message_type.lower()) or \
                          (hasattr(message, 'command_type') and 'mode' in message.command_type.lower()):
@@ -1809,7 +1798,7 @@ class DisplayMessageRouter:
                         except ValueError:
                             logger.error(f"[DISPLAY_ROUTE] Could not parse binary data: {data}")
                     else:
-                        logger.info(f"[DISPLAY_ROUTE] Skipping mode extraction for non-mode message with binary data")
+                        logger.info("[DISPLAY_ROUTE] Skipping mode extraction for non-mode message with binary data")
                 elif isinstance(data, int):
                     # For integer data, extract mode from upper byte
                     mode_value = (data >> 8) & 0xFF
@@ -2032,7 +2021,7 @@ class DisplayMessageRouter:
                                 else:
                                     # Try enum approach as a fallback
                                     try:
-                                        from ..displays.radar.display_radar_enums import radar_display_mode_map, get_display_mode_class
+                                        from ..displays.radar.display_radar_enums import get_display_mode_class
                                         mode_enum_class = get_display_mode_class(display_id)
                                         mode_enum = mode_enum_class[mode]
                                         mode_value = mode_enum.value
@@ -2054,7 +2043,7 @@ class DisplayMessageRouter:
                                         except Exception as rdm_error:
                                             logger.error(f"[DISPLAY_ROUTE] Error using RadarDisplayMode: {str(rdm_error)}")
                                             mode_value = 0
-                                            logger.warning(f"[DISPLAY_ROUTE] After all fallbacks failed, defaulting to STANDBY (0)")
+                                            logger.warning("[DISPLAY_ROUTE] After all fallbacks failed, defaulting to STANDBY (0)")
                             except Exception as e:
                                 logger.error(f"[DISPLAY_ROUTE] Complete failure in mode conversion: {str(e)}")
                                 # Last resort: use a comprehensive map based on RADAR_MODES.md
@@ -2114,7 +2103,7 @@ class DisplayMessageRouter:
                         # Don't return False here, continue with the mode string even if we couldn't get a value
                         logger.warning(f"[DISPLAY_ROUTE] Continuing with mode string: {mode}")
             except ImportError:
-                logger.error(f"[DISPLAY_ROUTE] Could not import weather_radarMode enum, using mode as is")
+                logger.error("[DISPLAY_ROUTE] Could not import weather_radarMode enum, using mode as is")
                 
             # Only proceed with mode update if we have a valid mode
             if mode is not None:
@@ -2164,7 +2153,7 @@ class DisplayMessageRouter:
                 await visual_node.update_state(visual_data)
                 logger.info(f"[DISPLAY_ROUTE] Visual update complete: {visual_data['overlay']}")
             else:
-                logger.warning(f"[DISPLAY_ROUTE] No valid mode found in message, skipping mode and visual update")
+                logger.warning("[DISPLAY_ROUTE] No valid mode found in message, skipping mode and visual update")
             
             # Log specific messages required by test
             if display_id == 'weather_radar':

@@ -8,7 +8,7 @@ Enhanced with specialized tracking of message ID + type combinations.
 import time
 import uuid
 import logging
-from typing import Dict, Set, List, Any, Optional, Tuple, Union, TypeVar, cast
+from typing import Dict, Any, Optional, Tuple, TypeVar
 
 from FMOFP.Utils.message_loop_prevention.identifier import MessageIdentifier
 from FMOFP.Utils.message_loop_prevention.registry import MessageRegistry
@@ -22,18 +22,26 @@ except ImportError:
     # Create empty dict if import fails
     COMMAND_NAMES = {}
 
-try:
-    from FMOFP.local_messaging.radar_display_modes import RadarDisplayMode
-except ImportError:
-    # Create dummy enum if import fails
-    from enum import Enum
-    class RadarDisplayMode(Enum):
-        STANDBY = 0
-        SURVEILLANCE = 1
-        MAPPING = 2
-        TURBULENCE = 3
-        WINDSHEAR = 4
-        NORMAL = 5
+# Imported unconditionally. This was wrapped in try/except ImportError with a
+# six-member stand-in enum defined in the handler -- "Create dummy enum if
+# import fails".
+#
+# The canonical RadarDisplayMode has 35 members. The only use of it here is
+# the loop below, which adds every member NAME to the category set, so the
+# stand-in did not corrupt any value at this site -- it silently narrowed
+# loop prevention to 6 categories out of 35, leaving 29 radar display modes
+# unrecognised by the thing whose job is recognising them. (The values were
+# wrong too -- SURVEILLANCE 1 against the canonical 10, MAPPING 2 against 11,
+# NORMAL 5 against 1, five of the six disagreeing -- which would have
+# mattered to any other consumer of the name.)
+#
+# A fallback is only worth having when degrading is better than failing. An
+# enum that silently answers for a third of itself is not degrading, it is
+# answering wrongly, and the module it guards imports nothing but
+# `enum.Enum`, so the ImportError it catches cannot realistically happen
+# without the package being broken outright. Failing loudly is the honest
+# behaviour.
+from FMOFP.local_messaging.radar_display_modes import RadarDisplayMode
 
 # Type variable for generic message types
 T = TypeVar('T')
@@ -96,6 +104,10 @@ class MessageLoopPrevention:
         # Add radar display modes as categories
         for mode in RadarDisplayMode:
             self._common_categories.add(mode.name.lower())
+
+        # Metadata supplied by register_category(). Recorded, not acted upon
+        # -- see that method's docstring.
+        self._category_metadata = {}
         
         self._stats = {
             'loops_detected': 0,
@@ -183,6 +195,80 @@ class MessageLoopPrevention:
         
         return True, enhanced_message
         
+    def register_category(self, category: str,
+                          category_type: str = None,
+                          priority: str = None,
+                          max_simultaneous_processing: int = None) -> str:
+        """Make `category` a name this service can classify messages as.
+
+        Story B3.1. Three handlers -- FCS, FMS and Radar -- each had a
+        _register_*_loop_prevention_categories() method that began:
+
+            if not hasattr(self.loop_prevention, 'register_category'):
+                logger.warning("Loop prevention middleware does not support
+                                category registration - using default logic")
+                return
+
+        and `register_category` existed nowhere. So the method logged and
+        returned, and the 21 category registrations below it -- 5 FCS, 8 FMS,
+        8 radar -- were dead code. Measured on a live boot: that warning
+        exactly 7 times, which is the figure the PI's own risk register
+        recorded five months earlier.
+
+        WHAT IS ACTED UPON: the NAME, which joins _common_categories and so
+        becomes something _extract_category can return.
+
+        WHAT IS RECORDED BUT NOT ACTED UPON: category_type, priority and
+        max_simultaneous_processing. The handlers pass all three, and nothing
+        in this package reads any of them -- verified by search, zero hits.
+        Implementing them would mean inventing a priority scheduler and a
+        concurrency limiter for message categories, which is a feature, not a
+        fix. They are kept in _category_metadata so the declared intent is
+        retrievable rather than discarded, and this docstring is where that
+        distinction is written down.
+        """
+        name = str(category).lower()
+        self._common_categories.add(name)
+        self._category_metadata[name] = {
+            'category_type': category_type,
+            'priority': priority,
+            'max_simultaneous_processing': max_simultaneous_processing,
+            'note': 'name is used for classification; the other fields are '
+                    'recorded only -- nothing consumes them',
+        }
+        return name
+
+    def get_category_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """What register_category() was told, for inspection."""
+        return dict(self._category_metadata)
+
+    def _best_category_match(self, haystack: str):
+        """The LONGEST registered category appearing in `haystack`, or None.
+
+        _extract_category used to return the first match while iterating
+        _common_categories, which is a SET -- so the answer depended on
+        string hash order and therefore on PYTHONHASHSEED. Measured before
+        this change, with the finer names registered:
+        _extract_category({'message_type': 'fcs_statusResponse'}) returned
+        'fcs_status' on 2 of 5 seeds and 'status' on the other 3. The same
+        message, categorised differently from run to run.
+
+        That mattered more once B3.1 registered the 21 intended names,
+        because 16 of them are compound forms of names already present
+        ('fcs_status' beside 'status', 'fms_mode' beside 'mode_change'), so
+        registering them would have multiplied the overlaps rather than
+        sharpened the classification.
+
+        Longest wins, ties broken alphabetically: deterministic, and the
+        most specific answer rather than an arbitrary one.
+        """
+        best = None
+        for category in self._common_categories:
+            if category in haystack:
+                if best is None or (len(category), best) > (len(best), category):
+                    best = category
+        return best
+
     def _extract_category(self, message: Any) -> str:
         """Extract a category from a message.
         
@@ -207,9 +293,9 @@ class MessageLoopPrevention:
                             return part
         
         # Check if message type contains any common category
-        for category in self._common_categories:
-            if category in message_type.lower():
-                return category
+        match = self._best_category_match(message_type.lower())
+        if match:
+            return match
         
         # Try to extract from command type
         command_type = None
@@ -219,9 +305,9 @@ class MessageLoopPrevention:
             command_type = getattr(message, 'command_type')
             
         if command_type:
-            for category in self._common_categories:
-                if category in str(command_type).lower():
-                    return category
+            match = self._best_category_match(str(command_type).lower())
+            if match:
+                return match
         
         # Default to message type if no common category found
         return message_type

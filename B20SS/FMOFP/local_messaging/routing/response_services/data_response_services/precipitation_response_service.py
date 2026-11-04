@@ -684,7 +684,7 @@ class PrecipitationResponseService:
 
 
             # Log final results
-            logger.info(f"[LOC_WX_DATA_COMPONENTS] Returning data components:")
+            logger.info("[LOC_WX_DATA_COMPONENTS] Returning data components:")
             logger.info(f"[LOC_WX_DATA_COMPONENTS] - Precipitation: {len(precip_data)} items")
             logger.info(f"[LOC_WX_DATA_COMPONENTS] - VIL: {len(vil_data)} items")
             logger.info(f"[LOC_WX_DATA_COMPONENTS] - Storm cells: {len(cell_data)} items")
@@ -721,8 +721,8 @@ class PrecipitationResponseService:
             message['metadata']['_processed_by_precipitation_service'] = True
 
             # Log detailed message structure with exact test pattern
-            logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Handling precipitation data message")
-            logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Precipitation response service handling data")
+            logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Handling precipitation data message")
+            logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Precipitation response service handling data")
             logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Message keys: {message.keys() if isinstance(message, dict) else 'N/A'}")
             logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Precipitation Response Service initialization state: {self._initialized}")
 
@@ -806,7 +806,7 @@ class PrecipitationResponseService:
                 logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Extracted precipitation data from precipitation_data field: {response}")
 
             # Log the extracted data for debugging
-            logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Extracted precipitation data from response")
+            logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Extracted precipitation data from response")
 
             # Try multiple approaches to extract valid precipitation data
             # Approach 1: Check if response is a list of data words or integers
@@ -860,7 +860,7 @@ class PrecipitationResponseService:
                                     # Process the assembled data
                                     success = self.data_handler.extract_and_store_binary_data(request_id, assembled_data)
                                 else:
-                                    logger.debug(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Failed to get assembled data for complete transfer")
+                                    logger.debug("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Failed to get assembled data for complete transfer")
                                     success = False
                             else:
                                 # Transfer not yet complete, acknowledge receipt
@@ -921,7 +921,7 @@ class PrecipitationResponseService:
 
                         # Process result for successful extraction (either block transfer or direct)
                         if success:
-                            logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Successfully extracted and stored binary data")
+                            logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Successfully extracted and stored binary data")
 
                             # Wait for database transaction to complete (avoid race condition)
                             await asyncio.sleep(0.2)
@@ -981,7 +981,7 @@ class PrecipitationResponseService:
                                         )
 
                                         if parent_results and len(parent_results) > 0:
-                                            logger.debug(f"[PRECIPITATION_FLOW_DEBUG] Found parent collection record")
+                                            logger.debug("[PRECIPITATION_FLOW_DEBUG] Found parent collection record")
 
                                             # Try to parse additional_info to get child records
                                             try:
@@ -1056,7 +1056,7 @@ class PrecipitationResponseService:
                                 logger.debug(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Verification failed: No precipitation data found in DB for request ID {request_id}")
                                 return False
                         else:
-                            logger.debug(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Failed to extract and store binary data")
+                            logger.debug("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Failed to extract and store binary data")
                             return False
 
                 # Original handlers for string or object lists
@@ -1094,21 +1094,21 @@ class PrecipitationResponseService:
 
                     # If no valid precipitation data objects were found, continue with first item for backward compatibility
                     data = response[0]
-                    logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Using first item from precipitation data list for compatibility")
+                    logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Using first item from precipitation data list for compatibility")
 
             # Approach 2: Check if response has precipitation_data attribute
             if not data and hasattr(response, 'precipitation_data'):
                 if isinstance(response.precipitation_data, list) and len(response.precipitation_data) > 0:
                     data = response.precipitation_data[0]
-                    logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Extracted precipitation data from response.precipitation_data list")
+                    logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Extracted precipitation data from response.precipitation_data list")
                 else:
                     data = response.precipitation_data
-                    logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Extracted precipitation data from response.precipitation_data attribute")
+                    logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Extracted precipitation data from response.precipitation_data attribute")
 
             # Approach 3: Check if response is a PrecipitationData object
             if not data and isinstance(response, PrecipitationData):
                 data = response
-                logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Using response directly as PrecipitationData")
+                logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Using response directly as PrecipitationData")
 
                 # If we haven't found valid data at this point, check if this is a completion message
                 if not data:
@@ -1161,7 +1161,7 @@ class PrecipitationResponseService:
                             logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Found data array in message['data'] with {len(message['data'])} items")
                         elif isinstance(message['data'], dict) and message['data'].get('position', None):
                             data_in_message = True
-                            logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Found position data in message['data']")
+                            logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Found position data in message['data']")
 
                 # Also check for nested precipitation objects
                 if 'precipitation_data' in message and isinstance(message['precipitation_data'], list) and len(message['precipitation_data']) > 0:
@@ -1177,7 +1177,7 @@ class PrecipitationResponseService:
                 if 'metadata' in message and isinstance(message['metadata'], dict):
                     if message['metadata'].get('precip_data_available', False) or message['metadata'].get('precipitation_data', False):
                         data_in_message = True
-                        logger.info(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Found precipitation data availability flags in metadata")
+                        logger.info("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Found precipitation data availability flags in metadata")
 
                 # If top level command_type says precipitation_data, always treat as data regardless of metadata
                 if isinstance(message, dict) and message.get('command_type') == 'precipitation_data':
@@ -1247,7 +1247,7 @@ class PrecipitationResponseService:
             # or when we've already processed a list of precipitation objects above
             if (not data or not isinstance(data, PrecipitationData)) and not precip_data_list:
                 # Only report an error if we haven't already processed the data as a list
-                logger.debug(f"[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Invalid data format or type")
+                logger.debug("[LOC_PRECIP_RPNS_SERV_PRECIP_FLOW] Invalid data format or type")
                 await self._send_acknowledgment(request_id, False, "Invalid data type")
                 return
 
@@ -1369,7 +1369,7 @@ class PrecipitationResponseService:
             logger.info(f"[PRECIP_STORE] Precipitation data stored and verified successfully: {precipitation_data.request_id}")
 
             # Required test logging pattern
-            logger.info(f"[PRECIP_RSPNS_SERV_STORE] Storing data:")
+            logger.info("[PRECIP_RSPNS_SERV_STORE] Storing data:")
             logger.info(f"[PRECIP_RSPNS_SERV_STORE] - request_id: {precipitation_data.request_id}")
             logger.info(f"[PRECIP_RSPNS_SERV_STORE] - position: {precipitation_data.position}")
             logger.info(f"[PRECIP_RSPNS_SERV_STORE] - type: {precipitation_data.type}")
@@ -1540,10 +1540,10 @@ class PrecipitationResponseService:
                 display_message['metadata']['command_word'] = display_command
 
             # Forward to display handler with clear logs
-            logger.info(f"[PRECIP_FORWARD] Sending SINGLE precipitation data object to display system")
+            logger.info("[PRECIP_FORWARD] Sending SINGLE precipitation data object to display system")
             logger.info(f"[PRECIP_FORWARD] Object request_id: {precipitation_data.request_id}")
             await display_handler.handle_precipitation_data(display_message)
-            logger.info(f"[PRECIP_FORWARD] Sent precipitation data to display system")
+            logger.info("[PRECIP_FORWARD] Sent precipitation data to display system")
 
         except Exception as e:
             logger.error(f"[PRECIP_FORWARD] Error forwarding to display: {e}")

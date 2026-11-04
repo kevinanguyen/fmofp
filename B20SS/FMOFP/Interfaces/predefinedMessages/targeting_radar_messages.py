@@ -4,9 +4,7 @@ Targeting Radar Messages Module
 Provides predefined messages for the targeting radar system.
 """
 
-import asyncio
 import uuid
-from typing import Dict, Optional, Any
 
 from FMOFP.Interfaces.predefinedMessages.message_base import PredefinedMessagesBase
 from FMOFP.Interfaces.predefinedMessages.radar_enums import targeting_radarMode
@@ -317,7 +315,7 @@ class TargetingRadarMessages(PredefinedMessagesBase):
                     message.metadata['processed_by'].append('targeting_radar')
             
             # For logging purposes
-            self.logger.info(f"[TARGETING_RADAR] Message successfully processed")
+            self.logger.info("[TARGETING_RADAR] Message successfully processed")
             return True
             
         except Exception as e:

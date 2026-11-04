@@ -7,8 +7,7 @@ Provides a singleton interface for managing block transfers across the system.
 
 import json
 import time
-import logging
-from typing import Dict, List, Any, Optional, Tuple
+from typing import List, Optional
 
 # Get system logger
 from FMOFP.Utils.logger.sys_logger import get_logger
@@ -170,12 +169,12 @@ class BlockTransferManager:
             transfer['data_type'] = 'precipitation'
             if message_type:
                 transfer['message_type'] = message_type
-            logger.info(f"[BLOCK_TRANSFER] Marked transfer as precipitation data for special handling")
+            logger.info("[BLOCK_TRANSFER] Marked transfer as precipitation data for special handling")
         elif is_vil and not transfer.get('data_type'):
             transfer['data_type'] = 'vil'
             if message_type:
                 transfer['message_type'] = message_type
-            logger.info(f"[BLOCK_TRANSFER] Marked transfer as VIL data for special handling")
+            logger.info("[BLOCK_TRANSFER] Marked transfer as VIL data for special handling")
 
         logger.info(f"[BLOCK_TRANSFER] Storing block {sequence_number}/{total_sequences} with {len(actual_data)} data words")
 
@@ -289,7 +288,7 @@ class BlockTransferManager:
         """
         # First, detect if we're dealing with a dictionary representation
         if isinstance(oversized_frame, str) and oversized_frame.startswith('{') and oversized_frame.endswith('}'):
-            logger.info(f"[BLOCK_TRANSFER] Detected dictionary structure in oversized frame")
+            logger.info("[BLOCK_TRANSFER] Detected dictionary structure in oversized frame")
             try:
                 # Parse dictionary and extract frames directly
                 parsed_dict = json.loads(oversized_frame)
@@ -370,7 +369,7 @@ class BlockTransferManager:
                     if len(start_patterns) > 0:
                         logger.error(f"[BLOCK_TRANSFER] First 5 potential patterns at positions: {start_patterns[:5]}")
                 else:
-                    logger.error(f"[BLOCK_TRANSFER] No sync patterns found in entire frame")
+                    logger.error("[BLOCK_TRANSFER] No sync patterns found in entire frame")
 
         return extracted_frames
 
@@ -415,14 +414,14 @@ class BlockTransferManager:
                 else:
                     # If no frames field, preserve the dictionary
                     processed_data.append(item)
-                    logger.info(f"[BLOCK_TRANSFER] Preserved dictionary without frames")
+                    logger.info("[BLOCK_TRANSFER] Preserved dictionary without frames")
 
             # Handle string items that might be frames or serialized data
             elif isinstance(item, str):
                 # Check if already a valid 20-bit frame
                 if len(item) == 20 and (item.startswith('100') or item.startswith('001')):
                     processed_data.append(item)
-                    logger.debug(f"[BLOCK_TRANSFER] Added valid 20-bit frame")
+                    logger.debug("[BLOCK_TRANSFER] Added valid 20-bit frame")
                 # Handle oversized items that might be concatenated frames
                 elif len(item) > 20:
                     # This might be multiple concatenated frames or a serialized string
@@ -434,11 +433,11 @@ class BlockTransferManager:
                         logger.info(f"[BLOCK_TRANSFER] Processed oversized item into {len(valid_extracted)} valid frames")
                     else:
                         # If no frames could be extracted, preserve the original item
-                        logger.warning(f"[BLOCK_TRANSFER] Could not extract frames from oversized item, preserving as-is")
+                        logger.warning("[BLOCK_TRANSFER] Could not extract frames from oversized item, preserving as-is")
                         processed_data.append(item)
                 else:
                     # Not a valid frame but not oversized either - preserve as-is
-                    logger.debug(f"[BLOCK_TRANSFER] Preserved non-standard string item")
+                    logger.debug("[BLOCK_TRANSFER] Preserved non-standard string item")
                     processed_data.append(item)
             else:
                 # Non-string/non-dict items (integers, lists, etc.) - preserve as-is

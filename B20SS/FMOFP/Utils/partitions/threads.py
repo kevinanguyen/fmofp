@@ -1,14 +1,7 @@
-import os
-import sys
 import time
 import threading
-from queue import Queue
-import concurrent.futures
 import xml.etree.ElementTree as ET
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.core.system_manager import get_system_manager
-from FMOFP.Utils.common.thread_manager import ThreadManager
-from FMOFP.Utils.logger.sys_logger import SysLogger
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.fetching import resolve_resource
 

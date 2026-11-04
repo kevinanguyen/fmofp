@@ -5,7 +5,7 @@ Provides distinct visual representations with tactical-style animations and
 intelligent selection based on mode.
 """
 
-from typing import Dict, List, Optional, Any, Set, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple, Callable
 from enum import Enum, auto
 import time
 import traceback
@@ -758,7 +758,7 @@ class LegendManager:
         if len(included_types) == 2:
             combined_config.title = f"{included_types[0]} & {included_types[1]} DATA"
         elif len(included_types) > 2:
-            combined_config.title = f"MULTI-DATA DISPLAY"
+            combined_config.title = "MULTI-DATA DISPLAY"
         
         # Set to use the combined rendering strategy
         combined_config.render_strategy = LegendRenderStrategy.COMBINED
@@ -912,9 +912,9 @@ class LegendManager:
         
         # Check if click is within tab rectangle
         if tab_rect.contains(pos):
-            logger.warning(f"[LEGEND_MANAGER] Click is within tab rectangle")
+            logger.warning("[LEGEND_MANAGER] Click is within tab rectangle")
         else:
-            logger.warning(f"[LEGEND_MANAGER] Click is outside tab rectangle")
+            logger.warning("[LEGEND_MANAGER] Click is outside tab rectangle")
         
         # Handle click with panel
         result = self._collapsible_panel.handle_click(pos)

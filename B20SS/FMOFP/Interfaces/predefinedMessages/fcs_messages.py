@@ -4,9 +4,7 @@ Flight Control System (FCS) Messages Module
 Provides predefined messages for the FCS system.
 """
 
-import asyncio
 import uuid
-from typing import Dict, Optional, Any
 
 from FMOFP.Interfaces.predefinedMessages.message_base import PredefinedMessagesBase
 from FMOFP.local_messaging.messageConfigurations.fcs_data import fcs_controlSurfaceRequest

@@ -53,7 +53,7 @@ import math
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from FMOFP.Utils.logger.sys_logger import get_logger

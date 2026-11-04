@@ -18,17 +18,7 @@ from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.tfr_data 
     TFRRadarTerrainWarning
 )
 # Import message type constants
-from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    TFR_RADAR_ELEVATION_PROFILE,
-    TFR_RADAR_TERRAIN_WARNING,
-    COMMAND_TYPE_ELEVATION_DATA,
-    COMMAND_TYPE_TERRAIN_WARNING
-)
 # For backward compatibility - to be removed in future releases
-from FMOFP.local_messaging.messageConfigurations.tfr_radar_data import (
-    tfr_radarElevationProfile as LegacyTFRRadarElevationProfile,
-    tfr_radarTerrainWarning as LegacyTFRRadarTerrainWarning
-)
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.terrainFollowing.tfr_processor import PathOptimiser, ClearanceManager
 
@@ -178,7 +168,7 @@ class tfr_radar:
                     return False
                 elif mode is tfr_radarMode:
                     # Handle case where we get the actual enum class itself (not an instance/member)
-                    logger.info(f"[TFR_RADAR] Received enum class itself, defaulting to NORMAL mode")
+                    logger.info("[TFR_RADAR] Received enum class itself, defaulting to NORMAL mode")
                     mode = tfr_radarMode.NORMAL
                 else:
                     logger.error(f"[TFR_RADAR] Invalid mode type: {type(mode)}")
@@ -206,10 +196,10 @@ class tfr_radar:
 
                 # Send mode change completion notification if requested
                 if send_completion:
-                    logger.info(f"[TFR_RADAR] Sending mode change completion notification (send_completion=True)")
+                    logger.info("[TFR_RADAR] Sending mode change completion notification (send_completion=True)")
                     self._send_mode_change_completion(old_mode, mode, request_id)
                 else:
-                    logger.info(f"[TFR_RADAR] Skipping mode change completion notification (send_completion=False)")
+                    logger.info("[TFR_RADAR] Skipping mode change completion notification (send_completion=False)")
             return True
         except Exception as e:
             logger.error(f"Error setting mode for TFR radar {self.name}: {str(e)}")
@@ -316,7 +306,7 @@ class tfr_radar:
                         return self._handle_data_request(message)
 
             # For logging purposes
-            logger.info(f"[TFR_RADAR] Message successfully processed synchronously")
+            logger.info("[TFR_RADAR] Message successfully processed synchronously")
             return True
 
         except Exception as e:
@@ -370,7 +360,7 @@ class tfr_radar:
             bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"[TFR_RADAR] Handling elevation data request synchronously")
+            logger.info("[TFR_RADAR] Handling elevation data request synchronously")
 
             # Get the request parameters
             if hasattr(message, 'data') and isinstance(message.data, dict):
@@ -398,7 +388,7 @@ class tfr_radar:
             bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"[TFR_RADAR] Handling terrain warning message synchronously")
+            logger.info("[TFR_RADAR] Handling terrain warning message synchronously")
 
             # Check for terrain warnings and send them
             warnings = self._check_terrain_warnings()
@@ -427,7 +417,7 @@ class tfr_radar:
     def _handle_mode_change(self, message: MIL_STD_1553B_Message):
         """Handle mode change messages."""
         try:
-            logger.info(f"[TFR_RADAR] Handling mode change message via parameter extraction")
+            logger.info("[TFR_RADAR] Handling mode change message via parameter extraction")
 
             # Extract mode value and request_id
             mode_data = message.data
@@ -531,7 +521,7 @@ class tfr_radar:
                     for w in self._check_terrain_warnings()
                 ]
                 push_tfr_data([elevation_profile], request_id or elevation_profile.data_uuid)
-                logger.info(f"[TFR_RADAR] Bridge: elevation profile pushed to display coordinator")
+                logger.info("[TFR_RADAR] Bridge: elevation profile pushed to display coordinator")
             except Exception as _bridge_exc:
                 logger.warning(f"[TFR_RADAR] Bridge push failed (non-fatal): {_bridge_exc}")
             # -------------------------------------------------------------
@@ -605,9 +595,9 @@ class tfr_radar:
             )
 
             if success:
-                logger.info(f"[TFR_RADAR] Mode change completion notification sent successfully")
+                logger.info("[TFR_RADAR] Mode change completion notification sent successfully")
             else:
-                logger.error(f"[TFR_RADAR] Failed to send mode change completion notification")
+                logger.error("[TFR_RADAR] Failed to send mode change completion notification")
 
         except Exception as e:
             logger.error(f"[TFR_RADAR] Error sending mode change completion: {str(e)}")
@@ -663,7 +653,7 @@ class tfr_radar:
                     if success:
                         logger.info(f"[TFR_RADAR] Sent terrain following profile completion notification with request ID: {request_id}")
                     else:
-                        logger.error(f"[TFR_RADAR] Failed to send terrain following profile completion notification")
+                        logger.error("[TFR_RADAR] Failed to send terrain following profile completion notification")
                 else:
                     logger.error("[TFR_RADAR] Cannot send data completion - completion handler not available")
 
@@ -696,7 +686,7 @@ class tfr_radar:
                 logger.info(f"[TFR_RADAR] Extracted mode value: {mode_value} from data: {mode_data}")
                 return mode_value
             else:
-                logger.error(f"[TFR_RADAR] Empty mode data")
+                logger.error("[TFR_RADAR] Empty mode data")
                 return 0
         except Exception as e:
             logger.error(f"[TFR_RADAR] Error extracting mode value: {e}")

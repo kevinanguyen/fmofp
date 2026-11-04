@@ -4,12 +4,9 @@ Particle-based Renderer for Weather Radar Visualization
 Integrates the particle system with the radar rendering engine to provide
 realistic, fluid-like visualization of weather phenomena.
 """
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt6.QtGui import QPainter, QColor, QImage, QPen, QBrush, QPainterPath
-from typing import Dict, List, Any, Optional, Tuple
-import math
+from PyQt6.QtGui import QPainter
+from typing import Dict, List, Any
 import time
-import uuid
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 
@@ -86,7 +83,7 @@ class ParticleRenderer:
                 
             self.animation_controller.set_parameter('animation_speed', animation_speed)
             
-            logger.info(f"[PARTICLE_RENDERER] Applied settings to animation controller")
+            logger.info("[PARTICLE_RENDERER] Applied settings to animation controller")
             
         except Exception as e:
             logger.error(f"[PARTICLE_RENDERER] Error applying settings to animation controller: {str(e)}")

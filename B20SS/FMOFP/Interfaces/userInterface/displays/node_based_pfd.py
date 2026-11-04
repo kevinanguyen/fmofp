@@ -18,15 +18,14 @@ deleted or wired in, since neither action was requested; flagged here so
 a future maintainer can make an informed call.
 """
 
-from PyQt6.QtCore import QRectF, QPointF, QLineF, Qt, QTimer
-from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QFontMetrics, QPainterPath, QLinearGradient
+from PyQt6.QtCore import QRectF, QPointF, QLineF, Qt
+from PyQt6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPainterPath, QLinearGradient
 # NOTE (production readiness re-analysis, August 2026): QLinearGradient was
 # missing from the import above despite being used in the sky/ground gradient
 # rendering path -- found via `ruff check --select F821`. This class is
 # already confirmed unreachable via the PFD display factory (see this file's
 # module docstring above), so the bug has no live impact today, but fixed
 # for correctness in case this class is ever wired in.
-import math
 import threading
 import time
 import asyncio
@@ -36,7 +35,6 @@ from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.flightManagementSys.flightManagementSystem import get_flightManagementSystem
 from FMOFP.Systems.flightManagementSys.fmsControl import get_fms_control
 from FMOFP.Interfaces.userInterface.displays.display_nodes.display_tree_manager import get_display_tree_manager
-from FMOFP.Interfaces.userInterface.displays.display_nodes.orientation_node import OrientationNode
 from FMOFP.Interfaces.userInterface.displays.behaviors.fms_orientation_behavior import get_fms_orientation_behavior
 
 from .base_display import BaseDisplay, DisplayType

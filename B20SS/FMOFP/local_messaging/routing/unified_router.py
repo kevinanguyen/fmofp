@@ -377,14 +377,14 @@ class UnifiedRouter:
                 if (metadata.get('block_transfer_complete') and 
                     (metadata.get('vil_data') or metadata.get('vil_data_available') or
                      metadata.get('vil_objects') or metadata.get('vil_message'))):
-                    self.logger.info(f"[UNIFIED ROUTER] Found special case for VIL block transfer data based on metadata")
+                    self.logger.info("[UNIFIED ROUTER] Found special case for VIL block transfer data based on metadata")
                     return self.routing_registry.special_cases.get('vil_data')
                     
                 # Check block transfer metadata for precipitation data
                 elif (metadata.get('block_transfer_complete') and 
                      (metadata.get('precipitation_data') or metadata.get('precipitation_objects') or
                       metadata.get('precip_data_available') or metadata.get('precipitation_message'))):
-                    self.logger.info(f"[UNIFIED ROUTER] Found special case for precipitation block transfer data based on metadata")
+                    self.logger.info("[UNIFIED ROUTER] Found special case for precipitation block transfer data based on metadata")
                     return self.routing_registry.special_cases.get('precipitation_data')
         
         # Also check message attributes for object-style messages
@@ -395,14 +395,14 @@ class UnifiedRouter:
                 if (metadata.get('block_transfer_complete') and 
                     (metadata.get('vil_data') or metadata.get('vil_data_available') or 
                      metadata.get('vil_objects') or metadata.get('vil_message'))):
-                    self.logger.info(f"[UNIFIED ROUTER] Found special case for VIL block transfer data based on object metadata")
+                    self.logger.info("[UNIFIED ROUTER] Found special case for VIL block transfer data based on object metadata")
                     return self.routing_registry.special_cases.get('vil_data')
                     
                 # Check block transfer metadata for precipitation data
                 elif (metadata.get('block_transfer_complete') and 
                      (metadata.get('precipitation_data') or metadata.get('precipitation_objects') or
                       metadata.get('precip_data_available') or metadata.get('precipitation_message'))):
-                    self.logger.info(f"[UNIFIED ROUTER] Found special case for precipitation block transfer data based on object metadata")
+                    self.logger.info("[UNIFIED ROUTER] Found special case for precipitation block transfer data based on object metadata")
                     return self.routing_registry.special_cases.get('precipitation_data')
             
         return None

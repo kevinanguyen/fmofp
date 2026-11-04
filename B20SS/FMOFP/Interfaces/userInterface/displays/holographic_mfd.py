@@ -5,14 +5,13 @@ from PyQt6.QtCore import Qt, QRectF, QPointF, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath, QFont, QPen, QBrush
 from .holographic_display import HolographicDisplay
 from .base_display import DisplayType
-from .visual.enhanced_theme_manager import get_enhanced_theme_manager, EnhancedDisplayTheme
-from .visual.enhanced_effects import get_enhanced_visual_effects
+from .visual.enhanced_theme_manager import EnhancedDisplayTheme
 from .visual.holographic_settings_panel import HolographicSettingsPanel
 from .radar.weather_radar_holographic_display import WeatherRadarHolographicDisplay
 import math
 import time
 import random
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.manual_animation_timer import ManualAnimationTimer
 
@@ -114,7 +113,7 @@ class HolographicMFD(HolographicDisplay):
         # thread) marshals the actual _handle_mode_event(event) call onto the GUI
         # thread where it's safe to touch widget state.
         try:
-            from FMOFP.core.event_driven_communication import get_event_bus, Event
+            from FMOFP.core.event_driven_communication import get_event_bus
             self._event_bus = get_event_bus()
             self._mode_event_received.connect(self._handle_mode_event)
             # Stored as an attribute so cleanup() below can pass the exact

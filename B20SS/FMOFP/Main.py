@@ -10,7 +10,6 @@ import os
 import sys
 import threading
 import signal
-import traceback
 import asyncio
 
 # ── Path/working-directory bootstrap (same as SystemStart.py) ────────────────
@@ -42,7 +41,6 @@ if _ROOT not in sys.path:
 # and a log file. Relocating that data out of the package entirely is story C13.
 # ─────────────────────────────────────────────────────────────────────────────
 
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.system_states import SystemState
 from FMOFP.core.system_manager import get_system_manager

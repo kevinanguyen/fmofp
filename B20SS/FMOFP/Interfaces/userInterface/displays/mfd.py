@@ -16,8 +16,7 @@ from PyQt6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath, QFont, 
 # every time a user navigated the MFD to Systems, Comms, Engine, or Mission.
 # Confirmed live after this fix: all four pages now render without error.
 from .base_display import BaseDisplay, DisplayType, DisplayPage
-from .visual.theme_manager import get_theme_manager, DisplayTheme
-from .pfd_display_factory import PFDDisplayFactory
+from .visual.theme_manager import DisplayTheme
 
 import math
 import traceback
@@ -1816,7 +1815,7 @@ class MultiFunctionDisplay(BaseDisplay):
 
                         # Try regular click handling with adjusted coordinates
                         if self._current_radar_display.handle_mouse_click(adjusted_pos):
-                            logger.warning(f"[MFD] Radar display click handled at adjusted position")
+                            logger.warning("[MFD] Radar display click handled at adjusted position")
                             self.update()  # Update display if click was handled
                             return
 

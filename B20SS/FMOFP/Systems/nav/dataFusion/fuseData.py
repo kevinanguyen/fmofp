@@ -30,10 +30,9 @@ Kalman Filter (per axis)
   R — GPS measurement noise variance (constant, ~9 m² ≈ 3 m 1-sigma)
 """
 
-import math
 import threading
 import time
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

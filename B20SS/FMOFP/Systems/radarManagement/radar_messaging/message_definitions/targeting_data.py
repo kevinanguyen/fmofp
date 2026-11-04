@@ -4,13 +4,10 @@ Targeting Radar Message Definitions
 Contains radar-local message classes for Targeting Radar data.
 """
 
-from typing import Dict, List, Tuple, Any, Optional, Union
-import numpy as np
+from typing import Dict, Tuple
 from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.radar_base_message import RadarBaseMessage
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    TARGETING_RADAR_TRACK_REQUEST,
     TARGETING_RADAR_TRACK_RESPONSE,
-    TARGETING_RADAR_LOCK_REQUEST,
     TARGETING_RADAR_LOCK_RESPONSE
 )
 

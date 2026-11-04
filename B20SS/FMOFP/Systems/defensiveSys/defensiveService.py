@@ -20,12 +20,11 @@ Implements the B20SS defensive suite:
 Singleton: get_defensive_service()
 """
 
-import math
 import random
 import threading
 import time
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from dataclasses import dataclass, field
 
 from FMOFP.Utils.logger.sys_logger import get_logger

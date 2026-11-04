@@ -10,29 +10,16 @@ import threading
 import time
 import traceback
 import math
-import uuid
-from typing import Dict, Any, Optional, List, Tuple
+from typing import List
 
 from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
 from FMOFP.Utils.logger.sys_logger import get_logger
-from FMOFP.Utils.common.operation_tracker import track_operation, is_operation_completed
 from FMOFP.Systems.flightManagementSys.flightControlSys.attitude_calculator import get_attitude_calculator
 from FMOFP.Systems.flightManagementSys.flightControlSys.fcs_completion_message_handler import get_fcs_completion_message_handler
 from FMOFP.Systems.flightManagementSys.flightControlSys.fcs_message_type_detector import fcs_message_type_detector
 from FMOFP.Systems.flightManagementSys.fms_messaging.message_types import (
-    FCS_CONTROL_INPUT_REQUEST, 
-    FCS_CONTROL_INPUT_RESPONSE,
-    FCS_ORIENTATION_DATA_REQUEST, 
-    FCS_ORIENTATION_DATA_RESPONSE,
-    FCS_STATUS_REQUEST, 
-    FCS_STATUS_RESPONSE,
-    FCS_MODE_CHANGE_REQUEST, 
-    FCS_MODE_CHANGE_RESPONSE,
     COMMAND_TYPE_CONTROL_INPUT,
-    COMMAND_TYPE_CONTROL_INPUT_COMPLETE,
-    COMMAND_TYPE_ORIENTATION_DATA,
     COMMAND_TYPE_MODE_CHANGE,
-    COMMAND_TYPE_MODE_CHANGE_COMPLETE,
     is_control_input_message,
     is_orientation_data_message
 )
@@ -188,7 +175,7 @@ class FlightControlSystem:
                 if self._thread and self._thread.is_alive():
                     self._thread.join(2.0)  # Wait up to 2 seconds
                     if self._thread.is_alive():
-                        logger.warning(f"[FCS] Flight control system thread did not terminate cleanly")
+                        logger.warning("[FCS] Flight control system thread did not terminate cleanly")
                     self._thread = None
                 
             logger.info(f"[FCS] Flight control system {self.name} stopped")
@@ -390,7 +377,7 @@ class FlightControlSystem:
         try:
             # Skip during startup
             if self._in_startup:
-                logger.info(f"[FCS] Skipping control input completion notification during startup")
+                logger.info("[FCS] Skipping control input completion notification during startup")
                 return
                 
             # Only send if we have a messenger and completion handler
@@ -407,9 +394,9 @@ class FlightControlSystem:
             )
             
             if success:
-                logger.info(f"[FCS] Control input completion notification sent successfully")
+                logger.info("[FCS] Control input completion notification sent successfully")
             else:
-                logger.error(f"[FCS] Failed to send control input completion notification")
+                logger.error("[FCS] Failed to send control input completion notification")
                 
         except Exception as e:
             logger.error(f"[FCS] Error sending control input completion: {str(e)}")
@@ -427,7 +414,7 @@ class FlightControlSystem:
         try:
             # Skip during startup
             if self._in_startup:
-                logger.info(f"[FCS] Skipping mode change completion notification during startup")
+                logger.info("[FCS] Skipping mode change completion notification during startup")
                 return
                 
             # Only send if we have a messenger and completion handler
@@ -456,9 +443,9 @@ class FlightControlSystem:
             )
             
             if success:
-                logger.info(f"[FCS] Mode change completion notification sent successfully")
+                logger.info("[FCS] Mode change completion notification sent successfully")
             else:
-                logger.error(f"[FCS] Failed to send mode change completion notification")
+                logger.error("[FCS] Failed to send mode change completion notification")
                 
         except Exception as e:
             logger.error(f"[FCS] Error sending mode change completion: {str(e)}")
@@ -641,7 +628,7 @@ class FlightControlSystem:
             bool: True if message was processed, False otherwise
         """
         try:
-            logger.info(f"[FCS] Handling control input message")
+            logger.info("[FCS] Handling control input message")
             
             # Extract control type and value from message
             control_type = None
@@ -712,7 +699,7 @@ class FlightControlSystem:
             
             # Check if we have what we need
             if control_type is None or value is None:
-                logger.warning(f"[FCS] Missing control type or value in message")
+                logger.warning("[FCS] Missing control type or value in message")
                 return False
             
             # Set the control input
@@ -734,7 +721,7 @@ class FlightControlSystem:
             bool: True if message was processed, False otherwise
         """
         try:
-            logger.info(f"[FCS] Handling mode change message")
+            logger.info("[FCS] Handling mode change message")
             
             # Extract mode from message
             mode = None
@@ -772,7 +759,7 @@ class FlightControlSystem:
             
             # Check if we have what we need
             if mode is None:
-                logger.warning(f"[FCS] Missing mode in message")
+                logger.warning("[FCS] Missing mode in message")
                 return False
             
             # Set the mode
@@ -794,7 +781,7 @@ class FlightControlSystem:
             bool: True if message was processed, False otherwise
         """
         try:
-            logger.info(f"[FCS] Handling orientation data request message")
+            logger.info("[FCS] Handling orientation data request message")
             
             # Send orientation data
             return self.send_orientation_data()

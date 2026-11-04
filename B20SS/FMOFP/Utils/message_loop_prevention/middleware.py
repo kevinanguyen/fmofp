@@ -5,11 +5,8 @@ This module provides a middleware component for integrating message loop prevent
 with the routing pipeline.
 """
 
-import asyncio
-import time
-import uuid
 import logging
-from typing import Dict, Any, Tuple, Union, TypeVar, Optional
+from typing import Dict, Any, Tuple, TypeVar, Optional
 
 from FMOFP.Utils.message_loop_prevention.prevention import MessageLoopPrevention
 
@@ -105,6 +102,36 @@ class MessageLoopPreventionMiddleware:
         stats['middleware_config'] = self._config
         return stats
         
+    def register_category(self, category: str,
+                          category_type: Optional[str] = None,
+                          priority: Optional[str] = None,
+                          max_simultaneous_processing: Optional[int] = None) -> str:
+        """Register a message category with the prevention service.
+
+        Story B3.1. The FCS, FMS and Radar handlers all probe
+        `hasattr(self.loop_prevention, 'register_category')` before
+        registering their categories, and this is the middleware they probe.
+        The method did not exist, so each handler logged "Loop prevention
+        middleware does not support category registration - using default
+        logic" and returned, leaving 21 registrations dead. Measured on a
+        live boot: that warning exactly 7 times.
+
+        Delegates to MessageLoopPrevention.register_category, whose docstring
+        records which of these arguments are acted upon (the name) and which
+        are recorded only (the other three, because nothing in the package
+        consumes them).
+        """
+        return self._prevention.register_category(
+            category,
+            category_type=category_type,
+            priority=priority,
+            max_simultaneous_processing=max_simultaneous_processing,
+        )
+
+    def get_category_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """What register_category() was told, for inspection."""
+        return self._prevention.get_category_metadata()
+
     def clear_registry(self, category: Optional[str] = None) -> None:
         """
         Clear the registry.

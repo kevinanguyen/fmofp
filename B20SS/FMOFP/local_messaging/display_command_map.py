@@ -5,8 +5,7 @@ Defines command word constants and utilities for the display system.
 Uses centralized message types and address utilities instead of dynamic registration.
 """
 
-import os
-from typing import Dict, Optional
+from typing import Dict
 # Was `from ..displays.base_display import DisplayType` -- from
 # FMOFP/local_messaging/, `..` goes up to FMOFP/, so that resolved to
 # the nonexistent FMOFP.displays.base_display (the real path is
@@ -23,13 +22,6 @@ from FMOFP.Interfaces.userInterface.displays.base_display import DisplayType
 # of wrong-relative-import bug as the DisplayType import above, in the same
 # file (production readiness deep dive, found via live system boot).
 from FMOFP.Interfaces.userInterface.messaging.display_address_utils import (
-    DISPLAY_SYSTEM_ID,
-    PFD_SUBADDRESS,
-    MFD_SUBADDRESS,
-    EICAS_SUBADDRESS,
-    RADAR_DISPLAY_SUBADDRESS,
-    TSD_SUBADDRESS,
-    SMS_SUBADDRESS,
     DISPLAY_SUBADDRESS_MAP,
     get_display_subaddress
 )

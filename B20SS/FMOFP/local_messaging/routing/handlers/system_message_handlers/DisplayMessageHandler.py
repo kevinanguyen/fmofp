@@ -24,13 +24,9 @@ from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.radar_records import MEASUREMENT_ONLY_SQL
 # Import centralized message type definitions
 from FMOFP.local_messaging.message_types import (
-    WEATHER_RADAR_VIL_REQUEST, WEATHER_RADAR_VIL_RESPONSE,
-    WEATHER_RADAR_PRECIPITATION_REQUEST, WEATHER_RADAR_PRECIPITATION_RESPONSE,
-    WEATHER_RADAR_ECHO_TOP_REQUEST, WEATHER_RADAR_ECHO_TOP_RESPONSE,
-    WEATHER_RADAR_MODE_CHANGE_REQUEST, WEATHER_RADAR_MODE_CHANGE_RESPONSE,
-    DISPLAY_MODE_REQUEST, DISPLAY_MODE_RESPONSE,
-    DISPLAY_DATA_REQUEST, DISPLAY_DATA_RESPONSE,
-    is_vil_message, is_precipitation_message, is_mode_change_message
+    WEATHER_RADAR_VIL_RESPONSE,
+    WEATHER_RADAR_PRECIPITATION_RESPONSE,
+    WEATHER_RADAR_ECHO_TOP_RESPONSE
 )
 
 from FMOFP.Utils.common.precipitation_scale import (
@@ -964,8 +960,8 @@ class DisplayMessageHandler:
         """
         try:
             # COMPREHENSIVE DATA FLOW LOGGING
-            logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] ====== START VIL DATA HANDLING ======")
-            logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] DisplayMessageHandler.handle_vil_data called")
+            logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] ====== START VIL DATA HANDLING ======")
+            logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] DisplayMessageHandler.handle_vil_data called")
             logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Message type: {type(message)}")
 
             # Extract request_id for acknowledgment/tracking
@@ -1005,23 +1001,23 @@ class DisplayMessageHandler:
             if isinstance(message, dict):
                 if 'vil_data' in message:
                     vil_data = message['vil_data']
-                    logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found VIL data in message['vil_data']")
+                    logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found VIL data in message['vil_data']")
                 elif 'data' in message:
                     # Data could contain VIL
                     if isinstance(message['data'], list):
-                        logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found potential VIL data in message['data'] list")
+                        logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found potential VIL data in message['data'] list")
                         vil_data = message['data']
                     elif isinstance(message['data'], (int, str)):
                         logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found potential raw value in message['data']: {message['data']}")
                     elif isinstance(message['data'], dict) and ('vil_data' in message['data'] or 'vil' in message['data']):
-                        logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found VIL data in message['data'] dictionary")
+                        logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found VIL data in message['data'] dictionary")
                         vil_data = message['data'].get('vil_data', message['data'].get('vil'))
                 elif 'additional_info' in message and isinstance(message['additional_info'], dict):
                     # Check in additional_info
                     if 'weather_data' in message['additional_info'] and isinstance(message['additional_info']['weather_data'], dict):
                         weather_data = message['additional_info']['weather_data']
                         if 'vil_data' in weather_data or 'vil' in weather_data:
-                            logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found VIL data in message['additional_info']['weather_data']")
+                            logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found VIL data in message['additional_info']['weather_data']")
                             vil_data = weather_data.get('vil_data', weather_data.get('vil'))
 
             # Log what we found
@@ -1032,10 +1028,10 @@ class DisplayMessageHandler:
                     if vil_data and len(vil_data) > 0:
                         logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] First VIL item: {vil_data[0]}")
             else:
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] No VIL data found in message")
+                logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] No VIL data found in message")
 
             # Log the receipt of VIL data
-            logger.info(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] DisplayMessageHandler received VIL data")
+            logger.info("[LOCAL_DISP_MSG_HDR_VIL_FLOW] DisplayMessageHandler received VIL data")
 
             # DIRECT DISPLAY PROCESSING - Skip sending to VIL service
             # No need to forward to VIL service since this data should
@@ -1048,8 +1044,8 @@ class DisplayMessageHandler:
                 message['request_id'] = request_id
 
             # Log direct processing
-            logger.info(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Directly processing VIL data for display")
-            logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Direct display processing - bypassing VILResponseService")
+            logger.info("[LOCAL_DISP_MSG_HDR_VIL_FLOW] Directly processing VIL data for display")
+            logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] Direct display processing - bypassing VILResponseService")
 
             # Fetch VIL data from the database
             try:
@@ -1059,7 +1055,7 @@ class DisplayMessageHandler:
                 radar_db = db_manager.get_system_db('radar_management')
 
                 # Query for VIL data
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Fetching VIL data from database")
+                logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] Fetching VIL data from database")
                 vil_db_data = radar_db.execute_query(
                     """
                     SELECT * FROM vil_data
@@ -1102,7 +1098,7 @@ class DisplayMessageHandler:
                     if len(vil_data) > 0:
                         logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] First VIL item from DB: {vil_data[0]}")
                 else:
-                    logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] No VIL data found in database")
+                    logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] No VIL data found in database")
             except Exception as db_error:
                 logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Error fetching VIL data from database: {db_error}")
                 logger.error(traceback.format_exc())
@@ -1130,11 +1126,10 @@ class DisplayMessageHandler:
 
                 # Store in response service
                 await self.response_service.handle_display_command(display_command, from_display_handler=True)
-                logger.info(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Successfully stored VIL display command")
+                logger.info("[LOCAL_DISP_MSG_HDR_VIL_FLOW] Successfully stored VIL display command")
 
                 # CREATE AND SEND A MIL-STD-1553B MESSAGE TO THE DISPLAY HARDWARE
                 try:
-                    import json
                     from FMOFP.MIL_STD_1553B.mil_std_1553B  import MIL_STD_1553B_Message
 
                     # Create a properly formatted MIL-STD-1553B message with binary data
@@ -1233,7 +1228,7 @@ class DisplayMessageHandler:
                     result = await self.sendMsg.send_message(command_word, [data_word], request_id, formatted_display_data)
 
                     logger.info(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Send message result: {result}")
-                    logger.info(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Sent VIL data to display system via MIL-STD-1553B message")
+                    logger.info("[LOCAL_DISP_MSG_HDR_VIL_FLOW] Sent VIL data to display system via MIL-STD-1553B message")
                 except Exception as send_error:
                     logger.debug(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Error sending MIL-STD-1553B message: {send_error}")
                     logger.error(traceback.format_exc())
@@ -1242,7 +1237,7 @@ class DisplayMessageHandler:
                 logger.debug(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Error storing display command: {service_error}")
                 logger.error(traceback.format_exc())
 
-            logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] ====== END VIL DATA HANDLING ======")
+            logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] ====== END VIL DATA HANDLING ======")
 
             # Send success acknowledgment
             request_id = message.get('request_id')
@@ -1266,7 +1261,7 @@ class DisplayMessageHandler:
                 await routing_service.route_status_word(ack_message)
                 logger.info(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Sent success acknowledgment for {request_id}")
 
-            logger.info(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Completed VIL data handling")
+            logger.info("[LOCAL_DISP_MSG_HDR_VIL_FLOW] Completed VIL data handling")
 
         except Exception as e:
             logger.debug(f"[LOCAL_DISP_MSG_HDR_VIL_FLOW] Error handling VIL data: {e}")
@@ -1296,7 +1291,7 @@ class DisplayMessageHandler:
             if binary_data.startswith('001') or binary_data.startswith('100'):
                 # This appears to be a MIL-STD-1553B frame
                 # Need to decode using frame swap logic seen in the logs
-                logger.debug(f"[PRECIP_CONVERTER] Detected MIL-STD-1553B frame format")
+                logger.debug("[PRECIP_CONVERTER] Detected MIL-STD-1553B frame format")
 
                 # Split the binary data into 20-bit frames if not already done
                 frames = []
@@ -1520,8 +1515,8 @@ class DisplayMessageHandler:
         """
         try:
             # COMPREHENSIVE DATA FLOW LOGGING
-            logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] ====== START PRECIPITATION DATA HANDLING ======")
-            logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] DisplayMessageHandler.handle_precipitation_data called")
+            logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] ====== START PRECIPITATION DATA HANDLING ======")
+            logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] DisplayMessageHandler.handle_precipitation_data called")
             logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Message type: {type(message)}")
 
             # Extract request_id for acknowledgment/tracking
@@ -1564,25 +1559,25 @@ class DisplayMessageHandler:
                     logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found precipitation data in message['precipitation'] with {len(precip_data) if isinstance(precip_data, list) else 'N/A'} items")
                 elif 'precipitation_data' in message:
                     precip_data = message['precipitation_data']
-                    logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found precipitation data in message['precipitation_data']")
+                    logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found precipitation data in message['precipitation_data']")
                 elif 'data' in message:
                     # Data could contain precipitation
                     if isinstance(message['data'], list):
-                        logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found potential precipitation data in message['data'] list")
+                        logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found potential precipitation data in message['data'] list")
                         precip_data = message['data']
                     elif isinstance(message['data'], (int, str)):
                         logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found potential raw value in message['data']: {message['data']}")
                         # save raw data value for later conversion
                         precip_data = message['data']
                     elif isinstance(message['data'], dict) and ('precipitation' in message['data'] or 'precipitation_data' in message['data']):
-                        logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found precipitation data in message['data'] dictionary")
+                        logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found precipitation data in message['data'] dictionary")
                         precip_data = message['data'].get('precipitation', message['data'].get('precipitation_data'))
                 elif 'additional_info' in message and isinstance(message['additional_info'], dict):
                     # Check in additional_info
                     if 'weather_data' in message['additional_info'] and isinstance(message['additional_info']['weather_data'], dict):
                         weather_data = message['additional_info']['weather_data']
                         if 'precipitation' in weather_data or 'precipitation_data' in weather_data:
-                            logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found precipitation data in message['additional_info']['weather_data']")
+                            logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found precipitation data in message['additional_info']['weather_data']")
                             precip_data = weather_data.get('precipitation', weather_data.get('precipitation_data'))
 
             # Log what we found
@@ -1595,10 +1590,10 @@ class DisplayMessageHandler:
                 elif isinstance(precip_data, str):
                     logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found string precipitation data: {precip_data}")
             else:
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] No precipitation data found in message")
+                logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] No precipitation data found in message")
 
             # Log the receipt of precipitation data
-            logger.info(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] DisplayMessageHandler received precipitation data")
+            logger.info("[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] DisplayMessageHandler received precipitation data")
 
             # DIRECT DISPLAY PROCESSING - Skip sending to precipitation service
             # No need to forward to precipitation service since this data should
@@ -1611,8 +1606,8 @@ class DisplayMessageHandler:
                 message['request_id'] = request_id
 
                 # Log direct processing with high visibility for debugging
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Directly processing precipitation data for display")
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Direct display processing - bypassing PrecipitationResponseService")
+                logger.debug("[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Directly processing precipitation data for display")
+                logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] Direct display processing - bypassing PrecipitationResponseService")
 
             # Fetch precipitation data from the database
             try:
@@ -1622,7 +1617,7 @@ class DisplayMessageHandler:
                 radar_db = db_manager.get_system_db('radar_management')
 
                 # Query for precipitation data
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Fetching precipitation data from database")
+                logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] Fetching precipitation data from database")
                 precip_db_data = radar_db.execute_query(
                     """
                     SELECT * FROM precipitation_data
@@ -1666,7 +1661,7 @@ class DisplayMessageHandler:
                     if len(precip_data) > 0:
                         logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] First precipitation item from DB: {precip_data[0]}")
                 else:
-                    logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] No precipitation data found in database")
+                    logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] No precipitation data found in database")
             except Exception as db_error:
                 logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Error fetching precipitation data from database: {db_error}")
                 logger.error(traceback.format_exc())
@@ -1680,7 +1675,7 @@ class DisplayMessageHandler:
             # Properly handle string precipitation data
             # Convert binary string to precipitation data objects if needed
             if isinstance(precip_data, str):
-                logger.warning(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Detected string precipitation data, converting to proper format")
+                logger.warning("[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Detected string precipitation data, converting to proper format")
                 # Use our new conversion method to transform binary string to precipitation objects
                 precip_data = self._convert_binary_precipitation_data(precip_data, request_id)
                 logger.warning(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Converted string data to {len(precip_data)} precipitation objects")
@@ -1708,15 +1703,12 @@ class DisplayMessageHandler:
 
                 # Store in response service
                 await self.response_service.handle_display_command(display_command, from_display_handler=True)
-                logger.info(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Successfully stored precipitation display command")
+                logger.info("[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Successfully stored precipitation display command")
 
                 # CREATE AND SEND A MIL-STD-1553B MESSAGE TO THE DISPLAY HARDWARE
                 try:
-                    import json
-                    from FMOFP.MIL_STD_1553B.mil_std_1553B  import MIL_STD_1553B_Message
 
                     # Get proper RT address from configuration
-                    from FMOFP.local_messaging.address_utils import get_rt_address, get_subaddress
                     from FMOFP.local_messaging.display_command_map import get_display_command_word
                     from FMOFP.local_messaging.command_word_map import WEATHER_DATA_REQUEST_MAP
 
@@ -1816,7 +1808,7 @@ class DisplayMessageHandler:
                     result = await self.sendMsg.send_message(command_word, binary_data, request_id, metadata)
 
                     logger.info(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Send message result: {result}")
-                    logger.info(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Sent precipitation data to display system via MIL-STD-1553B message")
+                    logger.info("[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Sent precipitation data to display system via MIL-STD-1553B message")
                 except Exception as send_error:
                     logger.debug(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Error sending MIL-STD-1553B message: {send_error}")
                     logger.error(traceback.format_exc())
@@ -1825,7 +1817,7 @@ class DisplayMessageHandler:
                 logger.debug(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Error storing display command: {service_error}")
                 logger.error(traceback.format_exc())
 
-            logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] ====== END PRECIPITATION DATA HANDLING ======")
+            logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] ====== END PRECIPITATION DATA HANDLING ======")
 
             # Send success acknowledgment
             request_id = message.get('request_id')
@@ -1849,7 +1841,7 @@ class DisplayMessageHandler:
                 await routing_service.route_status_word(ack_message)
                 logger.info(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Sent success acknowledgment for {request_id}")
 
-            logger.info(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Completed precipitation data handling")
+            logger.info("[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Completed precipitation data handling")
 
         except Exception as e:
             logger.debug(f"[LOCAL_DISP_MSG_HDR_PRECIPITATION_FLOW] Error handling precipitation data: {e}")
@@ -1901,10 +1893,10 @@ class DisplayMessageHandler:
                     command_type = 'mode_change'
                 elif weather_data and weather_data.get('vil_data'):
                     command_type = 'vil_data'
-                    logger.info(f"[DISPLAY_MSG] Detected VIL data from weather_data content")
+                    logger.info("[DISPLAY_MSG] Detected VIL data from weather_data content")
                 elif weather_data and weather_data.get('precipitation'):
                     command_type = 'precipitation_data'
-                    logger.info(f"[DISPLAY_MSG] Detected precipitation data from weather_data content")
+                    logger.info("[DISPLAY_MSG] Detected precipitation data from weather_data content")
                 elif weather_data and weather_data.get('cells'):
                     command_type = 'cell_data_update'
                 else:
@@ -2002,8 +1994,8 @@ class DisplayMessageHandler:
                         vil_data_list = vil_data_objects if isinstance(vil_data_objects, list) else [vil_data_objects]
 
                         # Log what we're about to send to the VIL Response Service
-                        logger.info(f"[VIL_FLOW] Handling VIL data message")
-                        logger.info(f"[VIL_FLOW] Extracted VIL data from response")
+                        logger.info("[VIL_FLOW] Handling VIL data message")
+                        logger.info("[VIL_FLOW] Extracted VIL data from response")
                         logger.info(f"[VIL_FLOW] Preparing to route {len(vil_data_list)} VIL data objects to VIL Response Service")
 
                         # Prepare message for VIL Response Service with ALL required fields
@@ -2039,8 +2031,8 @@ class DisplayMessageHandler:
 
                         # Store command in response service
                         await self.response_service.handle_display_command(command_data, from_display_handler=True)
-                        logger.info(f"[VIL_FLOW] Routed VIL data to display system")
-                        logger.info(f"[VIL_FLOW] Processed VIL data message through VIL Response Service")
+                        logger.info("[VIL_FLOW] Routed VIL data to display system")
+                        logger.info("[VIL_FLOW] Processed VIL data message through VIL Response Service")
                         return
                     except Exception as e:
                         logger.error(f"[DISPLAY_MSG] Error routing VIL data to VIL Response Service: {e}")
@@ -2060,7 +2052,7 @@ class DisplayMessageHandler:
 
                         # Store command in response service
                         await self.response_service.handle_display_command(command_data, from_display_handler=True)
-                        logger.info(f"[DISPLAY_MSG] Processed VIL data message via fallback")
+                        logger.info("[DISPLAY_MSG] Processed VIL data message via fallback")
                         return
 
             # For precipitation data, use specialized routing
@@ -2091,7 +2083,7 @@ class DisplayMessageHandler:
 
                     # Store command in response service
                     await self.response_service.handle_display_command(command_data, from_display_handler=True)
-                    logger.info(f"[DISPLAY_MSG] Processed precipitation data message")
+                    logger.info("[DISPLAY_MSG] Processed precipitation data message")
                     return
 
             # Only update mode for mode change commands
@@ -2232,8 +2224,8 @@ class DisplayMessageHandler:
         """
         try:
             # COMPREHENSIVE DATA FLOW LOGGING
-            logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] ====== START ECHO TOP DATA HANDLING ======")
-            logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] DisplayMessageHandler.handle_echo_top_data called")
+            logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] ====== START ECHO TOP DATA HANDLING ======")
+            logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] DisplayMessageHandler.handle_echo_top_data called")
             logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Message type: {type(message)}")
 
             # Extract request_id for acknowledgment/tracking
@@ -2273,23 +2265,23 @@ class DisplayMessageHandler:
             if isinstance(message, dict):
                 if 'echo_top_data' in message:
                     echo_top_data = message['echo_top_data']
-                    logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found echo top data in message['echo_top_data']")
+                    logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found echo top data in message['echo_top_data']")
                 elif 'data' in message:
                     # Data could contain Echo Top
                     if isinstance(message['data'], list):
-                        logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found potential echo top data in message['data'] list")
+                        logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found potential echo top data in message['data'] list")
                         echo_top_data = message['data']
                     elif isinstance(message['data'], (int, str)):
                         logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found potential raw value in message['data']: {message['data']}")
                     elif isinstance(message['data'], dict) and ('echo_top_data' in message['data'] or 'echo_top' in message['data']):
-                        logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found echo top data in message['data'] dictionary")
+                        logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found echo top data in message['data'] dictionary")
                         echo_top_data = message['data'].get('echo_top_data', message['data'].get('echo_top'))
                 elif 'additional_info' in message and isinstance(message['additional_info'], dict):
                     # Check in additional_info
                     if 'weather_data' in message['additional_info'] and isinstance(message['additional_info']['weather_data'], dict):
                         weather_data = message['additional_info']['weather_data']
                         if 'echo_top_data' in weather_data or 'echo_top' in weather_data:
-                            logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] Found echo top data in message['additional_info']['weather_data']")
+                            logger.info("[LOCAL_DISP_MSG_HDR_TRACKING] Found echo top data in message['additional_info']['weather_data']")
                             echo_top_data = weather_data.get('echo_top_data', weather_data.get('echo_top'))
 
             # Log what we found
@@ -2300,10 +2292,10 @@ class DisplayMessageHandler:
                     if echo_top_data and len(echo_top_data) > 0:
                         logger.info(f"[LOCAL_DISP_MSG_HDR_TRACKING] First echo top item: {echo_top_data[0]}")
             else:
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] No echo top data found in message")
+                logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] No echo top data found in message")
 
             # Log the receipt of echo top data
-            logger.info(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] DisplayMessageHandler received echo top data")
+            logger.info("[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] DisplayMessageHandler received echo top data")
 
             # Extract request_id for acknowledgment/tracking
             request_id = message.get('request_id')
@@ -2312,8 +2304,8 @@ class DisplayMessageHandler:
                 message['request_id'] = request_id
 
             # Log direct processing
-            logger.info(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Directly processing echo top data for display")
-            logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Direct display processing - bypassing EchoTopResponseService")
+            logger.info("[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Directly processing echo top data for display")
+            logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] Direct display processing - bypassing EchoTopResponseService")
 
             # Fetch echo top data from the database
             try:
@@ -2323,7 +2315,7 @@ class DisplayMessageHandler:
                 radar_db = db_manager.get_system_db('radar_management')
 
                 # Query for echo top data
-                logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Fetching echo top data from database")
+                logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] Fetching echo top data from database")
                 echo_top_db_data = radar_db.execute_query(
                     """
                     SELECT * FROM echo_top_data
@@ -2365,7 +2357,7 @@ class DisplayMessageHandler:
                     if len(echo_top_data) > 0:
                         logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] First echo top item from DB: {echo_top_data[0]}")
                 else:
-                    logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] No echo top data found in database")
+                    logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] No echo top data found in database")
             except Exception as db_error:
                 logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] Error fetching echo top data from database: {db_error}")
                 logger.error(traceback.format_exc())
@@ -2393,11 +2385,10 @@ class DisplayMessageHandler:
 
                 # Store in response service
                 await self.response_service.handle_display_command(display_command, from_display_handler=True)
-                logger.info(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Successfully stored echo top display command")
+                logger.info("[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Successfully stored echo top display command")
 
                 # CREATE AND SEND A MIL-STD-1553B MESSAGE TO THE DISPLAY HARDWARE
                 try:
-                    import json
                     from FMOFP.MIL_STD_1553B.mil_std_1553B  import MIL_STD_1553B_Message
 
                     # Create a properly formatted MIL-STD-1553B message with binary data
@@ -2495,7 +2486,7 @@ class DisplayMessageHandler:
                     result = await self.sendMsg.send_message(command_word, [data_word], request_id, formatted_display_data)
 
                     logger.info(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Send message result: {result}")
-                    logger.info(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Sent echo top data to display system via MIL-STD-1553B message")
+                    logger.info("[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Sent echo top data to display system via MIL-STD-1553B message")
                 except Exception as send_error:
                     logger.debug(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Error sending MIL-STD-1553B message: {send_error}")
                     logger.error(traceback.format_exc())
@@ -2504,7 +2495,7 @@ class DisplayMessageHandler:
                 logger.debug(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Error storing display command: {service_error}")
                 logger.error(traceback.format_exc())
 
-            logger.debug(f"[LOCAL_DISP_MSG_HDR_TRACKING] ====== END ECHO TOP DATA HANDLING ======")
+            logger.debug("[LOCAL_DISP_MSG_HDR_TRACKING] ====== END ECHO TOP DATA HANDLING ======")
 
             # Send success acknowledgment
             request_id = message.get('request_id')
@@ -2528,7 +2519,7 @@ class DisplayMessageHandler:
                 await routing_service.route_status_word(ack_message)
                 logger.info(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Sent success acknowledgment for {request_id}")
 
-            logger.info(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Completed echo top data handling")
+            logger.info("[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Completed echo top data handling")
 
         except Exception as e:
             logger.debug(f"[LOCAL_DISP_MSG_HDR_ECHO_TOP_FLOW] Error handling echo top data: {e}")
@@ -2612,11 +2603,8 @@ class DisplayMessageHandler:
 
                 # Create MIL-STD-1553B message for PFD display system
                 try:
-                    import json
-                    from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
 
                     # Get proper RT address from configuration
-                    from FMOFP.MIL_STD_1553B.rt_address_config import get_rt_address, get_subaddress
                     # Get display command word from command registry
                     from FMOFP.local_messaging.display_command_map import get_display_command_word
 
@@ -2680,7 +2668,6 @@ class DisplayMessageHandler:
 
                 # Create MIL-STD-1553B message for PFD display
                 try:
-                    from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
                     from FMOFP.local_messaging.display_command_map import get_display_command_word
 
                     # Get command word for PFD with data command type
@@ -2746,7 +2733,6 @@ class DisplayMessageHandler:
 
                 # Create MIL-STD-1553B message for MFD display
                 try:
-                    from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
                     from FMOFP.local_messaging.display_command_map import get_display_command_word
 
                     # Get command word for MFD with data command type

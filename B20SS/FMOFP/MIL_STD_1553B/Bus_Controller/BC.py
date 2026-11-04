@@ -9,7 +9,6 @@ import threading
 import time
 import traceback
 import asyncio
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.MIL_STD_1553B.Bus_Controller.BC_messaging.BC_msg import BC_deconstruct
 from FMOFP.MIL_STD_1553B.Messaging import get_send_1553_msg
 from FMOFP.MIL_STD_1553B.Bus_Controller.BC_connect.BC_socket import BC_Listener
@@ -142,7 +141,7 @@ class Bus_Controller:
                 intensity = 0.1
 
             # Log the decoded data with both raw and adjusted coordinates
-            logger.info(f"[BC_PRECIP] Decoded precipitation data:")
+            logger.info("[BC_PRECIP] Decoded precipitation data:")
             logger.info(f"[BC_PRECIP] - Position X: {x_coordinate} (adjusted: {x_coordinate_adjusted})")
             logger.info(f"[BC_PRECIP] - Position Y: {y_coordinate} (adjusted: {y_coordinate_adjusted})")
             logger.info(f"[BC_PRECIP] - Type code: {type_code} -> {precip_type}")
@@ -261,7 +260,7 @@ class Bus_Controller:
                 try:
                     # Try to parse as dictionary if it's a string representation
                     parsed_frame = json.loads(frame)
-                    logger.info(f"[BC] Successfully parsed frame string as dictionary")
+                    logger.info("[BC] Successfully parsed frame string as dictionary")
                 except (ValueError, SyntaxError) as e:
                     # Continue with string processing if parsing fails
                     logger.warning(f"[BC] Failed to parse frame as dictionary: {e}")
@@ -280,7 +279,7 @@ class Bus_Controller:
                 metadata = parsed_frame.get('metadata', {})
                 if isinstance(metadata, dict) and metadata.get('aggregated_block_transfer') == True:
                     already_aggregated = True
-                    logger.info(f"[BC] Detected already aggregated block transfer message, processing directly")
+                    logger.info("[BC] Detected already aggregated block transfer message, processing directly")
 
             if not already_aggregated and isinstance(parsed_frame, dict) and aggregator.is_transfer_message(parsed_frame):
                 logger.info(f"[BC] Detected block transfer message with request_id: {request_id}")
@@ -299,7 +298,7 @@ class Bus_Controller:
                 # Apply message structure normalization to ensure all required fields are present
                 normalizer = get_message_structure_normalizer()
                 result = normalizer.normalize_message_structure(result)
-                logger.info(f"[BC] Normalized message structure to ensure routing compliance")
+                logger.info("[BC] Normalized message structure to ensure routing compliance")
 
                 frame = result
                 logger.info(f"[BC] Aggregated message type: {result.get('message_type')}, command_type: {result.get('command_type')}")
@@ -308,7 +307,7 @@ class Bus_Controller:
                 if 'data' in result and isinstance(result['data'], list):
                     logger.info(f"[BC] Aggregated message contains {len(result['data'])} data items")
                 elif 'data' in result and isinstance(result['data'], dict) and result['data'].get('completion_message'):
-                    logger.info(f"[BC] Aggregated message contains completion data")
+                    logger.info("[BC] Aggregated message contains completion data")
 
                 # Route aggregated message directly without frame splitting
                 if isinstance(result, dict) and 'message_type' in result and 'command_type' in result:
@@ -319,9 +318,9 @@ class Bus_Controller:
 
                     # Log success/failure
                     if route_result:
-                        logger.info(f"[BC] Successfully routed aggregated message with direct routing")
+                        logger.info("[BC] Successfully routed aggregated message with direct routing")
                     else:
-                        logger.error(f"[BC] Failed to route aggregated message")
+                        logger.error("[BC] Failed to route aggregated message")
 
                     # Return here to prevent frame splitting and further processing
                     return
@@ -338,7 +337,7 @@ class Bus_Controller:
                 try:
                     # Check for aggregated block transfer
                     if isinstance(raw_frame, dict) and raw_frame.get('metadata', {}).get('aggregated_block_transfer', False):
-                        logger.info(f"[BC] Processing aggregated block transfer as status word")
+                        logger.info("[BC] Processing aggregated block transfer as status word")
                         await self._process_status_word(raw_frame)
                         continue
 
@@ -408,11 +407,11 @@ class Bus_Controller:
                 if is_transfer_init or is_transfer_data or is_transfer_complete:
                     is_block_transfer = True
                     if is_transfer_init:
-                        logger.info(f"[BC] Detected block transfer initialization message")
+                        logger.info("[BC] Detected block transfer initialization message")
                     elif is_transfer_data:
-                        logger.info(f"[BC] Detected block transfer data message")
+                        logger.info("[BC] Detected block transfer data message")
                     elif is_transfer_complete:
-                        logger.info(f"[BC] Detected block transfer completion message")
+                        logger.info("[BC] Detected block transfer completion message")
 
                 if 'status_word' in frame:
                     # Extract status word from dictionary
@@ -508,7 +507,7 @@ class Bus_Controller:
                             logger.info(f"[BC] Extracted {len(valid_frames)} valid frames from parsed dictionary")
                             return valid_frames[0]
                         else:
-                            logger.error(f"[BC] No valid frames found in parsed dictionary")
+                            logger.error("[BC] No valid frames found in parsed dictionary")
                             return None
 
                 except (ValueError, SyntaxError) as e:
@@ -626,7 +625,7 @@ class Bus_Controller:
                             return split_frames[0]
                         else:
                             # If splitting failed, fall back to extracting just the first 20 bits
-                            logger.error(f"[BC] Failed to split oversized frame")
+                            logger.error("[BC] Failed to split oversized frame")
                     else:
                         logger.error(f"[BC] Invalid frame length: {len(cleaned)} bits - MIL-STD-1553B requires 20 bits")
                         return None
@@ -701,23 +700,23 @@ class Bus_Controller:
                     elif destination == 'weather_radar':    # Heading to radar display in MFD (IF weather_radar is the SUBADDRESS, its going to the actual radar system)
                         rt_address = 11
                         radar_type = 'weather_radar'        # Also set the radar_type
-                        logger.info(f"[BC] Setting RT address to 11 and radar_type to weather_radar")
+                        logger.info("[BC] Setting RT address to 11 and radar_type to weather_radar")
                     elif destination == 'tfr_radar':        # Heading to radar display in MFD (IF tfr_radar is the SUBADDRESS, its going to the actual radar system)
                         rt_address = 11
                         radar_type = 'tfr_radar'
-                        logger.info(f"[BC] Setting RT address to 11 and radar_type to tfr_radar")
+                        logger.info("[BC] Setting RT address to 11 and radar_type to tfr_radar")
                     elif destination == 'sar_radar':       # Heading to radar display in MFD (IF sar_radar is the SUBADDRESS, its going to the actual radar system)
                         rt_address = 11
                         radar_type = 'sar_radar'
-                        logger.info(f"[BC] Setting RT address to 11 and radar_type to sar_radar")
+                        logger.info("[BC] Setting RT address to 11 and radar_type to sar_radar")
                     elif destination == 'targeting_radar':  # Heading to radar display in MFD (IF targeting_radar is the SUBADDRESS, its going to the actual radar system)
                         rt_address = 11
                         radar_type = 'targeting_radar'
-                        logger.info(f"[BC] Setting RT address to 11 and radar_type to targeting_radar")
+                        logger.info("[BC] Setting RT address to 11 and radar_type to targeting_radar")
                     elif destination == 'aewc_radar':       # Heading to radar display in MFD (IF aewc_radar is the SUBADDRESS, its going to the actual radar system)
                         rt_address = 11
                         radar_type = 'aewc_radar'
-                        logger.info(f"[BC] Setting RT address to 11 and radar_type to aewc_radar")
+                        logger.info("[BC] Setting RT address to 11 and radar_type to aewc_radar")
                     else:
                         # Try to look up the destination in the ADDRESS_BOOK
                         try:
@@ -730,7 +729,7 @@ class Bus_Controller:
                 # if we have a dispaly system address but no radar_type, set it to display_system
                 if rt_address == 11 and not radar_type:
                     radar_type = frame.get('destination', None)
-                    logger.info(f"[BC] Setting radar_type to display_system for RT address 11")
+                    logger.info("[BC] Setting radar_type to display_system for RT address 11")
 
 
                 # If we have a radar system address but no radar_type, try to determine it from metadata or subaddress
@@ -761,7 +760,7 @@ class Bus_Controller:
                 command_name = frame.get('command_name', None)
                 metadata = frame.get('metadata', {})
 
-                logger.info(f"[BC] Structured message details:")
+                logger.info("[BC] Structured message details:")
                 logger.info(f"[BC]   - Status word: {status_word_frame}")
                 logger.info(f"[BC]   - Request ID: {request_id}")
                 logger.info(f"[BC]   - RT address: {rt_address}")
@@ -789,7 +788,7 @@ class Bus_Controller:
                             parsed_dict = json.loads(frame)
                             if isinstance(parsed_dict, dict) and 'status_word' in parsed_dict:
                                 # Recursively call with the parsed dictionary
-                                logger.info(f"[BC] Parsed dictionary-like string into dictionary. REPROCESSING...")
+                                logger.info("[BC] Parsed dictionary-like string into dictionary. REPROCESSING...")
                                 return await self._process_status_word(parsed_dict)
                         except (ValueError, SyntaxError) as e:
                             logger.error(f"[BC] Error parsing dictionary-like string: {e}")
@@ -804,7 +803,7 @@ class Bus_Controller:
                         rt_address = int(frame[3:8], 2)
                         logger.info(f"[BC] Extracted RT address from raw binary frame: {rt_address}")
                     else:
-                        logger.warning(f"[BC] Could not extract RT address from invalid frame format")
+                        logger.warning("[BC] Could not extract RT address from invalid frame format")
                         rt_address = None
                     timestamp = time.time()
                     command_type = None
@@ -819,7 +818,7 @@ class Bus_Controller:
                         logger.info(f"[BC] No command_type found in frame: {frame}")
                         pass
 
-                    logger.info(f"[BC] Raw frame details:")
+                    logger.info("[BC] Raw frame details:")
                     logger.info(f"[BC]   - Status word: {status_word_frame}")
                     logger.info(f"[BC]   - RT address (extracted): {rt_address}")
                 else:
@@ -842,7 +841,7 @@ class Bus_Controller:
                     rt_address = int(status_word_frame[3:8], 2)
                     logger.info(f"[BC] Extracted RT address from status word: {rt_address}")
                 else:
-                    logger.warning(f"[BC] Could not extract RT address from invalid status word format")
+                    logger.warning("[BC] Could not extract RT address from invalid status word format")
                     # Try to extract RT address from original frame if it's a dictionary
                     if isinstance(frame, dict):
                         rt_address = frame.get('rt_address')
@@ -981,7 +980,6 @@ class Bus_Controller:
                                 response_service = None
                         elif rt_address == 6:  # Mission planning
                             try:
-                                from FMOFP.Systems.missionPlanning.missionService import get_mission_service
                                 # Mission service does not expose a 1553B response-service
                                 # interface yet; log the acknowledgment and continue.
                                 logger.info(f"[BC] Mission planning (RT {rt_address}) acknowledgment received")
@@ -1142,7 +1140,7 @@ class Bus_Controller:
 
                                 # Check for mode change completion indicators in metadata as a fallback
                                 elif 'message_purpose' in metadata_dict and metadata_dict['message_purpose'] == 'mode_change_completion':
-                                    logger.info(f"[BC] Detected mode change completion message from metadata")
+                                    logger.info("[BC] Detected mode change completion message from metadata")
                                     original_message_type = metadata_dict.get('message_type', 'weather_radarModeChangeCompletion')
                                     original_command_type = 'mode_change_completion'
                                     original_command_name = metadata_dict.get('command_name', 'WEATHER_RADAR_MODE_CHANGE_COMPLETION')
@@ -1218,7 +1216,7 @@ class Bus_Controller:
                         # Default to display_system for completion messages
                         if not destination and original_command_type == 'mode_change_completion':
                             destination = 'display_system'
-                            logger.info(f"[BC] Setting destination to display_system for mode_change_completion message")
+                            logger.info("[BC] Setting destination to display_system for mode_change_completion message")
                         elif not destination:
                             destination = 'display_system'  # Default fallback
 
@@ -1349,9 +1347,9 @@ class Bus_Controller:
                                         # Add block transfer info to metadata
                                         combined_metadata['block_transfer_complete'] = True
                                         combined_metadata['binary_data_length'] = len(assembled_data)
-                                        logger.info(f"[BC] Successfully retrieved and assembled complete block transfer data")
+                                        logger.info("[BC] Successfully retrieved and assembled complete block transfer data")
                                     else:
-                                        logger.error(f"[BC] Failed to get assembled data for block transfer from RT despite transfer being complete")
+                                        logger.error("[BC] Failed to get assembled data for block transfer from RT despite transfer being complete")
                                         # Use whatever data we have in frame
                                         unified_message['data'] = frame.get('data', [data_int])
                             elif is_transfer_complete:
@@ -1364,9 +1362,9 @@ class Bus_Controller:
                                         unified_message['data'] = assembled_data
                                         combined_metadata['block_transfer_complete'] = True
                                         combined_metadata['binary_data_length'] = len(assembled_data)
-                                        logger.info(f"[BC] Successfully retrieved assembled data for completed transfer")
+                                        logger.info("[BC] Successfully retrieved assembled data for completed transfer")
                                 else:
-                                    logger.warning(f"[BC] Received transfer complete but transfer is not complete in manager")
+                                    logger.warning("[BC] Received transfer complete but transfer is not complete in manager")
 
                         # Apply translation for precipitation data if not handled by block transfer
                         elif is_precipitation_data:
@@ -1428,7 +1426,7 @@ class Bus_Controller:
                                             combined_metadata['binary_data_length'] = len(assembled_data)
                                             combined_metadata['binary_translated'] = False  # Don't translate here, let precipitation handler do it
 
-                                            logger.info(f"[BC] Routed complete precipitation block transfer data")
+                                            logger.info("[BC] Routed complete precipitation block transfer data")
                                         else:
                                             logger.error(f"[BC] Invalid assembled data: {assembled_data}")
                                             # Fall back to single data point translation
@@ -1437,7 +1435,7 @@ class Bus_Controller:
                                             combined_metadata['binary_translated'] = True
                                             combined_metadata['binary_source_value'] = data_int
                                     else:
-                                        logger.error(f"[BC] Failed to get assembled data for block transfer")
+                                        logger.error("[BC] Failed to get assembled data for block transfer")
                                         # Fall back to single data point translation
                                         translated_data = self._translate_precipitation_binary_data(data_int)
                                         unified_message['data'] = translated_data
@@ -1462,7 +1460,7 @@ class Bus_Controller:
                                 # Check if this "completion" message actually has precipitation data
                                 # If it has data, it should be treated as a data message even if labeled as completion
                                 if 'data' in frame and isinstance(frame['data'], list) and len(frame['data']) > 0:
-                                    logger.info(f"[BC] Detected precipitation message with data despite 'completion' in command type")
+                                    logger.info("[BC] Detected precipitation message with data despite 'completion' in command type")
                                     # Override the command type to ensure it's properly handled
                                     original_command_type = 'precipitation_data'
                                     unified_message['command_type'] = 'precipitation_data'
@@ -1470,16 +1468,16 @@ class Bus_Controller:
                                     # Don't mark as completion message
                                     combined_metadata['precipitation_data'] = True
                                     combined_metadata['binary_translated'] = False
-                                    logger.info(f"[BC] Treating as precipitation_data message because actual data is present")
+                                    logger.info("[BC] Treating as precipitation_data message because actual data is present")
                                 else:
                                     # For true completion messages with no data, don't decode as precipitation data
-                                    logger.info(f"[BC] Detected true precipitation completion message - not translating status word")
+                                    logger.info("[BC] Detected true precipitation completion message - not translating status word")
                                     # Create a completion indicator instead of translating the status word
                                     unified_message['data'] = {'completion_message': True, 'status': 'success'}
                                     # Set metadata flags
                                     combined_metadata['precipitation_completion'] = True
                                     combined_metadata['binary_translated'] = False
-                                    logger.info(f"[BC] Using completion indicator instead of translating status word")
+                                    logger.info("[BC] Using completion indicator instead of translating status word")
                             elif isinstance(data_int, int):
                                 # Not a block transfer, process single data point as before
                                 logger.info(f"[BC] Detected precipitation binary data: {data_int}")
@@ -1487,13 +1485,13 @@ class Bus_Controller:
                                 unified_message['data'] = translated_data
                                 combined_metadata['binary_translated'] = True
                                 combined_metadata['binary_source_value'] = data_int
-                                logger.info(f"[BC] Translated precipitation binary data before routing")
+                                logger.info("[BC] Translated precipitation binary data before routing")
                         else:
                             # Use the original binary data for other message types
                             unified_message['data'] = [data_int]
 
                         # Log the important fields for verification
-                        logger.info(f"[BC] Created unified_message with critical fields:")
+                        logger.info("[BC] Created unified_message with critical fields:")
                         logger.info(f"[BC]   - request_id: {unified_message['request_id']}")
                         logger.info(f"[BC]   - command_name: {unified_message['command_name']}")
                         logger.info(f"[BC]   - message_type: {unified_message['message_type']}")
@@ -1532,7 +1530,7 @@ class Bus_Controller:
 
                                 # Adjust command_type based on actual data presence (not just based on name)
                                 if has_actual_data:
-                                    logger.info(f"[BC] DATA-AWARE CLASSIFICATION: Message contains actual precipitation data")
+                                    logger.info("[BC] DATA-AWARE CLASSIFICATION: Message contains actual precipitation data")
                                     # Force correct command_type regardless of what it was
                                     if 'completion' in str(unified_message.get('command_type', '')).lower():
                                         logger.info(f"[BC] Correcting command_type from '{unified_message.get('command_type')}' to 'precipitation_data' because actual data is present")
@@ -1541,7 +1539,7 @@ class Bus_Controller:
                                 else:
                                     # Only mark as completion if it's explicitly a completion message with no data
                                     if isinstance(unified_message.get('data'), dict) and unified_message['data'].get('completion_message'):
-                                        logger.info(f"[BC] Verified completion message with no data")
+                                        logger.info("[BC] Verified completion message with no data")
                                         # Make sure command_type is consistent
                                         unified_message['command_type'] = 'precipitation_completion'
                                         combined_metadata['command_type'] = 'precipitation_completion'
@@ -1552,7 +1550,7 @@ class Bus_Controller:
                                         logger.info(f"[BC] CRITICAL: Also correcting metadata.command_type from '{unified_message['metadata']['command_type']}' to 'precipitation_data'")
                                         unified_message['metadata']['command_type'] = 'precipitation_data'
 
-                            logger.info(f"[BC] Enhanced metadata for precipitation message")
+                            logger.info("[BC] Enhanced metadata for precipitation message")
                             logger.info(f"[BC] CRITICAL PRESERVATION: Precipitation message with command_name={original_command_name}, request_id={unified_message['request_id']}")
 
                         # Special handling for VIL messages
@@ -1563,7 +1561,7 @@ class Bus_Controller:
                             original_command_name = 'DISPLAY_VIL_DATA'
                             unified_message['command_name'] = original_command_name
                             combined_metadata['command_name'] = original_command_name
-                            logger.info(f"[BC] Enhanced metadata for VIL message")
+                            logger.info("[BC] Enhanced metadata for VIL message")
                             logger.info(f"[BC] CRITICAL PRESERVATION: VIL message with command_name={original_command_name}, request_id={unified_message['request_id']}")
 
                         # Special handling for mode change messages
@@ -1599,7 +1597,7 @@ class Bus_Controller:
                             unified_message['metadata']['request_id'] = request_id
 
                         logger.info(f"[BC] Routing message through unified router: {unified_message}")
-                        logger.info(f"[BC] Message flow trace: BC_Listener -> Bus_Controller -> Unified Router")
+                        logger.info("[BC] Message flow trace: BC_Listener -> Bus_Controller -> Unified Router")
 
                         # Route through the unified router
                         route_result = self.route_message(unified_message)
@@ -1607,7 +1605,7 @@ class Bus_Controller:
 
                         # Log mode change completion message
                         if command_type == 'mode_change_completion':
-                            logger.info(f"[BC] Mode change completion message routed to unified router")
+                            logger.info("[BC] Mode change completion message routed to unified router")
                             if metadata:
                                 old_mode = metadata.get('old_mode')
                                 new_mode = metadata.get('new_mode')
@@ -1721,23 +1719,23 @@ class Bus_Controller:
                 }
 
                 # Log critical fields for verification
-                logger.info(f"[BC] Created command word unified_message with:")
+                logger.info("[BC] Created command word unified_message with:")
                 logger.info(f"[BC]   - request_id: {unified_message['request_id']}")
                 logger.info(f"[BC]   - command_name: {unified_message['command_name']}")
                 logger.info(f"[BC]   - message_type: {unified_message['message_type']}")
 
                 # Route through the unified router with enhanced logging
-                logger.info(f"[BC] Routing command word message through unified router...")
+                logger.info("[BC] Routing command word message through unified router...")
                 route_result = self.route_message(unified_message)
 
                 if route_result:
-                    logger.info(f"[BC] Successfully routed command/data word through unified router:")
+                    logger.info("[BC] Successfully routed command/data word through unified router:")
                     logger.info(f"[BC]   - system: {system_name}")
                     logger.info(f"[BC]   - command: {command_word}")
                     logger.info(f"[BC]   - command_name: {command_name}")
                     logger.info(f"[BC]   - request_id: {request_id}")
                 else:
-                    logger.error(f"[BC] Failed to route command/data word:")
+                    logger.error("[BC] Failed to route command/data word:")
                     logger.error(f"[BC]   - system: {system_name}")
                     logger.error(f"[BC]   - command: {command_word}")
                     logger.error(f"[BC]   - command_name: {command_name}")

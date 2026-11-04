@@ -295,7 +295,7 @@ class VisualSettingsManager:
                     legend_manager.update_legend_state(mode_upper)
                     logger.info(f"[VISUAL_SETTINGS] Updated legend manager for mode: {mode_upper}")
             except ImportError:
-                logger.warning(f"[VISUAL_SETTINGS] Could not import legend_manager")
+                logger.warning("[VISUAL_SETTINGS] Could not import legend_manager")
             except Exception as e:
                 logger.error(f"[VISUAL_SETTINGS] Error updating legend manager: {str(e)}")
             
@@ -342,7 +342,7 @@ class VisualSettingsManager:
                     legend_manager.update_legend_state(mode_upper)
                     logger.info(f"[VISUAL_SETTINGS] Updated legend manager for mode: {mode_upper}")
             except ImportError:
-                logger.error(f"[VISUAL_SETTINGS] Could not import legend_manager")
+                logger.error("[VISUAL_SETTINGS] Could not import legend_manager")
             except Exception as e:
                 logger.error(f"[VISUAL_SETTINGS] Error updating legend manager: {str(e)}")
             
@@ -362,9 +362,9 @@ class VisualSettingsManager:
             if visual_node:
                 logger.info(f"[VISUAL_SETTINGS] Updating visual node for {self.radar_type}")
                 await visual_node.update(self.settings)
-                logger.info(f"[VISUAL_SETTINGS] Visual node updated successfully")
+                logger.info("[VISUAL_SETTINGS] Visual node updated successfully")
             else:
-                logger.warning(f"[VISUAL_SETTINGS] Cannot update visual node: not found")
+                logger.warning("[VISUAL_SETTINGS] Cannot update visual node: not found")
         except Exception as e:
             logger.error(f"[VISUAL_SETTINGS] Error updating visual node: {str(e)}")
             logger.error(traceback.format_exc())

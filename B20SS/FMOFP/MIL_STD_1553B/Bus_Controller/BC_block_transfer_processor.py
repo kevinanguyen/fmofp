@@ -3,15 +3,11 @@ Process MIL-STD-1553B block transfer messages.
 
 Handles block transfer protocol between RT and BC.
 """
-import time
-import logging
 import traceback
-import asyncio
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.MIL_STD_1553B.block_transfer_manager import get_block_transfer_manager
-from FMOFP.MIL_STD_1553B.Bus_Controller.bc_message_extractor import get_bc_message_extractor
 
 logger = get_logger()
 
@@ -121,10 +117,10 @@ async def handle_transfer_data(extracted_fields: Dict[str, Any], bc_instance) ->
                 extracted_fields['data'] = assembled_data
                 extracted_fields['block_transfer_complete'] = True
                 extracted_fields['binary_data_length'] = len(assembled_data)
-                logger.info(f"[BC_BLOCK] Successfully retrieved and assembled complete block transfer data")
+                logger.info("[BC_BLOCK] Successfully retrieved and assembled complete block transfer data")
                 return True
             else:
-                logger.error(f"[BC_BLOCK] Failed to get assembled data for block transfer from RT despite transfer being complete")
+                logger.error("[BC_BLOCK] Failed to get assembled data for block transfer from RT despite transfer being complete")
                 return False
     except Exception as e:
         logger.error(f"[BC_BLOCK] Error in handle_transfer_data: {e}")
@@ -158,13 +154,13 @@ async def handle_transfer_complete(extracted_fields: Dict[str, Any], bc_instance
                 extracted_fields['data'] = assembled_data
                 extracted_fields['block_transfer_complete'] = True
                 extracted_fields['binary_data_length'] = len(assembled_data)
-                logger.info(f"[BC_BLOCK] Successfully retrieved assembled data for completed transfer")
+                logger.info("[BC_BLOCK] Successfully retrieved assembled data for completed transfer")
                 return True
             else:
-                logger.warning(f"[BC_BLOCK] Transfer marked complete but no assembled data returned")
+                logger.warning("[BC_BLOCK] Transfer marked complete but no assembled data returned")
                 return False
         else:
-            logger.warning(f"[BC_BLOCK] Received transfer complete but transfer is not complete in manager")
+            logger.warning("[BC_BLOCK] Received transfer complete but transfer is not complete in manager")
             return False
     except Exception as e:
         logger.error(f"[BC_BLOCK] Error in handle_transfer_complete: {e}")

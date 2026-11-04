@@ -8,8 +8,7 @@ Implementation aligns with the precipitation data handler approach.
 
 import traceback
 import time
-import json
-from typing import Dict, Any, Union, List, Optional
+from typing import Dict, Any, Union, List
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.local_messaging.routing.response_service_adapter import get_response_service_adapter
@@ -86,7 +85,7 @@ class VILHandler:
             
             # For completion messages, we don't need to route to display
             if is_completion:
-                logger.info(f"[VIL_HANDLER] Successfully handled VIL completion message")
+                logger.info("[VIL_HANDLER] Successfully handled VIL completion message")
                 return result
                 
             # Create command data for display
@@ -118,7 +117,7 @@ class VILHandler:
             # Display message handling - mirrors the precipitation handler pattern
             await self.response_service_adapter.handle_display_command(command_data)
             
-            logger.info(f"[VIL_HANDLER] Successfully handled VIL data message")
+            logger.info("[VIL_HANDLER] Successfully handled VIL data message")
             return result
         except Exception as e:
             logger.error(f"[VIL_HANDLER] Error handling VIL data: {e}")

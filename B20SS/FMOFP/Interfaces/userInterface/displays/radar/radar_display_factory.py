@@ -405,7 +405,7 @@ class RadarDisplayFactory:
         """Register a new radar display class for a mode type"""
         try:
             if not issubclass(display_class, BaseRadarDisplay):
-                logger.error(f"Display class must inherit from BaseRadarDisplay")
+                logger.error("Display class must inherit from BaseRadarDisplay")
                 return False
                 
             cls._display_classes[mode_type] = display_class

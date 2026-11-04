@@ -6,8 +6,7 @@ Bridges the gap between aggregated raw data and properly formatted messages.
 """
 
 import traceback
-import time
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, Any, Optional
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.MIL_STD_1553B.message_schemas import get_schema_for_message_type
@@ -427,7 +426,7 @@ class MessageStructureNormalizer:
                 message['command_type'] = 'precipitation_data'
                 if 'metadata' in message and isinstance(message['metadata'], dict):
                     message['metadata']['command_type'] = 'precipitation_data'
-                self.logger.info(f"[MSG_NORMALIZER] Preserved precipitation data command_type (not using transfer_complete)")
+                self.logger.info("[MSG_NORMALIZER] Preserved precipitation data command_type (not using transfer_complete)")
         
         # Log successful normalization
         self.logger.info("[MSG_NORMALIZER] Message normalization complete")

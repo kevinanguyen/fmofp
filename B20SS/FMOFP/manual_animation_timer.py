@@ -2,7 +2,6 @@
 Manual animation timer for holographic display elements
 """
 from PyQt6.QtCore import QTimer
-import math
 import time
 import logging
 

@@ -9,13 +9,10 @@ import copy
 import threading
 import traceback
 import uuid
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 # Import display-local message types and helper functions
 from ...messaging.display_message_types import (
-    DISPLAY_VIL_DATA,
-    DISPLAY_PRECIPITATION_DATA,
-    DISPLAY_STORM_CELL_DATA,
     is_vil_message,
     is_precipitation_message
 )
@@ -198,7 +195,7 @@ class RadarDisplayDataCoordinator:
         # Abort if any items are missing ID
         if missing_id_count > 0 or invalid_id_count > 0:
             logger.error(f"[RADAR_DATA_COORD] Cannot store {data_type} data: {missing_id_count} items missing ID, {invalid_id_count} with 'unknown' ID")
-            logger.error(f"[RADAR_DATA_COORD] Items must have valid IDs set upstream before reaching the coordinator")
+            logger.error("[RADAR_DATA_COORD] Items must have valid IDs set upstream before reaching the coordinator")
             raise ValueError(f"[RADAR_DATA_COORD] {missing_id_count} items missing ID, {invalid_id_count} with 'unknown' ID")
 
         # Process and store each data item - add extra debugging for problematic data types
@@ -620,7 +617,7 @@ class RadarDisplayDataCoordinator:
                         logger.warning(f"[RADAR_DATA_COORD] Invalid position format: {position}, using default")
                         item_dict['position'] = (0.0, 0.0)  # Default position
                 else:
-                    logger.warning(f"[RADAR_DATA_COORD] No position found, using default")
+                    logger.warning("[RADAR_DATA_COORD] No position found, using default")
                     item_dict['position'] = (0.0, 0.0)  # Default position
             except Exception as e:
                 logger.error(f"[RADAR_DATA_COORD] Error validating position: {str(e)}")
@@ -739,7 +736,7 @@ class RadarDisplayDataCoordinator:
             # position out. It is spelt this way so the intermediate validation below
             # has a tuple to work on rather than a None.
             if 'position' not in item_dict or item_dict['position'] is None:
-                logger.error(f"[RADAR_DATA_COORD] Position still None or missing after processing; marking item for removal")
+                logger.error("[RADAR_DATA_COORD] Position still None or missing after processing; marking item for removal")
                 item_dict['position'] = (0.0, 0.0)  # filtered out by the final pass
 
             # Validate tuple format - ensure it can be unpacked as x,y

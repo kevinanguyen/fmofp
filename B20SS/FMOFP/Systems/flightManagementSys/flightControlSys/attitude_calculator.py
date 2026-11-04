@@ -6,8 +6,7 @@ Calculates and manages aircraft attitude data for the Flight Control System.
 
 import math
 import time
-import numpy as np
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

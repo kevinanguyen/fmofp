@@ -17,7 +17,7 @@ from typing import Dict, Any
 from FMOFP.Systems.radarManagement.radar_enums import weather_radarMode
 from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
 # Use centralized address utilities
-from FMOFP.local_messaging.address_utils import get_rt_address, get_subaddress, get_rt_subaddress_pair
+from FMOFP.local_messaging.address_utils import get_rt_subaddress_pair
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.weather.reflectivity_simulator import ReflectivitySimulator
 from FMOFP.Systems.radarManagement.weather.vil_data_generator_sync import VILDataGenerator
@@ -30,24 +30,8 @@ from FMOFP.Utils.common.operation_tracker import track_operation, is_operation_c
 from FMOFP.Systems.radarManagement.weather.weather_message_type_detector import weather_message_type_detector
 # Import centralized message type constants
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    WEATHER_RADAR_MODE_CHANGE_REQUEST,
-    WEATHER_RADAR_MODE_CHANGE_RESPONSE,
-    WEATHER_RADAR_VIL_REQUEST,
-    WEATHER_RADAR_VIL_RESPONSE,
-    WEATHER_RADAR_PRECIPITATION_REQUEST,
-    WEATHER_RADAR_PRECIPITATION_RESPONSE,
-    WEATHER_RADAR_COMMAND,
-    WEATHER_RADAR_DATA,
-    COMMAND_TYPE_MODE_CHANGE,
-    COMMAND_TYPE_MODE_CHANGE_COMPLETE,
-    COMMAND_TYPE_DATA_REQUEST,
-    COMMAND_TYPE_VIL_DATA,
-    COMMAND_TYPE_PRECIPITATION_DATA,
-    get_message_type,
-    is_message_type,
     is_vil_message,
-    is_precipitation_message,
-    is_mode_change_message
+    is_precipitation_message
 )
 
 logger = get_logger()
@@ -490,7 +474,7 @@ class weather_radar:
                     return False
                 elif mode is weather_radarMode:
                     # Handle case where we get the actual enum class itself (not an instance/member)
-                    logger.info(f"[WEATHER] Received enum class itself, defaulting to SURVEILLANCE mode")
+                    logger.info("[WEATHER] Received enum class itself, defaulting to SURVEILLANCE mode")
                     mode = weather_radarMode.SURVEILLANCE
                 else:
                     logger.error(f"[WEATHER] Invalid mode type: {type(mode)}")
@@ -520,10 +504,10 @@ class weather_radar:
 
             # Send mode change completion notification only if requested and modes are different
             if send_completion:
-                logger.info(f"[WEATHER] Sending mode change completion notification (send_completion=True)")
+                logger.info("[WEATHER] Sending mode change completion notification (send_completion=True)")
                 self._send_mode_change_completion(old_mode, mode, request_id)
             else:
-                logger.info(f"[WEATHER] Skipping mode change completion notification (send_completion=False)")
+                logger.info("[WEATHER] Skipping mode change completion notification (send_completion=False)")
             return True
         except Exception as e:
             logger.error(f"[WEATHER] Error setting mode for weather radar {self.name}: {str(e)}")
@@ -573,9 +557,9 @@ class weather_radar:
             )
 
             if success:
-                logger.info(f"[WEATHER] Mode change completion notification sent successfully")
+                logger.info("[WEATHER] Mode change completion notification sent successfully")
             else:
-                logger.error(f"[WEATHER] Failed to send mode change completion notification")
+                logger.error("[WEATHER] Failed to send mode change completion notification")
 
         except Exception as e:
             logger.error(f"[WEATHER] Error sending mode change completion: {str(e)}")
@@ -599,7 +583,7 @@ class weather_radar:
                     logger.info("[WEATHER] Startup period complete, now accepting messages")
 
             # Enhanced logging with more detailed message information
-            logger.info(f"[WEATHER] *** RECEIVED MESSAGE ***")
+            logger.info("[WEATHER] *** RECEIVED MESSAGE ***")
             logger.info(f"[WEATHER] Message ID: {id(message)}")
             logger.info(f"[WEATHER] Message address: rt={message.rt_address}, sub={message.sub_address}")
             logger.info(f"[WEATHER] Message data: {message.data}")
@@ -607,7 +591,7 @@ class weather_radar:
             logger.info(f"[WEATHER] Command type: {message.command_type if hasattr(message, 'command_type') else None}")
 
             # Log all message attributes for detailed debugging
-            logger.info(f"[WEATHER] Message attributes:")
+            logger.info("[WEATHER] Message attributes:")
             for attr_name in dir(message):
                 if not attr_name.startswith('_') and not callable(getattr(message, attr_name)):
                     attr_value = getattr(message, attr_name)
@@ -640,7 +624,7 @@ class weather_radar:
                     logger.info("[WEATHER] Startup period complete, now accepting messages")
 
             # Enhanced logging with more detailed message information
-            logger.info(f"[WEATHER] *** RECEIVED MESSAGE ***")
+            logger.info("[WEATHER] *** RECEIVED MESSAGE ***")
             logger.info(f"[WEATHER] Message ID: {id(message)}")
             logger.info(f"[WEATHER] Message address: rt={message.rt_address}, sub={message.sub_address}")
             logger.info(f"[WEATHER] Message data: {message.data}")
@@ -648,7 +632,7 @@ class weather_radar:
             logger.info(f"[WEATHER] Command type: {message.command_type if hasattr(message, 'command_type') else None}")
 
             # Log all message attributes for detailed debugging
-            logger.info(f"[WEATHER] Message attributes:")
+            logger.info("[WEATHER] Message attributes:")
             for attr_name in dir(message):
                 if not attr_name.startswith('_') and not callable(getattr(message, attr_name)):
                     attr_value = getattr(message, attr_name)
@@ -765,9 +749,9 @@ class weather_radar:
             )
 
             if success:
-                logger.info(f"[WEATHER] Mode change completion notification sent successfully")
+                logger.info("[WEATHER] Mode change completion notification sent successfully")
             else:
-                logger.error(f"[WEATHER] Failed to send mode change completion notification")
+                logger.error("[WEATHER] Failed to send mode change completion notification")
 
         except Exception as e:
             logger.error(f"[WEATHER] Error sending mode change completion: {str(e)}")
@@ -875,7 +859,7 @@ class weather_radar:
                 from FMOFP.local_messaging.routing.radar_to_display_bridge import push_vil_data
                 bridge_ok = push_vil_data(vil_objects, original_request_id)
                 if bridge_ok:
-                    logger.info(f"[WEATHER] Bridge: VIL data pushed to display coordinator")
+                    logger.info("[WEATHER] Bridge: VIL data pushed to display coordinator")
                 else:
                     logger.warning("[WEATHER] Bridge: push_vil_data returned False — coordinator may be unavailable")
             except Exception as _bridge_exc:
@@ -883,8 +867,8 @@ class weather_radar:
             # -------------------------------------------------------------
 
             # Send VIL data response
-            logger.info(f"[WEATHER][VIL_FLOW] VIL data generated")
-            logger.info(f"[WEATHER][VIL_STORE] Storing data")
+            logger.info("[WEATHER][VIL_FLOW] VIL data generated")
+            logger.info("[WEATHER][VIL_STORE] Storing data")
 
             # Get RT address and subaddress from configuration
             rt_address, sub_address = get_rt_subaddress_pair('radar', 'weather_radar')
@@ -978,7 +962,7 @@ class weather_radar:
 
             # Check if result is a coroutine
             if hasattr(result, '__await__'):
-                logger.error(f"[WEATHER] Error: precipitation data generator returned a coroutine instead of data points")
+                logger.error("[WEATHER] Error: precipitation data generator returned a coroutine instead of data points")
                 # Return empty list as fallback
                 return []
 
@@ -995,7 +979,7 @@ class weather_radar:
             logger.error(traceback.format_exc())
 
             # Return empty list on error instead of fallback object
-            logger.warning(f"[WEATHER] Returning empty list due to error in precipitation data generator")
+            logger.warning("[WEATHER] Returning empty list due to error in precipitation data generator")
             return []
 
     def _handle_precipitation_data_sync(self, message, request_id=None):
@@ -1102,12 +1086,12 @@ class weather_radar:
 
             # Check if precip_objects is a coroutine
             if hasattr(precip_objects, '__await__'):
-                logger.error(f"[WEATHER][PRECIP_DETAIL] Error: precipitation data generator returned a coroutine instead of data points")
+                logger.error("[WEATHER][PRECIP_DETAIL] Error: precipitation data generator returned a coroutine instead of data points")
                 # Get a safe placeholder value
                 logger.error(f"[WEATHER] Generated 0 precipitation data points (coroutine error) with request ID: {original_request_id}")
             else:
                 logger.info(f"[WEATHER] Generated {len(precip_objects)} precipitation data points with request ID: {original_request_id}")
-            logger.info(f"[WEATHER][PRECIP_FLOW] Precipitation data generated")
+            logger.info("[WEATHER][PRECIP_FLOW] Precipitation data generated")
 
             # --- DIRECT DISPLAY BRIDGE -----------------------------------
             # Push data straight into the UI coordinator (same pattern as VIL).
@@ -1115,7 +1099,7 @@ class weather_radar:
                 from FMOFP.local_messaging.routing.radar_to_display_bridge import push_precipitation_data
                 bridge_ok = push_precipitation_data(precip_objects, original_request_id)
                 if bridge_ok:
-                    logger.info(f"[WEATHER] Bridge: precipitation data pushed to display coordinator")
+                    logger.info("[WEATHER] Bridge: precipitation data pushed to display coordinator")
                 else:
                     logger.warning("[WEATHER] Bridge: push_precipitation_data returned False")
             except Exception as _bridge_exc:

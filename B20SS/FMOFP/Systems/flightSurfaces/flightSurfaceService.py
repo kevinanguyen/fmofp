@@ -14,12 +14,11 @@ Singleton: get_flight_surface_service()
 """
 
 import math
-import random
 import threading
 import time
 import json
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from dataclasses import dataclass
+from typing import Dict, Any
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

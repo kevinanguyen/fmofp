@@ -8,23 +8,16 @@ Implements consistent addressing using the address_utils module to ensure MIL-ST
 import time
 import traceback
 import threading
-import asyncio
 from typing import Optional, Tuple
 from xml.etree import ElementTree as ET
-from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_connect.RT_socket import get_rt_listener
 from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_messaging.message_queue_manager import get_message_queue_manager
 from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
 from FMOFP.Systems.radarManagement.radar_messaging.address_utils import (
-    get_rt_address, 
-    get_subaddress, 
-    get_rt_subaddress_pair_for_radar,
-    is_radar_subsystem,
-    get_system_id_for_addressing
+    get_rt_address
 )
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
     WEATHER_RADAR_MODE_CHANGE_REQUEST, WEATHER_RADAR_MODE_CHANGE_RESPONSE, WEATHER_RADAR_STATUS_REQUEST, WEATHER_RADAR_STATUS_RESPONSE,
     WEATHER_RADAR_VIL_REQUEST, WEATHER_RADAR_VIL_RESPONSE, WEATHER_RADAR_PRECIPITATION_REQUEST,  WEATHER_RADAR_PRECIPITATION_RESPONSE,
-    WEATHER_RADAR_ECHO_TOP_REQUEST, WEATHER_RADAR_ECHO_TOP_RESPONSE, WEATHER_RADAR_STORM_CELL_REQUEST, WEATHER_RADAR_STORM_CELL_RESPONSE,
     TFR_RADAR_MODE_CHANGE_REQUEST, TFR_RADAR_MODE_CHANGE_RESPONSE, TFR_RADAR_STATUS_REQUEST,  TFR_RADAR_STATUS_RESPONSE,
     TFR_RADAR_ELEVATION_DATA_REQUEST, TFR_RADAR_ELEVATION_DATA_RESPONSE,
     SAR_RADAR_MODE_CHANGE_REQUEST, SAR_RADAR_MODE_CHANGE_RESPONSE, SAR_RADAR_STATUS_REQUEST, SAR_RADAR_STATUS_RESPONSE,
@@ -32,15 +25,7 @@ from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
     AEWC_RADAR_MODE_CHANGE_REQUEST,  AEWC_RADAR_MODE_CHANGE_RESPONSE, AEWC_RADAR_STATUS_REQUEST, AEWC_RADAR_STATUS_RESPONSE,
     
     # Command Types
-    WEATHER_RADAR_COMMAND, WEATHER_RADAR_DATA,
-    TFR_RADAR_COMMAND, TFR_RADAR_DATA,
-    SAR_RADAR_COMMAND, SAR_RADAR_DATA,
-    TARGETING_RADAR_COMMAND, TARGETING_RADAR_DATA,
-    AEWC_RADAR_COMMAND, AEWC_RADAR_DATA,
-    
-    # Helper functions
-    get_message_type,
-    is_message_type,
+    TFR_RADAR_COMMAND, SAR_RADAR_COMMAND, TARGETING_RADAR_COMMAND, AEWC_RADAR_COMMAND, get_message_type,
     is_vil_message,
     is_precipitation_message,
     is_mode_change_message
@@ -261,12 +246,12 @@ class RadarMessenger:
                     if message_data:
                         # Unpack the tuple (system, message) if message_data is a tuple
                         if isinstance(message_data, tuple) and len(message_data) == 2:
-                            logger.info(f"[RADAR_MSGR] Received tuple from queue manager, unpacking")
+                            logger.info("[RADAR_MSGR] Received tuple from queue manager, unpacking")
                             system, message = message_data
                             logger.info(f"[RADAR_MSGR] Unpacked message from system: {system}")
                         else:
                             # Handle legacy case where message might not be a tuple
-                            logger.info(f"[RADAR_MSGR] Received non-tuple data from queue manager")
+                            logger.info("[RADAR_MSGR] Received non-tuple data from queue manager")
                             message = message_data
                         
                         message_count += 1
@@ -293,9 +278,9 @@ class RadarMessenger:
                                 logger.info(f"[RADAR_MSGR] Message type: {message.message_type}")
                             
                             # Add more detailed message tracking
-                            logger.info(f"[RADAR_MSGR] *** DETAILED MESSAGE INFO ***")
+                            logger.info("[RADAR_MSGR] *** DETAILED MESSAGE INFO ***")
                             logger.info(f"[RADAR_MSGR] Message ID: {id(message)}")
-                            logger.info(f"[RADAR_MSGR] Message attributes:")
+                            logger.info("[RADAR_MSGR] Message attributes:")
                             for attr_name in dir(message):
                                 if not attr_name.startswith('_') and not callable(getattr(message, attr_name)):
                                     attr_value = getattr(message, attr_name)
@@ -305,9 +290,9 @@ class RadarMessenger:
                             try:
                                 if isinstance(message, MIL_STD_1553B_Message):
                                     # Already a MIL_STD_1553B_Message, but ensure all metadata is preserved
-                                    logger.info(f"[RADAR_MSGR] Ensuring metadata is preserved for existing MIL_STD_1553B_Message")
+                                    logger.info("[RADAR_MSGR] Ensuring metadata is preserved for existing MIL_STD_1553B_Message")
                                     mil_std_msg = self._convert_to_mil_std_message(message)
-                                    logger.info(f"[RADAR_MSGR] Processing MIL_STD_1553B_Message directly without re-routing")
+                                    logger.info("[RADAR_MSGR] Processing MIL_STD_1553B_Message directly without re-routing")
                                     
                                     # Extract radar type directly without calling route_message to avoid recursion
                                     radar_type = None
@@ -321,7 +306,7 @@ class RadarMessenger:
                                         mil_std_msg.metadata.get('processing_complete') == True):
                                         
                                         if 'radar' in mil_std_msg.metadata['processed_by']:
-                                            logger.info(f"[RADAR_MSGR] Breaking loop - message already fully processed by radar system")
+                                            logger.info("[RADAR_MSGR] Breaking loop - message already fully processed by radar system")
                                             processed_count += 1
                                             continue
                                         
@@ -334,28 +319,28 @@ class RadarMessenger:
                                         # First check for direct command messages which are most specific
                                         if TFR_RADAR_COMMAND.lower() == msg_type:
                                             radar_type = 'tfr_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='tfr_radar' from exact command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='tfr_radar' from exact command match")
                                         elif SAR_RADAR_COMMAND.lower() == msg_type:
                                             radar_type = 'sar_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='sar_radar' from exact command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='sar_radar' from exact command match")
                                         elif TARGETING_RADAR_COMMAND.lower() == msg_type:
                                             radar_type = 'targeting_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='targeting_radar' from exact command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='targeting_radar' from exact command match")
                                         elif AEWC_RADAR_COMMAND.lower() == msg_type:
                                             radar_type = 'aewc_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='aewc_radar' from exact command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='aewc_radar' from exact command match")
                                         elif 'tfr_radarcommand' == msg_type:
                                             radar_type = 'tfr_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='tfr_radar' from lowercase command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='tfr_radar' from lowercase command match")
                                         elif 'sar_radarcommand' == msg_type:
                                             radar_type = 'sar_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='sar_radar' from lowercase command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='sar_radar' from lowercase command match")
                                         elif 'targeting_radarcommand' == msg_type:
                                             radar_type = 'targeting_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='targeting_radar' from lowercase command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='targeting_radar' from lowercase command match")
                                         elif 'aewc_radarcommand' == msg_type:
                                             radar_type = 'aewc_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='aewc_radar' from lowercase command match")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='aewc_radar' from lowercase command match")
                                         # Then check standardized request/response patterns
                                         elif (WEATHER_RADAR_MODE_CHANGE_REQUEST.lower() in msg_type or 
                                               WEATHER_RADAR_MODE_CHANGE_RESPONSE.lower() in msg_type or
@@ -366,7 +351,7 @@ class RadarMessenger:
                                               WEATHER_RADAR_PRECIPITATION_REQUEST.lower() in msg_type or
                                               WEATHER_RADAR_PRECIPITATION_RESPONSE.lower() in msg_type):
                                             radar_type = 'weather_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='weather_radar' from message_type")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='weather_radar' from message_type")
                                         elif (TFR_RADAR_MODE_CHANGE_REQUEST.lower() in msg_type or
                                               TFR_RADAR_MODE_CHANGE_RESPONSE.lower() in msg_type or
                                               TFR_RADAR_STATUS_REQUEST.lower() in msg_type or
@@ -374,25 +359,25 @@ class RadarMessenger:
                                               TFR_RADAR_ELEVATION_DATA_REQUEST.lower() in msg_type or
                                               TFR_RADAR_ELEVATION_DATA_RESPONSE.lower() in msg_type):
                                             radar_type = 'tfr_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='tfr_radar' from message_type")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='tfr_radar' from message_type")
                                         elif (SAR_RADAR_MODE_CHANGE_REQUEST.lower() in msg_type or
                                               SAR_RADAR_MODE_CHANGE_RESPONSE.lower() in msg_type or
                                               SAR_RADAR_STATUS_REQUEST.lower() in msg_type or
                                               SAR_RADAR_STATUS_RESPONSE.lower() in msg_type):
                                             radar_type = 'sar_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='sar_radar' from message_type")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='sar_radar' from message_type")
                                         elif (TARGETING_RADAR_MODE_CHANGE_REQUEST.lower() in msg_type or
                                               TARGETING_RADAR_MODE_CHANGE_RESPONSE.lower() in msg_type or
                                               TARGETING_RADAR_STATUS_REQUEST.lower() in msg_type or
                                               TARGETING_RADAR_STATUS_RESPONSE.lower() in msg_type):
                                             radar_type = 'targeting_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='targeting_radar' from message_type")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='targeting_radar' from message_type")
                                         elif (AEWC_RADAR_MODE_CHANGE_REQUEST.lower() in msg_type or
                                               AEWC_RADAR_MODE_CHANGE_RESPONSE.lower() in msg_type or
                                               AEWC_RADAR_STATUS_REQUEST.lower() in msg_type or
                                               AEWC_RADAR_STATUS_RESPONSE.lower() in msg_type):
                                             radar_type = 'aewc_radar'
-                                            logger.info(f"[RADAR_MSGR] Identified radar_type='aewc_radar' from message_type")
+                                            logger.info("[RADAR_MSGR] Identified radar_type='aewc_radar' from message_type")
                                         
                                         # If not found in message type, try command_name
                                         if not radar_type and hasattr(mil_std_msg, 'command_name'):
@@ -400,19 +385,19 @@ class RadarMessenger:
                                             logger.info(f"[RADAR_MSGR] Checking command_name: {cmd_name}")
                                             if 'WEATHER' in cmd_name:
                                                 radar_type = 'weather_radar'
-                                                logger.info(f"[RADAR_MSGR] Identified radar_type='weather_radar' from command_name")
+                                                logger.info("[RADAR_MSGR] Identified radar_type='weather_radar' from command_name")
                                             elif 'TFR' in cmd_name:
                                                 radar_type = 'tfr_radar'
-                                                logger.info(f"[RADAR_MSGR] Identified radar_type='tfr_radar' from command_name")
+                                                logger.info("[RADAR_MSGR] Identified radar_type='tfr_radar' from command_name")
                                             elif 'SAR' in cmd_name:
                                                 radar_type = 'sar_radar'
-                                                logger.info(f"[RADAR_MSGR] Identified radar_type='sar_radar' from command_name")
+                                                logger.info("[RADAR_MSGR] Identified radar_type='sar_radar' from command_name")
                                             elif 'TARGETING' in cmd_name:
                                                 radar_type = 'targeting_radar'
-                                                logger.info(f"[RADAR_MSGR] Identified radar_type='targeting_radar' from command_name")
+                                                logger.info("[RADAR_MSGR] Identified radar_type='targeting_radar' from command_name")
                                             elif 'AEWC' in cmd_name:
                                                 radar_type = 'aewc_radar'
-                                                logger.info(f"[RADAR_MSGR] Identified radar_type='aewc_radar' from command_name")
+                                                logger.info("[RADAR_MSGR] Identified radar_type='aewc_radar' from command_name")
 
                                         if radar_type and self.radar_control and hasattr(self.radar_control, 'radars'):
                                             radar = self.radar_control.radars.get(radar_type)
@@ -443,7 +428,7 @@ class RadarMessenger:
                                             else:
                                                 logger.error(f"[RADAR_MSGR] Radar type {radar_type} not found in radar control system")
                                         else:
-                                            logger.error(f"[RADAR_MSGR] Could not determine radar type or radar control not available")
+                                            logger.error("[RADAR_MSGR] Could not determine radar type or radar control not available")
                                         
                                         processed_count += 1
                                 elif isinstance(message, dict):
@@ -587,19 +572,19 @@ class RadarMessenger:
         if sub_address is None:
             if metadata.get('command_type') == 'mode_change_completion':
                 sub_address = 4  # Standard subaddress for radar mode changes
-                logger.info(f"[RADAR_MSGR] Using default subaddress 4 for mode_change_completion")
+                logger.info("[RADAR_MSGR] Using default subaddress 4 for mode_change_completion")
             else:
                 # Last resort default
                 sub_address = 1
-                logger.warning(f"[RADAR_MSGR] No subaddress found, using default: 1")
+                logger.warning("[RADAR_MSGR] No subaddress found, using default: 1")
                 
         if rt_address is None:
             rt_address = 9  # Default radar address
-            logger.warning(f"[RADAR_MSGR] No RT address found, using default: 9")
+            logger.warning("[RADAR_MSGR] No RT address found, using default: 9")
             
         if data is None:
             data = [0]  # Default empty data
-            logger.warning(f"[RADAR_MSGR] No data found, using default empty data")
+            logger.warning("[RADAR_MSGR] No data found, using default empty data")
         
         # Step 3: Create the MIL_STD_1553B_Message
         mil_std_message = MIL_STD_1553B_Message(
@@ -700,11 +685,11 @@ class RadarMessenger:
                 
                     # If not a radar message, return
                     if not is_radar_message:
-                        logger.warning(f"[RADAR_MSG] Message is not a radar message, skipping")
+                        logger.warning("[RADAR_MSG] Message is not a radar message, skipping")
                         return
                     
                     # If it is a radar message, log and continue processing
-                    logger.info(f"[RADAR_MSG] Processing radar message despite RT address mismatch")
+                    logger.info("[RADAR_MSG] Processing radar message despite RT address mismatch")
             except Exception as e:
                 logger.error(f"[RADAR_MSG] Error resolving radar address with utilities: {e}")
                 logger.error(traceback.format_exc())
@@ -742,7 +727,7 @@ class RadarMessenger:
                 
                 # If not a radar message, return
                 if not is_radar_message:
-                    logger.warning(f"[RADAR_MSG] Message is not a radar message, skipping")
+                    logger.warning("[RADAR_MSG] Message is not a radar message, skipping")
                     return
             
             # Verify radar control is available
@@ -754,7 +739,7 @@ class RadarMessenger:
             radar_type = None
             
             # Log message attributes for debugging
-            logger.info(f"[RADAR_MSG] Message attributes for radar type identification:")
+            logger.info("[RADAR_MSG] Message attributes for radar type identification:")
             if hasattr(message, 'message_type'):
                 logger.info(f"[RADAR_MSG] message_type: {message.message_type}")
             if hasattr(message, 'command_name'):
@@ -772,10 +757,10 @@ class RadarMessenger:
                 # Use standardized helper functions first
                 if is_vil_message(message):
                     radar_type = 'weather_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='weather_radar' from is_vil_message() check")
+                    logger.info("[RADAR_MSG] Identified radar_type='weather_radar' from is_vil_message() check")
                 elif is_precipitation_message(message):
                     radar_type = 'weather_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='weather_radar' from is_precipitation_message() check")
+                    logger.info("[RADAR_MSG] Identified radar_type='weather_radar' from is_precipitation_message() check")
                 elif is_mode_change_message(message):
                     # Check specific radar type for mode change
                     msg_type_lower = str(msg_type).lower()
@@ -793,45 +778,45 @@ class RadarMessenger:
                 # First check for direct command matches to handle exact matches for all radar types
                 elif msg_type == TFR_RADAR_COMMAND.lower():
                     radar_type = 'tfr_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='tfr_radar' from exact TFR command match")
+                    logger.info("[RADAR_MSG] Identified radar_type='tfr_radar' from exact TFR command match")
                 elif msg_type == SAR_RADAR_COMMAND.lower():
                     radar_type = 'sar_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='sar_radar' from exact SAR command match")
+                    logger.info("[RADAR_MSG] Identified radar_type='sar_radar' from exact SAR command match")
                 elif msg_type == TARGETING_RADAR_COMMAND.lower():
                     radar_type = 'targeting_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='targeting_radar' from exact TARGETING command match")
+                    logger.info("[RADAR_MSG] Identified radar_type='targeting_radar' from exact TARGETING command match")
                 elif msg_type == AEWC_RADAR_COMMAND.lower():
                     radar_type = 'aewc_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='aewc_radar' from exact AEWC command match")
+                    logger.info("[RADAR_MSG] Identified radar_type='aewc_radar' from exact AEWC command match")
                 # Check for radar-specific command formats without constants
                 elif msg_type == 'tfr_radarcommand':
                     radar_type = 'tfr_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='tfr_radar' from lowercase command")
+                    logger.info("[RADAR_MSG] Identified radar_type='tfr_radar' from lowercase command")
                 elif msg_type == 'sar_radarcommand':
                     radar_type = 'sar_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='sar_radar' from lowercase command")
+                    logger.info("[RADAR_MSG] Identified radar_type='sar_radar' from lowercase command")
                 elif msg_type == 'targeting_radarcommand':
                     radar_type = 'targeting_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='targeting_radar' from lowercase command")
+                    logger.info("[RADAR_MSG] Identified radar_type='targeting_radar' from lowercase command")
                 elif msg_type == 'aewc_radarcommand':
                     radar_type = 'aewc_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='aewc_radar' from lowercase command")
+                    logger.info("[RADAR_MSG] Identified radar_type='aewc_radar' from lowercase command")
                 # Fall back to string matching if needed
                 elif 'weather_radar' in str(msg_type).lower():
                     radar_type = 'weather_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='weather_radar' from message_type")
+                    logger.info("[RADAR_MSG] Identified radar_type='weather_radar' from message_type")
                 elif 'tfr_radar' in str(msg_type).lower():
                     radar_type = 'tfr_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='tfr_radar' from message_type")
+                    logger.info("[RADAR_MSG] Identified radar_type='tfr_radar' from message_type")
                 elif 'sar_radar' in str(msg_type).lower():
                     radar_type = 'sar_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='sar_radar' from message_type")
+                    logger.info("[RADAR_MSG] Identified radar_type='sar_radar' from message_type")
                 elif 'targeting_radar' in str(msg_type).lower():
                     radar_type = 'targeting_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='targeting_radar' from message_type")
+                    logger.info("[RADAR_MSG] Identified radar_type='targeting_radar' from message_type")
                 elif 'aewc_radar' in str(msg_type).lower():
                     radar_type = 'aewc_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='aewc_radar' from message_type")
+                    logger.info("[RADAR_MSG] Identified radar_type='aewc_radar' from message_type")
             
             # If not found in message_type, try command_name
             if not radar_type and hasattr(message, 'command_name'):
@@ -839,19 +824,19 @@ class RadarMessenger:
                 logger.info(f"[RADAR_MSG] Checking command_name: {cmd_name}")
                 if 'WEATHER' in cmd_name:
                     radar_type = 'weather_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='weather_radar' from command_name")
+                    logger.info("[RADAR_MSG] Identified radar_type='weather_radar' from command_name")
                 elif 'TFR' in cmd_name:
                     radar_type = 'tfr_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='tfr_radar' from command_name")
+                    logger.info("[RADAR_MSG] Identified radar_type='tfr_radar' from command_name")
                 elif 'SAR' in cmd_name:
                     radar_type = 'sar_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='sar_radar' from command_name")
+                    logger.info("[RADAR_MSG] Identified radar_type='sar_radar' from command_name")
                 elif 'TARGETING' in cmd_name:
                     radar_type = 'targeting_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='targeting_radar' from command_name")
+                    logger.info("[RADAR_MSG] Identified radar_type='targeting_radar' from command_name")
                 elif 'AEWC' in cmd_name:
                     radar_type = 'aewc_radar'
-                    logger.info(f"[RADAR_MSG] Identified radar_type='aewc_radar' from command_name")
+                    logger.info("[RADAR_MSG] Identified radar_type='aewc_radar' from command_name")
 
             # If not found in message type or command_name, try subaddress
             if not radar_type:
@@ -863,7 +848,7 @@ class RadarMessenger:
                     
             # If still not found, default to weather_radar for RT address 9
             if not radar_type and message.rt_address == 9:
-                logger.info(f"[RADAR_MSG] Defaulting to radar_type='weather_radar' for RT address 9")
+                logger.info("[RADAR_MSG] Defaulting to radar_type='weather_radar' for RT address 9")
                 radar_type = 'weather_radar'
 
             if not radar_type:
@@ -891,7 +876,7 @@ class RadarMessenger:
                             radar_type = key
                             break
             else:
-                logger.error(f"[RADAR_MSG] radar_control or radar_control.radars not available")
+                logger.error("[RADAR_MSG] radar_control or radar_control.radars not available")
 
             # Get radar instance
             radar = None

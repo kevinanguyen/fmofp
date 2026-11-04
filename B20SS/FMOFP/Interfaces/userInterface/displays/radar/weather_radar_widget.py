@@ -365,7 +365,7 @@ class WeatherRadarWidget(QWidget):
                                 # Clean up subscribers on visual node
                                 visual_node = weather_node.get_child("visual")
                                 if visual_node and hasattr(visual_node, 'subscribers'):
-                                    logger.warning(f"[WEATHER_WIDGET] Clearing subscribers from visual node")
+                                    logger.warning("[WEATHER_WIDGET] Clearing subscribers from visual node")
                                     visual_node.subscribers.clear()
                                 
                                 # Clean up subscribers on data nodes

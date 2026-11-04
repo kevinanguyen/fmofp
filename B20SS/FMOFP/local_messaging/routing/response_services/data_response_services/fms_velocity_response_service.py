@@ -11,7 +11,7 @@ Provides:
 import asyncio
 import time
 import traceback
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.async_task import cancel_and_await
 from FMOFP.local_messaging.messageConfigurations.fms_velocity_data import create_fms_velocity_data_message
@@ -281,7 +281,7 @@ class FMSVelocityResponseService:
                             # Route to display system after storage
                             await self._route_to_display(velocity_data)
                         else:
-                            logger.error(f"Failed to store FMS velocity data")
+                            logger.error("Failed to store FMS velocity data")
                             # Log failure details
                             logger.error(f"Failed data: {velocity_data}")
                             # Put the data back in queue for retry

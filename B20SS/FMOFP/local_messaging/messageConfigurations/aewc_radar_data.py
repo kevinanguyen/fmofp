@@ -4,8 +4,7 @@ AEWC Radar Data Message Configuration
 This module defines message structures for AEWC (Airborne Early Warning and Control) radar data communications.
 """
 
-import datetime
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 
 from .base_message import BaseMessage, register_message_type
 

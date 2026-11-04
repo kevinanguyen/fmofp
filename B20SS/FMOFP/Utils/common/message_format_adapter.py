@@ -35,7 +35,7 @@ class MessageFormatAdapter:
             # Import message definitions if available
             try:
                 from FMOFP.local_messaging.messageConfigurations.message_definitions import (
-                    MessageDefinitions, MessageHeaders, MessagePriority, MessageStatus
+                    MessageDefinitions, MessageHeaders, MessagePriority, MessageStatus  # noqa: F401
                 )
                 using_message_definitions = True
             except ImportError:
@@ -184,7 +184,6 @@ class MessageFormatAdapter:
         Returns:
             None (modifies normalized dict in place)
         """
-        import uuid
         
         # Handle request_id to request_uuid mapping (legacy support)
         if not normalized.get('request_uuid') and normalized.get('request_id'):

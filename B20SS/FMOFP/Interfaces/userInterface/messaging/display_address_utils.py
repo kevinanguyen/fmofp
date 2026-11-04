@@ -3,7 +3,6 @@ Display-specific utilities for working with RT addresses and subaddresses.
 These utilities should be used throughout the display system instead of hardcoded values.
 """
 
-import os
 # NOTE: both imports below were previously flagged as "check for a
 # display-local version, if not create a mirror'd local version". Checked:
 # no display-local version exists, and there shouldn't be one - address_utils
@@ -17,17 +16,13 @@ import os
 from FMOFP.local_messaging.address_utils import (
     get_rt_address,
     get_subaddress,
-    get_rt_subaddress_pair,
-    is_valid_rt_address,
-    is_valid_subaddress,
     get_system_id_by_rt_address,
     get_subaddress_id_by_value
 )
 from FMOFP.local_messaging.message_types import (
     COMMAND_TYPE_MODE_CHANGE,
     COMMAND_TYPE_DATA_REQUEST,
-    COMMAND_TYPE_DATA_RESPONSE,
-    get_message_type
+    COMMAND_TYPE_DATA_RESPONSE
 )
 from FMOFP.Utils.logger.sys_logger import get_logger
 

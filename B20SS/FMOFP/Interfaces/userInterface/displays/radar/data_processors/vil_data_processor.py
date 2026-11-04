@@ -4,7 +4,7 @@ Handles various formats of VIL data.
 """
 import time
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

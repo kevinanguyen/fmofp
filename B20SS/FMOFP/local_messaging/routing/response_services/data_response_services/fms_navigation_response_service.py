@@ -11,7 +11,7 @@ Provides:
 import asyncio
 import time
 import traceback
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.async_task import cancel_and_await
 from FMOFP.local_messaging.messageConfigurations.fms_navigation_data import create_fms_navigation_data_message
@@ -275,7 +275,7 @@ class FMSNavigationResponseService:
                             # Route to display system after storage
                             await self._route_to_display(navigation_data)
                         else:
-                            logger.error(f"Failed to store FMS navigation data")
+                            logger.error("Failed to store FMS navigation data")
                             # Log failure details
                             logger.error(f"Failed data: {navigation_data}")
                             # Put the data back in queue for retry

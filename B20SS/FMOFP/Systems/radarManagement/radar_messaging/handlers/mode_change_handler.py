@@ -4,8 +4,6 @@ Handler for radar mode change messages.
 
 import threading
 import traceback
-import time
-from typing import Dict, Any, List, Optional
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.radar_messaging.base_message_handler import BaseMessageHandler
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
@@ -20,14 +18,11 @@ from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
     AEWC_RADAR_MODE_CHANGE_REQUEST,
     AEWC_RADAR_MODE_CHANGE_RESPONSE,
     COMMAND_TYPE_MODE_CHANGE,
-    COMMAND_TYPE_MODE_CHANGE_COMPLETE,
     is_mode_change_message
 )
 from FMOFP.Systems.radarManagement.radar_messaging.address_utils import (
     get_rt_address, 
-    get_subaddress, 
-    get_rt_subaddress_pair_for_radar,
-    is_radar_subsystem
+    get_subaddress
 )
 
 logger = get_logger()
@@ -184,12 +179,12 @@ class ModeChangeHandler(BaseMessageHandler):
             if self._is_request_message(message):
                 # Check for mode attribute if it's a dictionary
                 if isinstance(message, dict) and 'mode' not in message:
-                    logger.warning(f"[MODE_HANDLER] Mode change request missing mode attribute")
+                    logger.warning("[MODE_HANDLER] Mode change request missing mode attribute")
                     return False
                 
                 # If it's an object, check for mode attribute
                 if hasattr(message, '__dict__') and not hasattr(message, 'mode'):
-                    logger.warning(f"[MODE_HANDLER] Mode change request missing mode attribute")
+                    logger.warning("[MODE_HANDLER] Mode change request missing mode attribute")
                     return False
             
             logger.info(f"[MODE_HANDLER] Message validated as a valid mode change message for {radar_type} radar")

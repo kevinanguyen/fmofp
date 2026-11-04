@@ -6,8 +6,7 @@ Based on FMOFP/Msg_handler/local_messaging/command_word_map.py but
 maintains physical separation between Bus Controller and Remote Terminal systems.
 """
 
-import logging
-from typing import Dict, Optional
+from typing import Optional
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

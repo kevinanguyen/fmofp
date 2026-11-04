@@ -5,9 +5,8 @@ Responsible for processing messages received by the FMS
 and dispatching them to the appropriate handling logic.
 """
 
-import logging
 import traceback
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 # Import the FMSCompletionMessageHandler for sending completion notifications
@@ -132,7 +131,7 @@ class FMSMessageProcessor:
                 return self._handle_activate_waypoint(payload)
             # Handle FCS message types
             elif message_type == 'flight_control_systemCommand':
-                logger.info(f"[FMS_PROC] Processing flight_control_systemCommand message")
+                logger.info("[FMS_PROC] Processing flight_control_systemCommand message")
                 command_type = message.get('command_type', '')
                 
                 if command_type == 'mode_change':
@@ -142,10 +141,10 @@ class FMSMessageProcessor:
                 else:
                     # Forward to FCS through FMS
                     if self.fms.flight_control_system:
-                        logger.info(f"[FMS_PROC] Forwarding flight_control_systemCommand to FCS")
+                        logger.info("[FMS_PROC] Forwarding flight_control_systemCommand to FCS")
                         return self.fms.flight_control_system.receive_message(message)
                     else:
-                        logger.warning(f"[FMS_PROC] Flight Control System not initialized")
+                        logger.warning("[FMS_PROC] Flight Control System not initialized")
                         return False
             elif is_control_input_message(message):
                 return self._handle_control_input(message)
@@ -203,9 +202,9 @@ class FMSMessageProcessor:
             )
             
             if success:
-                logger.info(f"[FMS_PROC] Mode change completion notification sent successfully")
+                logger.info("[FMS_PROC] Mode change completion notification sent successfully")
             else:
-                logger.error(f"[FMS_PROC] Failed to send mode change completion notification")
+                logger.error("[FMS_PROC] Failed to send mode change completion notification")
                 
             return success
                 
@@ -225,7 +224,7 @@ class FMSMessageProcessor:
             bool: True if mode change was successful, False otherwise
         """
         try:
-            logger.info(f"[FMS_PROC] Detected mode change message")
+            logger.info("[FMS_PROC] Detected mode change message")
             
             # Get current mode before change (for completion message)
             old_mode = self.fms.tactical['mode'] if hasattr(self.fms, 'tactical') else "NORMAL"
@@ -313,7 +312,7 @@ class FMSMessageProcessor:
             bool: True if status request was handled, False otherwise
         """
         # Status requests don't need to change state, just log and return success
-        logger.info(f"[FMS_PROC] Processing status request")
+        logger.info("[FMS_PROC] Processing status request")
         return True
     
     def _handle_data_request(self, message: Dict[str, Any]) -> bool:
@@ -327,7 +326,7 @@ class FMSMessageProcessor:
             bool: True if data request was handled, False otherwise
         """
         # Data requests don't need to change state, just log and return success
-        logger.info(f"[FMS_PROC] Processing data request")
+        logger.info("[FMS_PROC] Processing data request")
         return True
     
     def _handle_set_mode(self, payload: Dict[str, Any]) -> bool:
@@ -379,14 +378,14 @@ class FMSMessageProcessor:
             bool: True if control input was handled, False otherwise
         """
         try:
-            logger.info(f"[FMS_PROC] Processing flight control input message")
+            logger.info("[FMS_PROC] Processing flight control input message")
             
             # Extract request ID for completion notification
             request_id = message.get('request_id')
             
             # Ensure FCS is initialized in the FMS
             if not hasattr(self.fms, 'flight_control_system') or self.fms.flight_control_system is None:
-                logger.error(f"[FMS_PROC] Flight Control System not initialized")
+                logger.error("[FMS_PROC] Flight Control System not initialized")
                 return False
             
             # Extract control type and value
@@ -461,11 +460,11 @@ class FMSMessageProcessor:
             bool: True if orientation data request was handled, False otherwise
         """
         try:
-            logger.info(f"[FMS_PROC] Processing orientation data request message")
+            logger.info("[FMS_PROC] Processing orientation data request message")
             
             # Ensure FCS is initialized in the FMS
             if not hasattr(self.fms, 'flight_control_system') or self.fms.flight_control_system is None:
-                logger.error(f"[FMS_PROC] Flight Control System not initialized")
+                logger.error("[FMS_PROC] Flight Control System not initialized")
                 return False
             
             # Forward request to FCS to send orientation data
@@ -487,11 +486,11 @@ class FMSMessageProcessor:
             bool: True if FCS mode change was successful, False otherwise
         """
         try:
-            logger.info(f"[FMS_PROC] Processing FCS mode change message")
+            logger.info("[FMS_PROC] Processing FCS mode change message")
             
             # Ensure FCS is initialized in the FMS
             if not hasattr(self.fms, 'flight_control_system') or self.fms.flight_control_system is None:
-                logger.error(f"[FMS_PROC] Flight Control System not initialized")
+                logger.error("[FMS_PROC] Flight Control System not initialized")
                 return False
             
             # Extract request ID from message for completion notification
@@ -632,7 +631,7 @@ class FMSMessageProcessor:
             # Extract parameters from payload
             parameters = payload.get('parameters', {})
             
-            logger.info(f"[FMS_PROC] Setting flight parameters")
+            logger.info("[FMS_PROC] Setting flight parameters")
             self.fms.set_flight_parameters(parameters)
             return True
             

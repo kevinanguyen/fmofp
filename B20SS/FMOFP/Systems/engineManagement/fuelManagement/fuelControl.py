@@ -3,13 +3,12 @@ import time
 import random
 from typing import Dict, List
 from collections import defaultdict
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.storage.DBM import DatabaseManager
 from FMOFP.MIL_STD_1553B.Messaging import ScheduleMessage
 from FMOFP.MIL_STD_1553B.mil_std_1553B  import MIL_STD_1553B_Message
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.engineManagement.fuelManagement.fuelMonitor import FuelMonitor
-from FMOFP.Systems.engineManagement.fuelManagement.fuelTransfer import FuelTransferManager, TransferRule
+from FMOFP.Systems.engineManagement.fuelManagement.fuelTransfer import FuelTransferManager
 
 logger = get_logger()
 

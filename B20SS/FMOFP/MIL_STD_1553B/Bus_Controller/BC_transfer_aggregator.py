@@ -7,8 +7,6 @@ Enhanced to properly handle precipitation data and binary data arrays.
 """
 
 import time
-import logging
-import copy
 from typing import Dict, List, Optional, Any, Tuple
 
 # Get the same logger as the BC
@@ -56,7 +54,7 @@ class BlockTransferAggregator:
             logger.info(f"[BC_TRANSFER_AGG] Message contains frames list with {len(message['frames'])} frames")
             return True
             
-        logger.info(f"[BC_TRANSFER_AGG] Message is NOT a transfer message")
+        logger.info("[BC_TRANSFER_AGG] Message is NOT a transfer message")
         return False
         
     def _get_transfer_flags(self, message: Dict[str, Any]) -> Tuple[bool, bool, bool]:
@@ -283,14 +281,14 @@ class BlockTransferAggregator:
             
             # If any condition indicates completeness, finalize the transfer
             if is_complete:
-                logger.info(f"[BC_TRANSFER_AGG] Transfer considered complete based on data presence or multiple messages")
+                logger.info("[BC_TRANSFER_AGG] Transfer considered complete based on data presence or multiple messages")
                 return self._finalize_transfer(request_id)
             
             # Otherwise, keep collecting
             return None
             
         # Not a transfer message we recognize
-        logger.info(f"[BC_TRANSFER_AGG] Message has no recognized transfer flags - passing through")
+        logger.info("[BC_TRANSFER_AGG] Message has no recognized transfer flags - passing through")
         return message  # Pass through unchanged
         
     def _finalize_transfer(self, request_id: str) -> Dict[str, Any]:
@@ -331,7 +329,7 @@ class BlockTransferAggregator:
         if ('precipitation' in original_message_type.lower() or 
             self._is_precipitation_message(base_message)):
             precipitation_detected = True
-            logger.info(f"[BC_TRANSFER_AGG] Detected precipitation data from message types")
+            logger.info("[BC_TRANSFER_AGG] Detected precipitation data from message types")
         
         # precipitation detection based on frames analysis
         if not precipitation_detected and transfer['data_messages']:
@@ -344,7 +342,7 @@ class BlockTransferAggregator:
         
         # Force correct message types for precipitation data
         if precipitation_detected:
-            logger.info(f"[BC_TRANSFER_AGG] Ensuring precipitation message types are correctly set")
+            logger.info("[BC_TRANSFER_AGG] Ensuring precipitation message types are correctly set")
             
             # Always set the correct message type for precipitation data
             # Completely override any message type that might contain 'completion'
@@ -365,7 +363,7 @@ class BlockTransferAggregator:
             if ('vil' in original_message_type.lower() or
                 self._is_vil_message(base_message)):
                 vil_detected = True
-                logger.info(f"[BC_TRANSFER_AGG] Detected VIL data from message types")
+                logger.info("[BC_TRANSFER_AGG] Detected VIL data from message types")
             
             if not vil_detected and transfer['data_messages']:
                 # Check for large frame count in messages
@@ -376,7 +374,7 @@ class BlockTransferAggregator:
                         break
 
             if vil_detected:
-                logger.info(f"[BC_TRANSFER_AGG] Ensuring VIL message types are correctly set")
+                logger.info("[BC_TRANSFER_AGG] Ensuring VIL message types are correctly set")
                 
                 # Always set the correct message type for VIL data
                 # Completely override any message type that might contain 'completion'
@@ -442,7 +440,7 @@ class BlockTransferAggregator:
                     
         # ENHANCED: If no data found but this is precipitation data, extract from frames
         if len(all_data) == 0 and precipitation_detected:
-            logger.info(f"[BC_TRANSFER_AGG] No data found in data arrays, extracting from frames")
+            logger.info("[BC_TRANSFER_AGG] No data found in data arrays, extracting from frames")
             frame_data = self._extract_precipitation_data_from_frames(transfer['data_messages'])
             if frame_data:
                 all_data = frame_data
@@ -506,7 +504,7 @@ class BlockTransferAggregator:
         
         # If no block boundaries found or just one block - return as is
         if len(status_word_indices) <= 1:
-            logger.info(f"[BC_TRANSFER_AGG] No preprocessing needed - single block detected")
+            logger.info("[BC_TRANSFER_AGG] No preprocessing needed - single block detected")
             return all_frames
         
         # 2. Extract frames, skipping headers in subsequent blocks
@@ -726,7 +724,7 @@ class BlockTransferAggregator:
                     
                     # ENHANCED: Log pre-extraction frame data for more detailed debugging
                     logger.debug(f"[BC_TRANSFER_AGG] FRAME ANALYSIS Object {i}")
-                    logger.debug(f"[BC_TRANSFER_AGG] Frame swap: Original position frame -> attribute data, Original attribute frame -> position data")
+                    logger.debug("[BC_TRANSFER_AGG] Frame swap: Original position frame -> attribute data, Original attribute frame -> position data")
                     
                     # Log the specific bits for debugging - show full extraction process
                     logger.debug(f"[BC_TRANSFER_AGG] Rate bits (6-11): extracted from attribute_value=0x{attribute_value:04X}, bits {bin(rate_bits)[2:].zfill(6)}")
@@ -787,7 +785,7 @@ class BlockTransferAggregator:
             logger.warning(f"[BC_TRANSFER_AGG] Extracted {len(precipitation_data)} precipitation objects, expected {count}")
         
         # Final summary with detailed statistics
-        logger.info(f"[BC_TRANSFER_AGG] Precipitation data extraction complete:")
+        logger.info("[BC_TRANSFER_AGG] Precipitation data extraction complete:")
         logger.info(f"[BC_TRANSFER_AGG] - Original frame count: {original_frame_count}")
         logger.info(f"[BC_TRANSFER_AGG] - Preprocessed frame count: {len(all_frames)}")
         logger.info(f"[BC_TRANSFER_AGG] - Expected object count: {count}")
@@ -988,7 +986,7 @@ class BlockTransferAggregator:
             logger.info(f"[BC_TRANSFER_AGG] Detected binary data message via large frame count ({len(message['frames'])})")
             return True
         
-        logger.info(f"[BC_TRANSFER_AGG] Message does not contain binary data")
+        logger.info("[BC_TRANSFER_AGG] Message does not contain binary data")
         return False
         
     def extract_binary_data(self, message: Dict[str, Any]) -> Optional[List[Any]]:

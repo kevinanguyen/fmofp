@@ -35,10 +35,9 @@ aircraft's current barometric altitude and assigns a warning level:
   PULL_UP    → clearance < CAUTION_M  (immediate action required)
 """
 
-import math
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

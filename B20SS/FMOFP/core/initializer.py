@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 import threading
-import traceback
 import asyncio
 from PyQt6.QtWidgets import QApplication
 from FMOFP.Utils.logger.sys_logger import get_logger

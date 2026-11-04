@@ -230,7 +230,7 @@ class SocketBusAdapter(BusAdapter):
             )
             return False
         except Exception as e:
-            logger.error(f"Error sending message: {str(e)}")
+            logger.error(f"Error sending message: {str(e)}", exc_info=True)
             return False
 
     def describe(self) -> Dict[str, Any]:
@@ -273,7 +273,8 @@ class LoopbackBusAdapter(BusAdapter):
             try:
                 peer._receive_callback(payload)
             except Exception as e:
-                logger.error(f"[BUS_ADAPTER] Loopback receive callback error: {e}")
+                logger.error(f"[BUS_ADAPTER] Loopback receive callback error: {e}",
+                             exc_info=True)
                 return False
         return True
 
@@ -357,7 +358,8 @@ class HardwareBusAdapter(BusAdapter):
         except NotImplementedError:
             raise
         except Exception as e:
-            logger.error(f"[BUS_ADAPTER] Hardware transmit error: {e}")
+            logger.error(f"[BUS_ADAPTER] Hardware transmit error: {e}",
+                         exc_info=True)
             return False
 
     def set_receive_callback(self, callback) -> None:
@@ -421,7 +423,8 @@ def _load_config() -> Dict[str, Dict[str, Any]]:
     except Exception as e:
         logger.error(
             f"[BUS_ADAPTER] Failed to parse {path} ({e}) — "
-            f"falling back to socket adapters"
+            f"falling back to socket adapters",
+            exc_info=True,
         )
         return {}
     return config

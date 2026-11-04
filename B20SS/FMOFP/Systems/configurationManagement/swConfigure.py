@@ -1,5 +1,3 @@
-import sys
-import FMOFP.Utils.common.fetching as fetching
 import os
 import xml.etree.ElementTree as ET
 from FMOFP.Utils.logger.sys_logger import get_logger

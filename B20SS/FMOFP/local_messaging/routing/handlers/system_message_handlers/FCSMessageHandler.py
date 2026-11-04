@@ -5,14 +5,11 @@ Handles LOCAL Flight Control System-related messages using the 1553B messaging s
 Manages communication between the main system and the flight control system.
 """
 import asyncio
-import sys
 import time
 import uuid
 import traceback
 import threading
-from typing import Dict, Any, Optional, List, Tuple, Union
-import xml.etree.ElementTree as ET
-from FMOFP.local_messaging.routing.handlers.sync_handler.AsyncMessageHandler import AsyncMessageHandler
+from typing import Dict, Any, Optional
 from FMOFP.core.event_driven_communication import get_event_bus
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.local_messaging.message_types_fcs import (
@@ -30,8 +27,7 @@ from FMOFP.Utils.message_loop_prevention.middleware import get_loop_prevention_m
 # Import 1553B messaging components
 from FMOFP.MIL_STD_1553B.Messaging import send1553Msg
 from FMOFP.MIL_STD_1553B.Bus_Controller.BC_messaging.BC_msg import BC_construct
-from FMOFP.local_messaging.command_word_map_fcs import FCS_COMMAND_WORDS, get_fcs_command_word
-from FMOFP.local_messaging.command_word_map import register_command_word, validate_command_word
+from FMOFP.local_messaging.command_word_map_fcs import get_fcs_command_word
 
 logger = get_logger()
 
@@ -54,9 +50,6 @@ from FMOFP.local_messaging.fcs_wire_format import (
 )
 
 # Import command word maps from main module
-from FMOFP.local_messaging.command_word_map import (
-    MODE_REQUEST_MAP, STATUS_REQUEST_MAP, DATA_REQUEST_MAP
-)
 
 class PendingRequest:
     """Class to track pending requests to the FCS"""
@@ -257,7 +250,7 @@ class FCSMessageHandler:
                 if cmd_word_obj:
                     command_word = format(cmd_word_obj.value, '016b')
                 else:
-                    logger.error(f"[FCS_MSGR] No mode change command word found")
+                    logger.error("[FCS_MSGR] No mode change command word found")
                     return None
                     
                 # Pack mode data into binary format
@@ -271,7 +264,7 @@ class FCSMessageHandler:
                 if cmd_word_obj:
                     command_word = format(cmd_word_obj.value, '016b')
                 else:
-                    logger.error(f"[FCS_MSGR] No status request command word found")
+                    logger.error("[FCS_MSGR] No status request command word found")
                     return None
                     
                 msg_type = "flight_control_systemStatusRequest"
@@ -283,7 +276,7 @@ class FCSMessageHandler:
                 if cmd_word_obj:
                     command_word = format(cmd_word_obj.value, '016b')
                 else:
-                    logger.error(f"[FCS_MSGR] No control input command word found")
+                    logger.error("[FCS_MSGR] No control input command word found")
                     return None
                     
                 # Pack control input data into data words
@@ -297,7 +290,7 @@ class FCSMessageHandler:
                 if cmd_word_obj:
                     command_word = format(cmd_word_obj.value, '016b')
                 else:
-                    logger.error(f"[FCS_MSGR] No orientation data command word found")
+                    logger.error("[FCS_MSGR] No orientation data command word found")
                     return None
                     
                 msg_type = "flight_control_systemOrientationDataRequest"
@@ -478,7 +471,7 @@ class FCSMessageHandler:
                     "fcs_mode_handler"
                 )
                 if not should_process:
-                    logger.warning(f"Breaking loop - FCS mode change message already processed")
+                    logger.warning("Breaking loop - FCS mode change message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                     
                 # Use the enhanced message with loop prevention metadata
@@ -654,7 +647,7 @@ class FCSMessageHandler:
                     "fcs_control_input_handler"
                 )
                 if not should_process:
-                    logger.warning(f"Breaking loop - FCS control input message already processed")
+                    logger.warning("Breaking loop - FCS control input message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                     
                 # Use the enhanced message with loop prevention metadata
@@ -818,7 +811,7 @@ class FCSMessageHandler:
                     "fcs_orientation_data_handler"
                 )
                 if not should_process:
-                    logger.warning(f"Breaking loop - FCS orientation data message already processed")
+                    logger.warning("Breaking loop - FCS orientation data message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                     
                 # Use the enhanced message with loop prevention metadata
@@ -851,7 +844,7 @@ class FCSMessageHandler:
                 if self.response_service:
                     await self.response_service.send_response(request_id, response)
                 
-                logger.info(f"[FCS] Orientation data retrieved successfully")
+                logger.info("[FCS] Orientation data retrieved successfully")
                 
                 # Return result for internal processing
                 return response
@@ -931,7 +924,7 @@ class FCSMessageHandler:
                     "fcs_status_handler"
                 )
                 if not should_process:
-                    logger.warning(f"Breaking loop - FCS status message already processed")
+                    logger.warning("Breaking loop - FCS status message already processed")
                     return {"status": "SKIPPED", "message": "Message loop detected"}
                     
                 # Use the enhanced message with loop prevention metadata
@@ -964,7 +957,7 @@ class FCSMessageHandler:
                 if self.response_service:
                     await self.response_service.send_response(request_id, response)
                 
-                logger.info(f"[FCS] Status retrieved successfully")
+                logger.info("[FCS] Status retrieved successfully")
                 
                 # Return result for internal processing
                 return response
@@ -1058,8 +1051,8 @@ class FCSMessageHandler:
             # rather than raising once per expired request later.
             self._loop = None
             logger.warning(
-                f"[FCS_MSG_HNDLR] Started without a running event loop: request "
-                f"timeout notifications will be dropped until one is set"
+                "[FCS_MSG_HNDLR] Started without a running event loop: request "
+                "timeout notifications will be dropped until one is set"
             )
 
     def _notify_request_timed_out(self, request_id, response) -> bool:

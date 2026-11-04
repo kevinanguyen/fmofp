@@ -6,7 +6,6 @@ data from reflectivity data with no asyncio dependencies and aggressive downsamp
 """
 
 import numpy as np
-import uuid
 import time
 import math
 from typing import Dict, Tuple, List, Any, Optional
@@ -456,8 +455,7 @@ class VILDataGenerator:
 
 # Import message type constants
         from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-            WEATHER_RADAR_VIL_RESPONSE,
-            COMMAND_TYPE_VIL_DATA
+            WEATHER_RADAR_VIL_RESPONSE
         )
         
 # Create response message with the original request ID

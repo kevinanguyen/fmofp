@@ -30,7 +30,6 @@ import sys
 import sqlite3
 import tempfile
 import traceback
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 _B20SS = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))

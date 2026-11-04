@@ -3,7 +3,6 @@ System startup entry point
 """
 import sys
 import os
-import traceback
 
 # ── Path bootstrap ────────────────────────────────────────────────────────────
 # Put the distribution root on sys.path so `import FMOFP...` resolves however
@@ -37,7 +36,6 @@ if _ROOT not in sys.path:
 # site-packages, where an installed run proceeded to create 11 SQLite databases
 # and a log file. Relocating that data out of the package entirely is story C13.
 # ─────────────────────────────────────────────────────────────────────────────
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.system_states import SystemState
 from FMOFP.core.system_manager import get_system_manager

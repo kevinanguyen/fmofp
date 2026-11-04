@@ -7,7 +7,6 @@ Creates and updates the orientation node structure based on FMS data.
 
 import asyncio
 import traceback
-from typing import Dict, Any, Optional
 from FMOFP.Systems.flightManagementSys.flightManagementSystem import get_flightManagementSystem
 from FMOFP.Interfaces.userInterface.displays.display_nodes.display_tree_manager import get_display_tree_manager
 from FMOFP.Interfaces.userInterface.displays.display_nodes.orientation_node import OrientationNode

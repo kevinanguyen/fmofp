@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import sqlite3
-import asyncio
 import re
 import json
 import traceback
@@ -12,7 +11,7 @@ from typing import Optional, Dict, List, Union, Tuple, Any
 import threading
 from collections import defaultdict
 from datetime import datetime
-from queue import Queue, Empty, PriorityQueue
+from queue import Queue, Empty
 import concurrent.futures
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.fetching import resolve_resource, resolve_data_dir
@@ -955,7 +954,7 @@ class SystemDatabase:
             }
 
             # Log data being stored
-            logger.info(f"[PRECIP_DB] Storing precipitation data:")
+            logger.info("[PRECIP_DB] Storing precipitation data:")
             for key, value in store_data.items():
                 logger.info(f"[PRECIP_DB]   {key}: {value}")
 
@@ -1012,7 +1011,7 @@ class SystemDatabase:
             }
 
             # Log data being stored
-            logger.info(f"[VIL_DB] Storing VIL data:")
+            logger.info("[VIL_DB] Storing VIL data:")
             for key, value in store_data.items():
                 logger.info(f"[VIL_DB]   {key}: {value}")
 

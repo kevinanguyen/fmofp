@@ -4,9 +4,6 @@ Flight Control System Autopilot Messages
 Defines message types for FCS autopilot management.
 """
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional
-import time
 import uuid
 
 from FMOFP.local_messaging.messageConfigurations.base_message import BaseMessage, register_message_type

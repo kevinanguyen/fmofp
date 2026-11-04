@@ -14,8 +14,6 @@ from ..messaging.display_message_types import (
 # Still need to import DisplayType and DisplayMode from base_display
 # as they are enums used throughout the display system
 from ..displays.base_display import DisplayType, DisplayMode
-from ..displays.pfd_container import PFDContainer
-from ..displays.mfd_container import MFDContainer
 from FMOFP.Utils.logger.sys_logger import get_logger
 
 logger = get_logger()

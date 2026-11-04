@@ -5,7 +5,6 @@ from typing import Optional
 import traceback
 from .pfd import PrimaryFlightDisplay
 from .holographic_pfd import HolographicPFD
-from .futuristic_pfd import FuturisticPFD
 from .visual.theme_manager import get_theme_manager
 from FMOFP.Utils.logger.sys_logger import get_logger
 

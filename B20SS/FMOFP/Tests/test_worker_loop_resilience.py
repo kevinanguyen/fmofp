@@ -58,7 +58,6 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import ast
 import pathlib
 import textwrap
-import threading
 import time
 import traceback
 
@@ -254,7 +253,6 @@ SINGLETONS = {
 def test_every_subsystem_records_its_failure_streak():
     R.section("all nine record a streak and hand it to worker_health")
 
-    import importlib
 
     for label, rel in SUBSYSTEMS.items():
         src = pathlib.Path(os.path.join(_B20SS, rel)).read_text(encoding="utf-8")

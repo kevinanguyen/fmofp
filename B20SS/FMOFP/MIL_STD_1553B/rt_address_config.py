@@ -15,9 +15,7 @@ from FMOFP.Utils.common.operation_tracker import track_operation, is_operation_c
 from FMOFP.local_messaging.address_utils import (
     get_rt_address as utils_get_rt_address,
     get_subaddress as utils_get_subaddress,
-    get_rt_subaddress_pair as utils_get_rt_subaddress_pair,
-    is_valid_rt_address,
-    is_valid_subaddress
+    get_rt_subaddress_pair as utils_get_rt_subaddress_pair
 )
 from FMOFP.Utils.common.fetching import resolve_resource
 

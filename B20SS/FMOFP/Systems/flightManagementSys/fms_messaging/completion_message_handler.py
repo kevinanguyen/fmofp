@@ -12,19 +12,15 @@ from FMOFP.local_messaging.message_types import (
     FMS_ATTITUDE_UPDATE_RESPONSE,
     FMS_NAVIGATION_UPDATE_RESPONSE,
     FMS_MANEUVER_RESPONSE,
-    FMS_STATUS_RESPONSE,
-    COMMAND_TYPE_MODE_CHANGE,
-    COMMAND_TYPE_MODE_CHANGE_COMPLETE
+    FMS_STATUS_RESPONSE
 )
 
 import time
 import threading
 import traceback
-import uuid
 from typing import Dict, Any
 
 from FMOFP.Utils.logger.sys_logger import get_logger
-from FMOFP.MIL_STD_1553B.rt_address_config import get_rt_subaddress_pair
 from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_connect.RT_socket import get_rt_sender
 from FMOFP.MIL_STD_1553B.Bus_Controller.BC_messaging.BC_msg import BC_construct
 
@@ -204,12 +200,12 @@ class FMSCompletionMessageHandler:
 
             # Send the formatted message to the BC
             logger.info(f"[COMPLETION] Sending formatted message to BC: {formatted_message}")
-            logger.info(f"[COMPLETION] Message trace: RT_sender -> BC_Listener -> Bus_Controller -> Unified Router -> Display System")
+            logger.info("[COMPLETION] Message trace: RT_sender -> BC_Listener -> Bus_Controller -> Unified Router -> Display System")
             send_result = rt_sender.RT_send_message(formatted_message)
 
             if send_result:
                 logger.info(f"[COMPLETION] Completion message sent successfully with request ID: {request_id}")
-                logger.info(f"[COMPLETION] Message successfully sent from RT_sender to BC_Listener")
+                logger.info("[COMPLETION] Message successfully sent from RT_sender to BC_Listener")
                 return True
             else:
                 logger.error(f"[COMPLETION] Failed to send completion message with request ID: {request_id}")

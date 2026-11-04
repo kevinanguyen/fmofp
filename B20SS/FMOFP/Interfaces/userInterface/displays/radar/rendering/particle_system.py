@@ -4,9 +4,9 @@ Particle System for Weather Radar Visualization
 Provides a realistic, particle-based visualization system for weather radar data.
 Implements dynamic, fluid-like behavior for precipitation, VIL, and storm cell data.
 """
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
-from PyQt6.QtGui import QPainter, QColor, QImage, QPen, QBrush, QPainterPath, QRadialGradient
-from typing import Dict, List, Any, Optional, Tuple, Set
+from PyQt6.QtCore import QPointF, Qt, QTimer
+from PyQt6.QtGui import QPainter, QColor, QBrush, QRadialGradient
+from typing import Dict, List, Any, Optional, Tuple
 import math
 import time
 import uuid

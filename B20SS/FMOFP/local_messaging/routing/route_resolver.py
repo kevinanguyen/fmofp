@@ -6,7 +6,7 @@ Handles special cases like VIL data, precipitation data, and mode changes.
 """
 
 import traceback
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, Optional, List, Union
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.local_messaging.routing.routing_registry import get_routing_registry
@@ -112,7 +112,7 @@ class RouteResolver:
             rt_address = message.rt_address
             
         if rt_address is None:
-            self.logger.error(f"Message has no RT address")
+            self.logger.error("Message has no RT address")
             return destinations
             
         # Get system ID

@@ -350,7 +350,7 @@ class VILDataHandler(BaseMessageHandler):
             vil_data.additional_info = additional_info
 
             # Verify object state
-            logger.debug(f"[VIL_CONVERT] Final object state:")
+            logger.debug("[VIL_CONVERT] Final object state:")
             logger.debug(f"[VIL_CONVERT] - position: {vil_data.position}")
             logger.debug(f"[VIL_CONVERT] - value: {vil_data.value}")
             logger.debug(f"[VIL_CONVERT] - layer_count: {vil_data.layer_count}")
@@ -489,7 +489,7 @@ class VILDataHandler(BaseMessageHandler):
         """
         try:
             # Critical log for test verification
-            logger.debug(f"[VIL_RAW_STORE] Direct storage of raw VIL data:")
+            logger.debug("[VIL_RAW_STORE] Direct storage of raw VIL data:")
             logger.debug(f"[VIL_RAW_STORE] - request_id: {request_id}")
             logger.debug(f"[VIL_RAW_STORE] - position: ({position_x}, {position_y})")
             logger.debug(f"[VIL_RAW_STORE] - value: {value}")
@@ -646,7 +646,7 @@ class VILDataHandler(BaseMessageHandler):
             if is_message_type(message, WEATHER_RADAR_VIL_RESPONSE):
                 # Simple check for data attribute
                 if isinstance(message, dict) and 'data' not in message:
-                    logger.warning(f"[VIL_HANDLER] VIL response missing data attribute")
+                    logger.warning("[VIL_HANDLER] VIL response missing data attribute")
                     return False
 
             logger.debug(f"[VIL_HANDLER] Message validated as a valid VIL message: {message_type}")

@@ -86,16 +86,16 @@ class PrecipitationHandler:
             elif 'data' in message_dict and isinstance(message_dict['data'], list):
                 if any(isinstance(item, PrecipitationData) for item in message_dict['data']):
                     has_precipitation_data = True
-                    logger.info(f"[PRECIP_HANDLER] Found precipitation objects in data array")
+                    logger.info("[PRECIP_HANDLER] Found precipitation objects in data array")
                 elif len(message_dict['data']) > 0 and all(isinstance(item, dict) for item in message_dict['data']):
                     # Check if this is a list of dicts with position attributes (likely precipitation data)
                     if any('position' in item for item in message_dict['data']):
                         has_precipitation_data = True
-                        logger.info(f"[PRECIP_HANDLER] Found precipitation-like data in data array")
+                        logger.info("[PRECIP_HANDLER] Found precipitation-like data in data array")
 
             # Log message handling
             if 'metadata' in message_dict and message_dict['metadata'].get('binary_data_translated'):
-                logger.info(f"[PRECIP_HANDLER] Handling precipitation data message with translated binary data")
+                logger.info("[PRECIP_HANDLER] Handling precipitation data message with translated binary data")
             else:
                 logger.info(f"[PRECIP_HANDLER] Handling precipitation {'completion' if is_completion else 'data'} message")
 
@@ -104,7 +104,7 @@ class PrecipitationHandler:
 
             # Only skip display routing for true completion messages with no precipitation data
             if is_completion and not has_precipitation_data:
-                logger.info(f"[PRECIP_HANDLER] Successfully handled precipitation completion message (no data to display)")
+                logger.info("[PRECIP_HANDLER] Successfully handled precipitation completion message (no data to display)")
                 return result
 
             # Create command data for display
@@ -125,7 +125,7 @@ class PrecipitationHandler:
             # Display message handling
             await self.response_service_adapter.handle_display_command(command_data)
 
-            logger.info(f"[PRECIP_HANDLER] Successfully handled precipitation data message")
+            logger.info("[PRECIP_HANDLER] Successfully handled precipitation data message")
             return result
         except Exception as e:
             logger.error(f"[PRECIP_HANDLER] Error handling precipitation data: {e}")
@@ -211,7 +211,7 @@ class PrecipitationHandler:
                 object_id = f"{request_id}_{i+1}"
 
                 # Log the decoded data
-                logger.debug(f"[PRECIP_HANDLER] Decoded values:")
+                logger.debug("[PRECIP_HANDLER] Decoded values:")
                 logger.debug(f"[PRECIP_HANDLER] - Position: ({x_adjusted}, {y_adjusted})")
                 logger.debug(f"[PRECIP_HANDLER] - Type: {precip_type} (code {type_code})")
                 logger.debug(f"[PRECIP_HANDLER] - Rate: {rate} mm/hr (code {rate_code})")

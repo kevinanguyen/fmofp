@@ -9,22 +9,15 @@ import time
 import traceback
 import asyncio
 import threading
-from typing import Optional, Tuple, Dict, Any, List, Union
-from xml.etree import ElementTree as ET
+from typing import Optional, Tuple, Any, Union
 # Import display-local modules instead of direct FMOFP imports
 from .display_mil_std_1553b import DisplayMIL_STD_1553B_Message
 from .display_1553b_helpers import Display1553BHelpers
-from .display_metadata_decoder import DisplayMetadataDecoder
 from .display_message_types import (
-    get_message_type, get_command_type, is_message_type, is_command_type,
-    is_vil_message, is_precipitation_message, is_mode_change_message,
-    translate_message_type, DISPLAY_VIL_DATA, DISPLAY_PRECIPITATION_DATA,
-    DISPLAY_COMMAND_TYPE_MODE, DISPLAY_COMMAND_TYPE_SHOW, DISPLAY_COMMAND_TYPE_DATA,
-    DISPLAY_COMMAND_TYPE_STATUS
+    is_precipitation_message, translate_message_type, DISPLAY_PRECIPITATION_DATA
 )
 from .display_address_utils import (
-    get_display_rt_address, get_display_subaddress,
-    DISPLAY_SUBADDRESS_MAP, DISPLAY_RT_ADDRESS
+    get_display_rt_address, DISPLAY_SUBADDRESS_MAP, DISPLAY_RT_ADDRESS
 )
 # Still need these imports for RT communication
 from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_connect.RT_socket import get_rt_sender
@@ -185,7 +178,7 @@ class DisplayMessenger:
                 # Create metadata object if it doesn't exist
                 setattr(message, 'metadata', {'precipitation_message': True})
             
-            logger.info(f"[DISPLAY_MSG] Setting precipitation flag in message metadata")
+            logger.info("[DISPLAY_MSG] Setting precipitation flag in message metadata")
             
             # Add the expected precipitation log message for test
             logger.info("[WEATHER_DISPLAY] Processing precipitation data")
@@ -294,7 +287,7 @@ class DisplayMessenger:
                     logger.info(f"[DISPLAY_MSG] Using command_type from message metadata: {command_type}")
                 elif hasattr(message, 'data'):
                     # If still not found, try to determine from message data as fallback
-                    logger.info(f"[DISPLAY_MSG] No command_type in metadata, attempting to determine from data")
+                    logger.info("[DISPLAY_MSG] No command_type in metadata, attempting to determine from data")
                     data_val = None
                     if isinstance(message.data, str) and all(c in '01' for c in message.data):
                         try:
@@ -308,13 +301,13 @@ class DisplayMessenger:
                         # Try to determine command type from data value
                         if data_val & 0x8000:  # Check if high bit is set
                             command_type = 'data'
-                            logger.info(f"[DISPLAY_MSG] Determined 'data' command type from message data")
+                            logger.info("[DISPLAY_MSG] Determined 'data' command type from message data")
                         elif data_val & 0x4000:  # Check if next bit is set
                             command_type = 'mode'
-                            logger.info(f"[DISPLAY_MSG] Determined 'mode' command type from message data")
+                            logger.info("[DISPLAY_MSG] Determined 'mode' command type from message data")
                         elif data_val & 0x2000:  # Check if next bit is set
                             command_type = 'status'
-                            logger.info(f"[DISPLAY_MSG] Determined 'status' command type from message data")
+                            logger.info("[DISPLAY_MSG] Determined 'status' command type from message data")
                 
             elif system_type == 'command' and entity_id:
                 # For command subaddresses, default to weather_radar display
@@ -378,7 +371,7 @@ class DisplayMessenger:
                         'data': command.get('data')
                     })
                     self.pending_commands.pop(0)
-                    logger.debug(f"RT sent status word with pending command")
+                    logger.debug("RT sent status word with pending command")
                 
                 self.last_poll_time = current_time
         except Exception as e:
@@ -516,7 +509,7 @@ class DisplayMessenger:
                         try:
                             if isinstance(message, DisplayMIL_STD_1553B_Message):
                                 # Route the message
-                                logger.info(f"DisplayMessenger: Routing MIL_STD_1553B_Message")
+                                logger.info("DisplayMessenger: Routing MIL_STD_1553B_Message")
                                 await self.route_message(message)
                                 processed_count += 1
                             else:
@@ -698,7 +691,7 @@ class DisplayMessenger:
                 logger.info(f"[DISPLAY_MSG] Detected precipitation message from message_type: {message.message_type}")
             elif hasattr(message, 'metadata') and isinstance(message.metadata, dict) and message.metadata.get('precipitation_message'):
                 is_precipitation_message = True
-                logger.info(f"[DISPLAY_MSG] Detected precipitation message from metadata flag")
+                logger.info("[DISPLAY_MSG] Detected precipitation message from metadata flag")
             
             # Special handling for precipitation messages - ensure metadata flag is set
             if is_precipitation_message:
@@ -1026,7 +1019,7 @@ class DisplayMessenger:
             logger.info(f"[DISPLAY_MSG] Received dictionary message with rt_address={message['rt_address']}")
             if 'command_name' in message:
                 logger.info(f"[DISPLAY_MSG] Dictionary has command_name={message['command_name']}")
-            logger.info(f"[DISPLAY_MSG] Converting dictionary to DisplayMIL_STD_1553B_Message with full attribute preservation")
+            logger.info("[DISPLAY_MSG] Converting dictionary to DisplayMIL_STD_1553B_Message with full attribute preservation")
             
             # Extract required fields
             rt_address = message.get('rt_address')
@@ -1041,7 +1034,7 @@ class DisplayMessenger:
                 # Use default subaddress 2 for mode change messages
                 if message.get('command_type') == 'mode_change' or message.get('command_type') == 'mode_change_completion':
                     sub_address = 2
-                    logger.info(f"[DISPLAY_MSG] Using default subaddress 2 for mode_change message")
+                    logger.info("[DISPLAY_MSG] Using default subaddress 2 for mode_change message")
                 else:
                     sub_address = 1  # Default if not found
 
@@ -1074,7 +1067,7 @@ class DisplayMessenger:
                 )
                 
                 # Log detailed structure of original message
-                logger.info(f"[DISPLAY_MSG] Original message structure:")
+                logger.info("[DISPLAY_MSG] Original message structure:")
                 for key in message:
                     logger.info(f"[DISPLAY_MSG]   - {key} = {message[key]}")
                 
@@ -1115,19 +1108,19 @@ class DisplayMessenger:
                 
                 # Critical consistency check for important fields
                 if 'command_name' not in preserved_fields and 'command_name' in message:
-                    logger.warning(f"[DISPLAY_MSG] Critical field 'command_name' not preserved in first pass, setting it explicitly")
+                    logger.warning("[DISPLAY_MSG] Critical field 'command_name' not preserved in first pass, setting it explicitly")
                     display_message.command_name = message['command_name']
                 
                 if 'request_id' not in preserved_fields and 'request_id' in message:
-                    logger.warning(f"[DISPLAY_MSG] Critical field 'request_id' not preserved in first pass, setting it explicitly") 
+                    logger.warning("[DISPLAY_MSG] Critical field 'request_id' not preserved in first pass, setting it explicitly") 
                     display_message.request_id = message['request_id']
                     
                 if 'message_type' not in preserved_fields and 'message_type' in message:
-                    logger.warning(f"[DISPLAY_MSG] Critical field 'message_type' not preserved in first pass, setting it explicitly")
+                    logger.warning("[DISPLAY_MSG] Critical field 'message_type' not preserved in first pass, setting it explicitly")
                     display_message.message_type = message['message_type']
                     
                 if 'command_type' not in preserved_fields and 'command_type' in message:
-                    logger.warning(f"[DISPLAY_MSG] Critical field 'command_type' not preserved in first pass, setting it explicitly")
+                    logger.warning("[DISPLAY_MSG] Critical field 'command_type' not preserved in first pass, setting it explicitly")
                     display_message.command_type = message['command_type']
                 
                 # Final validation check for critical fields

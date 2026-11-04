@@ -8,23 +8,18 @@ import os
 import time
 import uuid
 import xml.etree.ElementTree as ET
-from typing import Dict, Any, Optional, Union
+from typing import Dict
 
 # Import display-local modules
 from .display_message_types import (
     DISPLAY_COMMAND_TYPE_SHOW,
     DISPLAY_COMMAND_TYPE_MODE,
-    DISPLAY_COMMAND_TYPE_MODE_CHANGE,
     DISPLAY_COMMAND_TYPE_ACKNOWLEDGMENT,
     DISPLAY_MESSAGE_TYPE_COMMAND,
     DISPLAY_MESSAGE_TYPE_ACKNOWLEDGMENT
 )
 from .display_address_utils import (
-    DISPLAY_RT_ADDRESS,
-    DISPLAY_SHOW_SUBADDRESS,
-    DISPLAY_MODE_SUBADDRESS,
-    get_rt_address_name,
-    get_subaddress_name
+    DISPLAY_SHOW_SUBADDRESS
 )
 
 # Import display types and modes

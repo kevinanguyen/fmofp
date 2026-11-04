@@ -8,8 +8,6 @@ import threading
 import traceback
 import time
 import asyncio
-import copy
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_messaging.RT_msg import RT_Message_Analyzer, RT_construct
 from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_messaging.RT_transfer_aggregator import get_rt_transfer_aggregator
 from FMOFP.MIL_STD_1553B.Remote_Terminal.RT_connect.RT_socket import get_rt_sender, get_rt_listener
@@ -193,7 +191,7 @@ class Remote_Terminal:
                     else:
                         # Add raw data to preserved metadata
                         formatted_message['data'] = data
-                        logger.info(f"Added raw data to message metadata")
+                        logger.info("Added raw data to message metadata")
                 
                 # Check if this should use block transfer
                 if len(formatted_message['frames']) > 33:  # Status word + 32 data words
@@ -404,7 +402,7 @@ class Remote_Terminal:
                             setattr(message, key, value)
                 
                 # Log all details of the created message
-                logger.info(f"[RT] Created MIL_STD_1553B_Message with:")
+                logger.info("[RT] Created MIL_STD_1553B_Message with:")
                 logger.info(f"[RT]   - rt_address: {message.rt_address}")
                 logger.info(f"[RT]   - sub_address: {message.sub_address}")
                 logger.info(f"[RT]   - message_type: {message.message_type}")
@@ -623,7 +621,7 @@ class Remote_Terminal:
                             setattr(message, key, value)
                 
                 # Log the created message
-                logger.info(f"[RT] Created message from complete block transfer:")
+                logger.info("[RT] Created message from complete block transfer:")
                 logger.info(f"[RT]   - rt_address: {message.rt_address}")
                 logger.info(f"[RT]   - sub_address: {message.sub_address}")
                 logger.info(f"[RT]   - message_type: {message.message_type}")
@@ -635,7 +633,7 @@ class Remote_Terminal:
                 # Add message to processed_messages queue
                 with self.rt_listener.message_lock:
                     self.rt_listener.processed_messages.append(message)
-                    logger.info(f"[RT] Added block transfer message to processed_messages queue")
+                    logger.info("[RT] Added block transfer message to processed_messages queue")
                     logger.info(f"[RT] Current processed_messages queue size: {len(self.rt_listener.processed_messages)}")
         except Exception as e:
             logger.error(f"[RT] Error processing complete block transfer: {str(e)}")

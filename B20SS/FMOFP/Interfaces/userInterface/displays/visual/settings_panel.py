@@ -2,9 +2,8 @@
 Settings panel for futuristic displays
 """
 from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QFont
-from typing import Dict, List, Optional, Tuple, Any, Callable
-import math
+from PyQt6.QtGui import QPainter, QColor
+from typing import List, Optional, Tuple, Any, Callable
 import traceback
 from .theme_manager import get_theme_manager
 from .effects import VisualEffects

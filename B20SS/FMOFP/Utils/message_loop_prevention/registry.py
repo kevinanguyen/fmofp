@@ -6,7 +6,7 @@ This module provides a registry for tracking processed messages and detecting lo
 
 import time
 import threading
-from typing import Dict, Set, List, Any, Optional, Tuple, Union
+from typing import Dict, Any, Optional
 
 class MessageRegistry:
     """Registry for tracking processed messages and detecting loops."""

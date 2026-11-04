@@ -15,8 +15,6 @@ already present in the original file.
 
 import math
 import threading
-import time
-from collections import deque
 from typing import Optional, Tuple
 
 from FMOFP.Utils.logger.sys_logger import get_logger

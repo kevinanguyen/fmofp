@@ -1,11 +1,8 @@
-import os
-import sys
-import FMOFP.Utils.common.fetching as fetching
 import random
 import time
 import threading
 import xml.etree.ElementTree as ET
-from queue import Queue, PriorityQueue
+from queue import PriorityQueue
 from FMOFP.storage.DBM import DatabaseManager
 
 from FMOFP.Utils.logger.sys_logger import get_logger

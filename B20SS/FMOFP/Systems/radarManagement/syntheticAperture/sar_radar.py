@@ -15,12 +15,7 @@ from FMOFP.MIL_STD_1553B.mil_std_1553B  import MIL_STD_1553B_Message
 # Import radar-local message definitions to enforce system boundaries
 from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.sar_data import SARRadarImagery
 # Import message type constants
-from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    SAR_RADAR_IMAGERY_RESPONSE,
-    SAR_RADAR_IMAGERY_REQUEST
-)
 # For backward compatibility - to be removed in future releases
-from FMOFP.local_messaging.messageConfigurations.SARRadarImagery import sar_radarImagery as LegacySARRadarImagery
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Systems.radarManagement.syntheticAperture.sar_processor import ChangeDetector
 
@@ -178,7 +173,7 @@ class sar_radar:
                     return False
                 elif mode is sar_radarMode:
                     # Handle case where we get the actual enum class itself (not an instance/member)
-                    logger.info(f"[SAR_RADAR] Received enum class itself, defaulting to STRIPMAP mode")
+                    logger.info("[SAR_RADAR] Received enum class itself, defaulting to STRIPMAP mode")
                     mode = sar_radarMode.STRIPMAP
                 else:
                     logger.error(f"[SAR_RADAR] Invalid mode type: {type(mode)}")
@@ -202,10 +197,10 @@ class sar_radar:
 
                 # Send mode change completion notification if requested
                 if send_completion:
-                    logger.info(f"[SAR_RADAR] Sending mode change completion notification (send_completion=True)")
+                    logger.info("[SAR_RADAR] Sending mode change completion notification (send_completion=True)")
                     self._send_mode_change_completion(old_mode, mode, request_id)
                 else:
-                    logger.info(f"[SAR_RADAR] Skipping mode change completion notification (send_completion=False)")
+                    logger.info("[SAR_RADAR] Skipping mode change completion notification (send_completion=False)")
             return True
         except Exception as e:
             logger.error(f"Error setting mode for SAR radar {self.name}: {str(e)}")
@@ -266,9 +261,9 @@ class sar_radar:
             )
 
             if success:
-                logger.info(f"[SAR_RADAR] Mode change completion notification sent successfully")
+                logger.info("[SAR_RADAR] Mode change completion notification sent successfully")
             else:
-                logger.error(f"[SAR_RADAR] Failed to send mode change completion notification")
+                logger.error("[SAR_RADAR] Failed to send mode change completion notification")
 
         except Exception as e:
             logger.error(f"[SAR_RADAR] Error sending mode change completion: {str(e)}")
@@ -299,7 +294,7 @@ class sar_radar:
                 logger.info(f"[SAR_RADAR] Extracted mode value: {mode_value} from data: {mode_data}")
                 return mode_value
             else:
-                logger.error(f"[SAR_RADAR] Empty mode data")
+                logger.error("[SAR_RADAR] Empty mode data")
                 return 0
         except Exception as e:
             logger.error(f"[SAR_RADAR] Error extracting mode value: {e}")
@@ -366,7 +361,7 @@ class sar_radar:
                     return self._handle_imagery_data_sync(message)
 
             # For logging purposes
-            logger.info(f"[SAR_RADAR] Message successfully processed synchronously")
+            logger.info("[SAR_RADAR] Message successfully processed synchronously")
             return True
 
         except Exception as e:
@@ -385,7 +380,7 @@ class sar_radar:
             bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"[SAR_RADAR] Handling imagery data request synchronously")
+            logger.info("[SAR_RADAR] Handling imagery data request synchronously")
 
             # Extract request ID from message
             request_id = None
@@ -439,7 +434,7 @@ class sar_radar:
             try:
                 from FMOFP.local_messaging.routing.radar_to_display_bridge import push_sar_data
                 push_sar_data([imagery_data], request_id or str(time.time()))
-                logger.info(f"[SAR_RADAR] Bridge: imagery data pushed to display coordinator")
+                logger.info("[SAR_RADAR] Bridge: imagery data pushed to display coordinator")
             except Exception as _bridge_exc:
                 logger.warning(f"[SAR_RADAR] Bridge push failed (non-fatal): {_bridge_exc}")
             # -------------------------------------------------------------
@@ -466,7 +461,7 @@ class sar_radar:
                     if success:
                         logger.info(f"[SAR_RADAR] Sent imagery data completion notification with request ID: {request_id}")
                     else:
-                        logger.error(f"[SAR_RADAR] Failed to send imagery data completion notification")
+                        logger.error("[SAR_RADAR] Failed to send imagery data completion notification")
                 else:
                     logger.error("[SAR_RADAR] Cannot send data completion - completion handler not available")
 
@@ -515,7 +510,7 @@ class sar_radar:
     def _handle_mode_change(self, message: MIL_STD_1553B_Message):
         """Handle mode change messages."""
         try:
-            logger.info(f"[SAR_RADAR] Handling mode change message via parameter extraction")
+            logger.info("[SAR_RADAR] Handling mode change message via parameter extraction")
 
             # Extract mode value and request_id
             mode_data = message.data

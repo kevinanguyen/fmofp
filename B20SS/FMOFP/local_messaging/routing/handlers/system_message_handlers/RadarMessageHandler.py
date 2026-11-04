@@ -37,10 +37,6 @@ from FMOFP.local_messaging.messageConfigurations import *
 from FMOFP.local_messaging.messageConfigurations.weather_radar_data import (
     weather_radarPrecipitationResponse,
     PrecipitationData)
-from FMOFP.local_messaging.messageConfigurations.weather_radar_data_echo_top import (
-    WeatherRadarEchoTopData,
-    weather_radarEchoTopRequest,
-    weather_radarEchoTopResponse)
 # NOTE: the "from ... messageConfigurations import *" above only pulls in names
 # re-exported by messageConfigurations/__init__.py, which currently only
 # imports/registers the weather radar data classes. TFR/SAR/targeting/AEWC data
@@ -234,8 +230,43 @@ class RadarMessageHandler:
     # These methods are used by external systems to send requests to radar systems
     # + Added system features that require a message type must be added here
     
-    async def send_request(self, radar_name: str, request_type: str, data: Any = None, sync_response: bool = False) -> Optional[Union[str, Dict]]:
-        """Send a request to a radar system."""
+    async def send_request(self, radar_name: str, request_type: str,
+                           data: Any = None) -> Optional[str]:
+        """Send a request to a radar system. Returns its request ID, or None.
+
+        H6: this took a fourth argument, `sync_response: bool = False`, and
+        returned Optional[Union[str, Dict]] -- a request ID normally, a
+        {'success', 'response', 'request_id'} dict when asked to wait. The
+        waiting branch read:
+
+            response = await self._wait_for_response(request_id)
+
+        and `_wait_for_response` was DEFINED NOWHERE. The name occurred
+        exactly once in the whole repository: at that await.
+
+        Nothing passed sync_response=True, so it never fired. What made it
+        worth removing rather than leaving is where it would have failed.
+        The await sits AFTER sendMsg.send_message() has succeeded and after
+        the pending request has been stored, so the AttributeError would
+        have been caught by this method's own `except Exception`, which
+        returns None -- the same value the caller gets when nothing was sent
+        at all. The message would be on the bus, the pending entry would be
+        in the table, and the caller would be told, indistinguishably, that
+        the send had failed.
+
+        REMOVED RATHER THAN IMPLEMENTED, because there is nothing here to
+        wait on. This handler's PendingRequest has no response field, no
+        completion flag and no event; `pending_requests` entries are only
+        ever assigned (once) and deleted (four sites), and the correlation
+        point in _handle_response simply deletes the entry without keeping
+        what arrived. An honest _wait_for_response would therefore have
+        meant adding a response slot, a completion event, storing the
+        response at the correlation point and handling the expiry race --
+        a new synchronous-request subsystem, for a parameter with no
+        callers. A caller that passes sync_response now gets a TypeError at
+        the call site, which is the clearest signal available; a parameter
+        that is accepted and then always raises would be worse than none.
+        """
         logger.info(f"[SEND] Attempting to send request: radar={radar_name}, type={request_type}")
         logger.info(f"[SEND] Data: {data}")
 
@@ -254,7 +285,8 @@ class RadarMessageHandler:
         try:
             # H5: this was `with self._message_lock:` -- a threading.Lock held
             # across three awaits (_create_request, the sendMsg.send_message
-            # network write, and the sync_response wait). A thread lock blocks
+            # network write, and the sync_response wait, since removed by H6).
+            # A thread lock blocks
             # the THREAD, not the task, and an event loop has one thread, so two
             # concurrent sends did not serialise, they deadlocked the loop
             # permanently: the first suspended inside the lock, the second
@@ -446,19 +478,55 @@ class RadarMessageHandler:
                 if result is None:
                     logger.error("[SEND] Failed to send message through 1553B")
                     del self.pending_requests[request_id]  # Clean up pending request
-                    return None if not sync_response else {'success': False}
+                    # Was `return None if not sync_response else
+                    # {'success': False}`; the dict half was reachable only
+                    # with sync_response=True (H6).
+                    return None
                 logger.info("[SEND][RADAR_MSG_HNDLR] Successfully sent message")
 
-                if sync_response:
-                    # For synchronous responses, wait for and return the result
-                    response = await self._wait_for_response(request_id)
-                    return {'success': True, 'response': response, 'request_id': request_id}
                 return request_id
 
         except Exception as e:
             logger.error(f"Error sending request: {str(e)}")
             logger.error(traceback.format_exc())
             return None
+
+    @staticmethod
+    def _ensure_data_handler(service, label, handler_cls, radar_db):
+        """Give `service` a `handler_cls` data handler only if it lacks one.
+
+        A slot already holding the right class is left untouched: the service
+        built that instance from radar_db itself, and for the two singleton
+        handlers it is the one instance the rest of the system shares.
+
+        A slot holding anything else is wrong by construction -- the store
+        paths call handler-private methods such as `_verify_table_exists`,
+        `_init_database_table` and `store_echo_top_data`, none of which exist
+        on a SystemDatabase.  It is rebuilt from radar_db when one is
+        available, and otherwise cleared to None, which hands the work to the
+        lazy re-initialisation each service already has on its store path.
+        Leaving a wrong-typed object in place would only keep raising.
+        """
+        if not service:
+            return
+        handler = getattr(service, 'data_handler', None)
+        if isinstance(handler, handler_cls):
+            logger.info(
+                f"{label} service already holds a {handler_cls.__name__}")
+            return
+        if handler is not None:
+            logger.warning(
+                f"{label} service held a {type(handler).__name__} in its "
+                f"data_handler slot, expected {handler_cls.__name__}")
+        if radar_db is None:
+            logger.error(
+                f"No radar_db available to build a {handler_cls.__name__} "
+                f"for the {label} service; clearing the slot so the service "
+                f"re-initialises it on its own store path")
+            service.data_handler = None
+            return
+        service.data_handler = handler_cls(radar_db)
+        logger.info(f"Built a {handler_cls.__name__} for the {label} service")
 
     def set_async_handler(self, async_handler: AsyncMessageHandler):
         """Set the async handler and register message handlers."""
@@ -526,16 +594,30 @@ class RadarMessageHandler:
                 if not self.started:
                     self.start()
                     
-                # Initialize services if needed
-                if self.precipitation_service:
-                    logger.info("Initializing precipitation service")
-                    self.precipitation_service.data_handler = self.async_handler.radar_db
-                if self.vil_service:
-                    logger.info("Initializing VIL service")
-                    self.vil_service.data_handler = self.async_handler.radar_db
-                if self.echo_top_service:
-                    logger.info("Initializing Echo Top service")
-                    self.echo_top_service.data_handler = self.async_handler.radar_db
+                # Make sure each response service still holds a real data
+                # handler.  These three slots used to be assigned
+                # `self.async_handler.radar_db` outright, which replaced the
+                # PrecipitationDataHandler / VILDataHandler /
+                # EchoTopDataHandler that each service builds in its own
+                # constructor with a bare SystemDatabase.  SystemDatabase
+                # happens to expose store_precipitation_data and
+                # store_vil_data, so the path looked alive, but it has no
+                # _verify_table_exists, _init_database_table, _initialized or
+                # radar_db -- and _store_precipitation_data calls
+                # _verify_table_exists before storing, so every precipitation
+                # store raised AttributeError and not one row was written.
+                from FMOFP.local_messaging.routing.handlers.precipitation_data_handler import PrecipitationDataHandler
+                from FMOFP.local_messaging.routing.handlers.vil_data_handler import VILDataHandler
+                from FMOFP.local_messaging.routing.handlers.echo_top_data_handler import EchoTopDataHandler
+
+                radar_db = getattr(self.async_handler, 'radar_db', None)
+                self._ensure_data_handler(self.precipitation_service,
+                                          'precipitation',
+                                          PrecipitationDataHandler, radar_db)
+                self._ensure_data_handler(self.vil_service, 'VIL',
+                                          VILDataHandler, radar_db)
+                self._ensure_data_handler(self.echo_top_service, 'Echo Top',
+                                          EchoTopDataHandler, radar_db)
                 
                 # Verify health
                 if not self.async_handler.is_healthy():
@@ -1102,7 +1184,7 @@ class RadarMessageHandler:
                                 logger.error(f"[MODE] Invalid command name: {command_name}")
                                 return
                         else:
-                            logger.warning(f"[MODE] Could not find matching request for unrecognized command")
+                            logger.warning("[MODE] Could not find matching request for unrecognized command")
                             return
 
                 # Extract mode value from data with improved handling
@@ -1299,7 +1381,7 @@ class RadarMessageHandler:
             radar_type = message.get('radar_type')
             command_type = message.get('command_type')
             
-            logger.info(f"Processing status word:")
+            logger.info("Processing status word:")
             logger.info(f"  request_id: {request_id}")
             logger.info(f"  radar_type: {radar_type}")
             logger.info(f"  command_type: {command_type}")
@@ -1417,7 +1499,7 @@ class RadarMessageHandler:
                     status_word_data[key] = value
 
             # Log the data being sent to storage
-            logger.info(f"Sending status word data to storage:")
+            logger.info("Sending status word data to storage:")
             logger.info(f"  command_type: {status_word_data['command_type']}")
             logger.info(f"  radar_type: {status_word_data['radar_type']}")
             logger.info(f"  status: {status_word_data['status']}")
@@ -1969,9 +2051,11 @@ class RadarMessageHandler:
             return False
 
         # A response path that is down does not stop the message going out, but
-        # it does mean nothing will process what comes back -- sync_response
-        # waits and status updates are both lost. Worth saying once per state
-        # change rather than once per send.
+        # it does mean nothing will process what comes back -- status updates
+        # and the pending-request cleanup are both lost. (This read
+        # "sync_response waits and status updates"; the sync_response path was
+        # removed by H6, never having been implemented.) Worth saying once per
+        # state change rather than once per send.
         if not (self.async_handler and self.async_handler.started):
             if not self._warned_response_path_down:
                 logger.warning(
@@ -2381,7 +2465,7 @@ class RadarMessageHandler:
                 # Check if message has already been processed using metadata
                 metadata = message.get('metadata', {})
                 if metadata.get('_processed_by_radar_handler'):
-                    logger.info(f"[WEATHER] *** Breaking message loop: Message already processed by radar handler ***")
+                    logger.info("[WEATHER] *** Breaking message loop: Message already processed by radar handler ***")
                     return
                     
                 # Apply loop prevention if middleware is available
@@ -2899,7 +2983,7 @@ class RadarMessageHandler:
                     logger.info(f"[PRECIP] Parsed and validated data: type={precip_type}, rate={rate}, intensity={intensity}, show={show_values}")
                     
                     # Log precipitation data creation
-                    logger.info(f"[LOC_RDR_MSG_HDLR_PRECIP_FLOW] Creating precipitation data object with values:")
+                    logger.info("[LOC_RDR_MSG_HDLR_PRECIP_FLOW] Creating precipitation data object with values:")
                     logger.info(f"[LOC_RDR_MSG_HDLR_PRECIP_FLOW]   position: ({float(x_pos)}, {float(y_pos)})")
                     logger.info(f"[LOC_RDR_MSG_HDLR_PRECIP_FLOW]   type: {precip_type}")
                     logger.info(f"[LOC_RDR_MSG_HDLR_PRECIP_FLOW]   rate: {rate}")
@@ -2919,7 +3003,7 @@ class RadarMessageHandler:
                     )
                     
                     # Log created object
-                    logger.info(f"[LOC_RDR_MSG_HDLR_PRECIP_FLOW] Created PrecipitationData object:")
+                    logger.info("[LOC_RDR_MSG_HDLR_PRECIP_FLOW] Created PrecipitationData object:")
                     logger.info(f"[LOC_RDR_MSG_HDLR_PRECIP_FLOW]   Object dict: {precip_obj.__dict__}")
                     logger.info(f"[LOC_RDR_MSG_HDLR_PRECIP_FLOW]   Object type: {type(precip_obj)}")
                     response.precipitation_data.append(precip_obj)

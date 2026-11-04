@@ -12,7 +12,6 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 import atexit
 import time
 import select
-import FMOFP.Utils.common.fetching as fetching
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.MIL_STD_1553B.bus_adapter import get_bus_adapter, get_listen_endpoint
 from FMOFP.Utils.common.health import socket_is_bound
@@ -173,7 +172,7 @@ class BC_sender:
                 transmission_dict['metadata'] = essential_metadata
             
             msg = json.dumps(transmission_dict).encode()
-            logger.info(f"BC_sender sending dict message with frames and essential metadata")
+            logger.info("BC_sender sending dict message with frames and essential metadata")
         else:
             # List or single frame format
             if not isinstance(message, list):
@@ -205,7 +204,7 @@ class BC_sender:
             bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"BC_sender sending large message using block transfer protocol")
+            logger.info("BC_sender sending large message using block transfer protocol")
             
             # Extract frames, request_id, and metadata from message
             if not isinstance(message, dict) or 'frames' not in message:
@@ -237,9 +236,9 @@ class BC_sender:
                 vil_data = block_transfer_aggregator._is_vil_message(message)
                 
                 if precipitation_data:
-                    logger.info(f"BC_sender detected precipitation data")
+                    logger.info("BC_sender detected precipitation data")
                 if vil_data:
-                    logger.info(f"BC_sender detected VIL data")
+                    logger.info("BC_sender detected VIL data")
             
             # Calculate number of messages needed (max 32 data words per message)
             max_frames_per_message = MAX_PAYLOAD_FRAMES_PER_CHUNK
@@ -325,7 +324,7 @@ class BC_sender:
                         # Also add to metadata for extra redundancy
                         init_message['metadata']['precipitation_count'] = count
                     
-                    logger.info(f"BC_sender included precipitation type flags in init message")
+                    logger.info("BC_sender included precipitation type flags in init message")
                 elif vil_data:
                     init_message['metadata']['vil_message'] = True
                     init_message['metadata']['data_type'] = 'vil'
@@ -359,7 +358,7 @@ class BC_sender:
                         # Also add to metadata for extra redundancy
                         init_message['metadata']['vil_count'] = count
                         
-                    logger.info(f"BC_sender included VIL type flags in init message")
+                    logger.info("BC_sender included VIL type flags in init message")
             
             # Check if this request has already been acknowledged
             already_acknowledged = False
@@ -534,11 +533,11 @@ class BC_sender:
                 if precipitation_data:
                     completion_message['metadata']['precipitation_message'] = True
                     completion_message['metadata']['data_type'] = 'precipitation'
-                    logger.info(f"BC_sender included precipitation type flags in completion message (without binary data)")
+                    logger.info("BC_sender included precipitation type flags in completion message (without binary data)")
                 elif vil_data:
                     completion_message['metadata']['vil_message'] = True
                     completion_message['metadata']['data_type'] = 'vil'
-                    logger.info(f"BC_sender included VIL type flags in completion message (without binary data)")
+                    logger.info("BC_sender included VIL type flags in completion message (without binary data)")
                 
                 # Send completion message
                 completion_result = self._send_message(completion_message)
@@ -859,14 +858,14 @@ class BC_Listener:
                                         if is_transfer_init or is_transfer_data or is_transfer_complete:
                                             # Log block transfer detection
                                             if is_transfer_init:
-                                                logger.info(f"[BC_LISTENER] Detected block transfer initialization from RT")
+                                                logger.info("[BC_LISTENER] Detected block transfer initialization from RT")
                                             elif is_transfer_data:
                                                 # Get sequence info if available
                                                 sequence_number = parsed_data.get('sequence_number') or metadata.get('sequence_number', 0)
                                                 total_sequences = parsed_data.get('total_sequences') or metadata.get('total_sequences', 0)
                                                 logger.info(f"[BC_LISTENER] Detected block transfer data from RT: sequence {sequence_number}/{total_sequences}")
                                             elif is_transfer_complete:
-                                                logger.info(f"[BC_LISTENER] Detected block transfer completion from RT")
+                                                logger.info("[BC_LISTENER] Detected block transfer completion from RT")
                                     
                                     
                                     # Check if this is a status word acknowledgment
@@ -889,7 +888,7 @@ class BC_Listener:
                                             
                                         # Log the cleaned status word
                                         logger.info(f"[BC_LISTENER] Cleaned status word: {status_word}")
-                                        logger.info(f"[BC_LISTENER] Status word details:")
+                                        logger.info("[BC_LISTENER] Status word details:")
                                         logger.info(f"[BC_LISTENER]   - Sync bits: {status_word[:3]}")
                                         logger.info(f"[BC_LISTENER]   - RT address: {status_word[3:8]}")
                                         logger.info(f"[BC_LISTENER]   - Message bit: {status_word[8:9]}")
@@ -904,7 +903,7 @@ class BC_Listener:
                                         command_name = parsed_data.get('command_name')
                                         
                                         # Log the message details
-                                        logger.info(f"[BC_LISTENER] Message details:")
+                                        logger.info("[BC_LISTENER] Message details:")
                                         logger.info(f"[BC_LISTENER]   - Request ID: {request_id}")
                                         logger.info(f"[BC_LISTENER]   - Command type: {command_type}")
                                         logger.info(f"[BC_LISTENER]   - Message type: {message_type}")
@@ -990,7 +989,7 @@ class BC_Listener:
                                         logger.info(f"[BC_LISTENER] Stored valid frame, total frames: {len(self.data_received)}")
                                         
                                         # Log message flow trace
-                                        logger.info(f"[BC_LISTENER] Message flow trace: RT_sender -> BC_Listener -> Bus_Controller")
+                                        logger.info("[BC_LISTENER] Message flow trace: RT_sender -> BC_Listener -> Bus_Controller")
                                         
                                         # Log mode change event
                                         if command_type == 'mode_change_completion':

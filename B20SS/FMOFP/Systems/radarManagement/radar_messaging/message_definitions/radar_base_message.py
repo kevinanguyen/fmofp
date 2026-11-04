@@ -9,20 +9,9 @@ maintaining proper system boundaries.
 from dataclasses import dataclass, field, asdict
 import uuid
 import time
-import xml.etree.ElementTree as ET
 from typing import Type, Dict, Any, Optional
 
 # Import standard message type constants
-from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    WEATHER_RADAR_MODE_CHANGE_REQUEST,
-    WEATHER_RADAR_MODE_CHANGE_RESPONSE,
-    WEATHER_RADAR_STATUS_REQUEST,
-    WEATHER_RADAR_STATUS_RESPONSE,
-    WEATHER_RADAR_VIL_REQUEST,
-    WEATHER_RADAR_VIL_RESPONSE,
-    WEATHER_RADAR_PRECIPITATION_REQUEST,
-    WEATHER_RADAR_PRECIPITATION_RESPONSE
-)
 
 @dataclass
 class RadarBaseMessage:
@@ -185,8 +174,6 @@ class RadarBaseMessage:
         """Convert to MIL_STD_1553B_Message for transmission."""
         from FMOFP.MIL_STD_1553B.mil_std_1553B import MIL_STD_1553B_Message
         from FMOFP.Systems.radarManagement.radar_messaging.address_utils import (
-            get_rt_address,
-            get_subaddress,
             get_rt_subaddress_pair_for_radar
         )
         

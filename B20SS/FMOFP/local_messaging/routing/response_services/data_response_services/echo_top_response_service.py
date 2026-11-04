@@ -12,7 +12,7 @@ import threading
 import asyncio
 import time
 import traceback
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.async_task import cancel_and_await
 from FMOFP.local_messaging.messageConfigurations.weather_radar_data_echo_top import WeatherRadarEchoTopData
@@ -246,8 +246,8 @@ class EchoTopResponseService:
             message['metadata']['_processed_by_echo_top_service'] = True
             
             # Log detailed message structure with exact test pattern
-            logger.info(f"[ECHO_TOP_FLOW] Handling echo top data message")
-            logger.info(f"[ECHO_TOP_FLOW] Echo top response service handling data")
+            logger.info("[ECHO_TOP_FLOW] Handling echo top data message")
+            logger.info("[ECHO_TOP_FLOW] Echo top response service handling data")
             logger.info(f"[ECHO_TOP_FLOW] Message keys: {message.keys() if isinstance(message, dict) else 'N/A'}")
             logger.info(f"[ECHO_TOP_FLOW] Echo Top Response Service initialization state: {self._initialized}")
             
@@ -325,7 +325,7 @@ class EchoTopResponseService:
                 logger.info(f"[ECHO_TOP_FLOW] Extracted echo top data from echo_top_data field: {response}")
             
             # Log the extracted data for debugging
-            logger.info(f"[ECHO_TOP_FLOW] Extracted echo top data from response")
+            logger.info("[ECHO_TOP_FLOW] Extracted echo top data from response")
             
             # Try multiple approaches to extract valid echo top data
             # Approach 1: Check if response is a list of data words
@@ -341,21 +341,21 @@ class EchoTopResponseService:
                 elif len(response) > 0 and hasattr(response[0], 'position'):
                     # List of echo top data objects
                     data = response[0]
-                    logger.info(f"[ECHO_TOP_FLOW] Using first item from echo top data list")
+                    logger.info("[ECHO_TOP_FLOW] Using first item from echo top data list")
             
             # Approach 2: Check if response has echo_top_data attribute
             if not data and hasattr(response, 'echo_top_data'):
                 if isinstance(response.echo_top_data, list) and len(response.echo_top_data) > 0:
                     data = response.echo_top_data[0]
-                    logger.info(f"[ECHO_TOP_FLOW] Extracted echo top data from response.echo_top_data list")
+                    logger.info("[ECHO_TOP_FLOW] Extracted echo top data from response.echo_top_data list")
                 else:
                     data = response.echo_top_data
-                    logger.info(f"[ECHO_TOP_FLOW] Extracted echo top data from response.echo_top_data attribute")
+                    logger.info("[ECHO_TOP_FLOW] Extracted echo top data from response.echo_top_data attribute")
             
             # Approach 3: Check if response is a WeatherRadarEchoTopData object
             if not data and isinstance(response, WeatherRadarEchoTopData):
                 data = response
-                logger.info(f"[ECHO_TOP_FLOW] Using response directly as WeatherRadarEchoTopData")
+                logger.info("[ECHO_TOP_FLOW] Using response directly as WeatherRadarEchoTopData")
             
             # Approach 4: Create a default if all else fails
             if not data:
@@ -370,10 +370,10 @@ class EchoTopResponseService:
                 )
                 data.request_id = request_id
                 data.timestamp = message.get('timestamp', time.time())
-                logger.info(f"[ECHO_TOP_FLOW] Created default echo top data object with random values")
+                logger.info("[ECHO_TOP_FLOW] Created default echo top data object with random values")
             
             if not data or not isinstance(data, WeatherRadarEchoTopData):
-                logger.error(f"[ECHO_TOP_FLOW] Invalid data format or type")
+                logger.error("[ECHO_TOP_FLOW] Invalid data format or type")
                 await self._send_acknowledgment(request_id, False, "Invalid data type")
                 return
 
@@ -457,7 +457,7 @@ class EchoTopResponseService:
                         # Send directly to display handler
                         # Use the handle_weather_data method as it can handle different weather data types
                         await display_handler.handle_weather_data(display_message)
-                        logger.info(f"[ECHO_TOP_FLOW] Sent echo top data directly to display system")
+                        logger.info("[ECHO_TOP_FLOW] Sent echo top data directly to display system")
                     else:
                         logger.error("[ECHO_TOP_FLOW] Could not get display message handler")
                 except Exception as e:
@@ -508,7 +508,7 @@ class EchoTopResponseService:
             logger.info(f"[ECHO_TOP_STORE] - timestamp: {echo_top_data.timestamp}")
             
             # Critical log pattern for test verification - exactly this format
-            logger.info(f"[ECHO_TOP_FLOW] Echo top data being stored")
+            logger.info("[ECHO_TOP_FLOW] Echo top data being stored")
             
             # Store data directly
             direct_store = self.data_handler.store_echo_top_data(echo_top_data)
@@ -521,7 +521,7 @@ class EchoTopResponseService:
             # Add to queue for async processing - with error handling for qasync issues
             try:
                 # Log the echo top data storage with the exact format expected by the test
-                logger.info(f"[ECHO_TOP_STORE] Storing data:")
+                logger.info("[ECHO_TOP_STORE] Storing data:")
                 logger.info(f"[ECHO_TOP_STORE] - request_id: {echo_top_data.request_id}")
                 logger.info(f"[ECHO_TOP_STORE] - position: {echo_top_data.position}")
                 logger.info(f"[ECHO_TOP_STORE] - height: {echo_top_data.height}")
@@ -543,7 +543,7 @@ class EchoTopResponseService:
                     logger.warning(f"[ECHO_TOP_STORE] Queue assertion error (expected with qasync): {ae}")
                     # Return true since direct storage and display routing succeeded
                     return True
-                logger.info(f"[ECHO_TOP_FLOW] Echo top data being stored")
+                logger.info("[ECHO_TOP_FLOW] Echo top data being stored")
                 return True
                     
             except Exception as e:

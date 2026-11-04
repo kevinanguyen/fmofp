@@ -4,13 +4,11 @@ AEWC Radar Message Definitions
 Contains radar-local message classes for Airborne Early Warning and Control Radar data.
 """
 
-from typing import Dict, List, Tuple, Any, Optional, Union
+from typing import Dict, List, Tuple, Union
 import numpy as np
 from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.radar_base_message import RadarBaseMessage
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    AEWC_RADAR_TRACK_REQUEST,
     AEWC_RADAR_TRACK_RESPONSE,
-    AEWC_RADAR_SECTOR_SCAN_REQUEST,
     AEWC_RADAR_SECTOR_SCAN_RESPONSE
 )
 

@@ -4,11 +4,10 @@ SAR Radar Message Definitions
 Contains radar-local message classes for Synthetic Aperture Radar data.
 """
 
-from typing import Dict, List, Tuple, Any, Optional, Union
+from typing import Dict, List, Union
 import numpy as np
 from FMOFP.Systems.radarManagement.radar_messaging.message_definitions.radar_base_message import RadarBaseMessage
 from FMOFP.Systems.radarManagement.radar_messaging.message_types import (
-    SAR_RADAR_IMAGERY_REQUEST,
     SAR_RADAR_IMAGERY_RESPONSE
 )
 

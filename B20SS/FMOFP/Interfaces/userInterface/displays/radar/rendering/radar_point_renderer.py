@@ -4,12 +4,11 @@ Radar Point Renderer
 Renders individual weather data points using advanced techniques.
 Supports multiple rendering methods including Gaussian kernels.
 """
-from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt6.QtGui import QPainter, QColor, QImage, QPen, QBrush, QPainterPath, QRadialGradient
-from typing import Dict, List, Any, Optional, Tuple
+from PyQt6.QtCore import QPointF, QRectF, Qt
+from PyQt6.QtGui import QPainter, QColor, QBrush, QRadialGradient
+from typing import Dict, Any
 import math
 import time
-import uuid
 import numpy as np
 
 from FMOFP.Utils.logger.sys_logger import get_logger

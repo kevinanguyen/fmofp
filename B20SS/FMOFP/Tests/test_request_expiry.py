@@ -107,7 +107,10 @@ def _faithful_sender(h, log):
     from FMOFP.local_messaging.routing.handlers.system_message_handlers.RadarMessageHandler import (
         PendingRequest)
 
-    async def send(radar_name, request_type, data=None, sync_response=False):
+    # Mirrors RadarMessageHandler.send_request's signature, which lost its
+    # sync_response argument in H6 (it gated an await on a method that was
+    # never defined).
+    async def send(radar_name, request_type, data=None):
         rid = str(uuid_lib.uuid4())
         log.append(rid)
         h.pending_requests[rid] = PendingRequest(
@@ -730,8 +733,6 @@ def test_pending_request_can_describe_itself():
 def test_every_pending_mutation_is_guarded():
     R.section("The lock covers every side, not just the cleanup pass")
 
-    import ast
-    import inspect
 
     def unguarded(path):
         src = open(path, encoding='utf-8').read()

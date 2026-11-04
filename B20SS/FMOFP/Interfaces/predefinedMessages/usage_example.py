@@ -6,12 +6,10 @@ to send messages to various systems in the FMOFP system.
 """
 
 import asyncio
-import logging
 import sys
-from typing import Dict, Any, Optional
 
 # Import the Messages class and singleton
-from FMOFP.Interfaces.predefinedMessages.Messages import Messages, get_messages
+from FMOFP.Interfaces.predefinedMessages.Messages import get_messages
 
 # Import radar enums for mode settings
 from FMOFP.Interfaces.predefinedMessages.radar_enums import (

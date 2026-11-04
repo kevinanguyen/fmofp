@@ -6,7 +6,7 @@ Manages storage and retrieval of Echo Top data in the radar database.
 
 import time
 import traceback
-from typing import Dict, List, Optional, Any
+from typing import List
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.local_messaging.messageConfigurations.weather_radar_data_echo_top import WeatherRadarEchoTopData
 
@@ -58,7 +58,7 @@ class EchoTopDataHandler:
         """
         try:
             # Log the data being stored with the exact format expected by tests
-            logger.info(f"[ECHO_TOP_STORE] Storing data:")
+            logger.info("[ECHO_TOP_STORE] Storing data:")
             logger.info(f"[ECHO_TOP_STORE] - request_id: {echo_top_data.request_id}")
             logger.info(f"[ECHO_TOP_STORE] - position: {echo_top_data.position}")
             logger.info(f"[ECHO_TOP_STORE] - height: {echo_top_data.height}")

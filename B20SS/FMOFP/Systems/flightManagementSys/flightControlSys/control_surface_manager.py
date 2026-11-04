@@ -4,9 +4,8 @@ Control Surface Manager
 Manages aircraft control surfaces for the Flight Control System.
 """
 
-import math
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

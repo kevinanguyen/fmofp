@@ -11,8 +11,7 @@ import time
 import random
 import math
 import uuid
-from typing import Dict, List, Tuple, Any, Optional, Set
-import numpy as np
+from typing import Dict, List, Tuple, Any, Optional
 
 class StormCell:
     """Represents a storm cell with position, size, intensity, and lifecycle."""

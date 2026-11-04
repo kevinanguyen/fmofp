@@ -12,7 +12,7 @@ import math
 import time
 import threading
 import random
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 

@@ -1,6 +1,4 @@
-import sys
 import random
-import math
 import time
 import threading
 import xml.etree.ElementTree as ET

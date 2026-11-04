@@ -148,6 +148,39 @@ SUITES = [
     # Story C14.5: FCS mode vocabulary, control-input saturation and the
     # one-way FMS -> FCS coupling, against a live system.
     (True,  "FMOFP.Tests.test_flight_control_live", 420),
+    # Story B3.1: register_category existed nowhere, and five call sites
+    # probed for it -- three logging "does not support category registration"
+    # (exactly 7 times per live boot, the figure the PI risk register
+    # recorded) and two skipping silently, leaving 23 registrations dead.
+    # Category extraction also returned the first match over a SET, so the
+    # same message was categorised differently per PYTHONHASHSEED: measured
+    # 'fcs_status' on 2 of 5 seeds and 'status' on 3.
+    (True,  "FMOFP.Tests.test_loop_prevention_categories", 300),
+    # The radar response services' data_handler slots: set_async_handler
+    # built a PrecipitationDataHandler / VILDataHandler / EchoTopDataHandler
+    # for each of the three weather services and then, 59 lines later,
+    # overwrote all three with the raw SystemDatabase. The two types overlap
+    # on store_precipitation_data, so the path looked alive; but
+    # _store_precipitation_data gates on data_handler._verify_table_exists(),
+    # which SystemDatabase has not got, so every store raised inside the try.
+    # Measured with the table reset first: 14 [PRECIP_STORE] errors and 0
+    # rows before, 0 errors and 14 rows after.
+    (True,  "FMOFP.Tests.test_radar_data_handler_binding", 300),
+    # Story C15: eight except-Exception handlers at the bus send/receive,
+    # routing dispatch and health boundaries logged f"...{e}" and returned a
+    # benign value, so the log recorded that something failed and nothing
+    # about where -- the mechanism behind H6's swallowed AttributeError and
+    # BLOCKER B7's .get() on a bool. They pass exc_info=True now, verified
+    # end to end because SysLogger wraps logging and a dropped kwarg would
+    # have made all eight no-ops.
+    (True,  "FMOFP.Tests.test_boundary_exception_handling", 300),
+    # One definition per thing: prevention.py carried a six-member stand-in
+    # for the 35-member RadarDisplayMode behind an except ImportError, which
+    # narrowed loop prevention to 6 categories of 35 and numbered five of its
+    # six members differently; a third definition under displays/radar/ had
+    # zero importers and a self-contradicting docstring; and the two
+    # display_command_map modules agree with nothing enforcing it.
+    (True,  "FMOFP.Tests.test_single_definition", 120),
     # FuelManagementSystem's worker loop called three methods outside its
     # try, so ONE transient error killed fuel management permanently and
     # silently -- reproduced with a single injected RuntimeError -- while

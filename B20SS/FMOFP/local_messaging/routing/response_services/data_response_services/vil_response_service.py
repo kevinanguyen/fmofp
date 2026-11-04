@@ -11,9 +11,8 @@ Provides:
 import threading
 import asyncio
 import time
-import uuid
 import traceback
-from typing import Dict, Any, Optional, List, Tuple, Union
+from typing import Dict, Any, Optional, List, Tuple
 from FMOFP.Utils.logger.sys_logger import get_logger
 from FMOFP.Utils.common.async_task import cancel_and_await
 from FMOFP.local_messaging.messageConfigurations.weather_radar_data import WeatherRadarVILData
@@ -204,8 +203,8 @@ class VILResponseService:
         """
         try:
             # Log detailed message structure with exact test pattern
-            logger.info(f"[VIL_FLOW] Handling VIL data message")
-            logger.info(f"[VIL_FLOW] VIL response service handling data")
+            logger.info("[VIL_FLOW] Handling VIL data message")
+            logger.info("[VIL_FLOW] VIL response service handling data")
             logger.info(f"[VIL_FLOW] Message keys: {message.keys() if isinstance(message, dict) else 'N/A'}")
             logger.info(f"[VIL_FLOW] Message content: {message}")
             logger.info(f"[VIL_FLOW] VIL Response Service initialization state: {self._initialized}")
@@ -284,7 +283,7 @@ class VILResponseService:
                 logger.info(f"[VIL_FLOW] Extracted VIL data from vil_data field: {response}")
 
             # Log the extracted data for debugging
-            logger.info(f"[VIL_FLOW] Extracted VIL data from response")
+            logger.info("[VIL_FLOW] Extracted VIL data from response")
 
             # Try multiple approaches to extract valid VIL data
             # Approach 1: Check if response is a list of data words
@@ -300,21 +299,21 @@ class VILResponseService:
                 elif len(response) > 0 and hasattr(response[0], 'position'):
                     # List of VIL data objects
                     data = response[0]
-                    logger.info(f"[VIL_FLOW] Using first item from VIL data list")
+                    logger.info("[VIL_FLOW] Using first item from VIL data list")
 
             # Approach 2: Check if response has vil_data attribute
             if not data and hasattr(response, 'vil_data'):
                 if isinstance(response.vil_data, list) and len(response.vil_data) > 0:
                     data = response.vil_data[0]
-                    logger.info(f"[VIL_FLOW] Extracted VIL data from response.vil_data list")
+                    logger.info("[VIL_FLOW] Extracted VIL data from response.vil_data list")
                 else:
                     data = response.vil_data
-                    logger.info(f"[VIL_FLOW] Extracted VIL data from response.vil_data attribute")
+                    logger.info("[VIL_FLOW] Extracted VIL data from response.vil_data attribute")
 
             # Approach 3: Check if response is a WeatherRadarVILData object
             if not data and isinstance(response, WeatherRadarVILData):
                 data = response
-                logger.info(f"[VIL_FLOW] Using response directly as WeatherRadarVILData")
+                logger.info("[VIL_FLOW] Using response directly as WeatherRadarVILData")
 
             # Approach 4: Check if response is binary data (int or list of ints)
             if not data and (isinstance(response, int) or (isinstance(response, list) and len(response) > 0 and isinstance(response[0], int))):
@@ -329,7 +328,7 @@ class VILResponseService:
 
                     binary_storage_success = self.data_handler.extract_and_store_binary_data(request_id, binary_data)
                     if binary_storage_success:
-                        logger.info(f"[VIL_FLOW] Successfully extracted and stored binary VIL data")
+                        logger.info("[VIL_FLOW] Successfully extracted and stored binary VIL data")
 
                         # Retrieve ALL objects stored for this request (stored as
                         # "{request_id}_1", "{request_id}_2", etc.) and push the
@@ -350,14 +349,14 @@ class VILResponseService:
                                     if bridge_ok:
                                         logger.info(f"[VIL_FLOW] Bridge: pushed {len(batch)} binary-decoded VIL objects for request {request_id}")
                                     else:
-                                        logger.warning(f"[VIL_FLOW] Bridge: push returned False for binary-decoded batch")
+                                        logger.warning("[VIL_FLOW] Bridge: push returned False for binary-decoded batch")
                                     await self._send_acknowledgment(request_id, True, "Data stored and displayed successfully")
                                     return
                                 # Fallback: no batch found, use first matching item
                                 for item in stored_data:
                                     if hasattr(item, 'request_id') and item.request_id.startswith(request_id):
                                         data = item
-                                        logger.debug(f"[VIL_FLOW] Fallback: using first matching binary-stored VIL object")
+                                        logger.debug("[VIL_FLOW] Fallback: using first matching binary-stored VIL object")
                                         break
                         except Exception as e:
                             logger.debug(f"[VIL_FLOW] Error retrieving stored binary data: {e}")
@@ -402,7 +401,7 @@ class VILResponseService:
                             request_id, binary_data
                         )
                         if binary_storage_success:
-                            logger.info(f"[VIL_FLOW] Successfully processed string as binary data")
+                            logger.info("[VIL_FLOW] Successfully processed string as binary data")
 
                             # Retrieve the stored data
                             try:
@@ -411,7 +410,7 @@ class VILResponseService:
                                     for item in stored_data:
                                         if hasattr(item, 'request_id') and item.request_id == request_id:
                                             data = item
-                                            logger.info(f"[VIL_FLOW] Retrieved string-binary-stored VIL data")
+                                            logger.info("[VIL_FLOW] Retrieved string-binary-stored VIL data")
                                             break
                             except Exception as e:
                                 logger.debug(f"[VIL_FLOW] Error retrieving string-binary data: {e}")
@@ -419,7 +418,7 @@ class VILResponseService:
                     logger.debug(f"[VIL_FLOW] Error processing string as binary data: {e}")
 
             if not data or not isinstance(data, WeatherRadarVILData):
-                logger.debug(f"[VIL_FLOW] Invalid data format or type")
+                logger.debug("[VIL_FLOW] Invalid data format or type")
                 await self._send_acknowledgment(request_id, False, "Invalid data type")
                 return
 
@@ -533,7 +532,7 @@ class VILResponseService:
 
             if data_age > max_data_age:
                 logger.warning(f"[VIL_STORE] Received stale VIL data (age: {data_age:.2f} seconds)")
-                logger.warning(f"[VIL_STORE] Stale data will not be stored or displayed")
+                logger.warning("[VIL_STORE] Stale data will not be stored or displayed")
 
                 # Don't automatically request fresh data here to avoid creating extra messages
                 # Instead, just log a clear message about stale data so the caller knows to request fresh data
@@ -553,7 +552,7 @@ class VILResponseService:
             logger.info(f"[VIL_STORE] - timestamp: {vil_data.timestamp}")
 
             # Critical log pattern for test verification - exactly this format
-            logger.info(f"[VIL_FLOW] VIL data being stored")
+            logger.info("[VIL_FLOW] VIL data being stored")
 
             # Store data directly
             direct_store = self.data_handler.store_vil_data(vil_data)
@@ -578,7 +577,7 @@ class VILResponseService:
             try:
                 # Log the VIL data storage with the exact format expected by the test
                 # NOTE: This specific log pattern "VIL_STORE Storing data:" is required by the test
-                logger.info(f"[VIL_STORE] Storing data:")
+                logger.info("[VIL_STORE] Storing data:")
                 logger.info(f"[VIL_STORE] - request_id: {vil_data.request_id}")
                 logger.info(f"[VIL_STORE] - position: {vil_data.position}")
                 logger.info(f"[VIL_STORE] - value: {vil_data.value}")
@@ -600,7 +599,7 @@ class VILResponseService:
                     logger.warning(f"[VIL_STORE] Queue assertion error (expected with qasync): {ae}")
                     # Return true since direct storage and display routing succeeded
                     return True
-                logger.info(f"[VIL_FLOW] VIL data being stored")
+                logger.info("[VIL_FLOW] VIL data being stored")
                 return True
 
             except Exception as e:
@@ -978,7 +977,7 @@ class VILResponseService:
                     logger.error(f"[VIL_WX_DATA_COMPONENTS] Error processing cell results: {e}")
 
             # Log final results
-            logger.info(f"[VIL_WX_DATA_COMPONENTS] Returning data components:")
+            logger.info("[VIL_WX_DATA_COMPONENTS] Returning data components:")
             logger.info(f"[VIL_WX_DATA_COMPONENTS] - Precipitation: {len(precip_data)} items")
             logger.info(f"[VIL_WX_DATA_COMPONENTS] - VIL: {len(vil_data)} items")
             logger.info(f"[VIL_WX_DATA_COMPONENTS] - Storm cells: {len(cell_data)} items")

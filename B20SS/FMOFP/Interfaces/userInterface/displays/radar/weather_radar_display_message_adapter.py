@@ -6,7 +6,7 @@ Uses display-local message types and constants for consistent message handling.
 """
 
 import time
-from typing import Any, Dict, Union, Optional
+from typing import Any, Dict, Union
 
 # Import display-local modules
 from ...messaging.display_message_types import (
@@ -18,7 +18,6 @@ from ...messaging.display_message_types import (
     is_vil_message
 )
 from ...messaging.display_address_utils import (
-    DISPLAY_RT_ADDRESS,
     WEATHER_RADAR_RT_ADDRESS
 )
 
@@ -436,7 +435,7 @@ class WeatherRadarDisplayMessageAdapter:
             
             # Log the normalized message structure
             logger.info(f"[DISPLAY_ADAPTER] Normalized precipitation data with command_type={normalized['command_type']}")
-            logger.info(f"[DISPLAY_ADAPTER] Added precipitation_message flag to metadata")
+            logger.info("[DISPLAY_ADAPTER] Added precipitation_message flag to metadata")
             
             return normalized
             

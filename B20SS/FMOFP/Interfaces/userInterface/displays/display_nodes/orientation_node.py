@@ -5,9 +5,7 @@ Specialized display node for managing flight orientation data.
 Provides structured storage and behavior for attitude, position, and velocity.
 """
 
-from typing import Any, Dict, Optional, Union, List
-import threading
-import time
+from typing import Any, Dict, Optional
 from .display_node_base import DisplayNode
 from FMOFP.Utils.logger.sys_logger import get_logger
 

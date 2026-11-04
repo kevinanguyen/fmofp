@@ -5,8 +5,7 @@ Handles aircraft flight dynamics calculations for the Flight Control System.
 """
 
 import math
-import time
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 
 from FMOFP.Utils.logger.sys_logger import get_logger
 
