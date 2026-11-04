@@ -34,3 +34,5 @@
 *.pdf   binary
 *.db    binary
 
+# Shell scripts run under bash on Windows too: keep them LF whatever core.autocrlf says.
+*.sh text eol=lf

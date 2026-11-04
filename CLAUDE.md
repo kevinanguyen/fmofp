@@ -697,6 +697,7 @@ Bus and C++
 - The load model: the fourteen-terminal aircraft sits at 6908 us; a 25 Hz block costs
   roughly a quarter of a frame per segment; before adding a 50 Hz message check the line.
 - A custom CMake target that runs ctest must `add_dependencies` on the test executables;
+- Shell scripts are committed with LF line endings (.gitattributes forces it); if bash on Windows complains about a stray carriage return in verify.sh, run git add --renormalize B20SS/verify.sh and check the file out again.
   run test executables from the UCRT64 shell or with its `bin` on PATH (DLLs).
 - The radar display's particle animation in the same process as a bus terminal starved the
   terminal (overruns): display terminals run in a helper process (`TerminalProcess`) and
