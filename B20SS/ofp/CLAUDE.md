@@ -1,5 +1,9 @@
 # FMOFP OFP (C++) — rules for every contributor, human or Claude
 
+Start with `CLAUDE.md` at the repository root: it holds the session protocol both
+contributors follow (pull first, verify, update it, push), the state of the port and
+the plan for every open unit. This file is the C++ coding rules only.
+
 This directory is the flight software: the C++ that replaces FMOFP's Python flight
 logic, one process per subsystem, talking only over the simulated MIL-STD-1553B bus.
 Everything under `B20SS/ofp/` follows these rules. The compiler flags in
