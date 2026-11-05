@@ -1,13 +1,15 @@
 # FMOFP Python-to-C++ port: the shared working file
 
 **Read this whole file before doing anything else in this repository.** Two people take
-turns on this fork, Kevin (the owner) and his partner, each driving Claude (Fable 5.1) in
-their own sessions, on their own machines, at different times. This file is how one session
-hands the work to the next. It is checked in on branch `port/cpp`, Claude Code loads it
-automatically, and **the copy on disk is only as current as the last `git pull`**, so the
-first thing every session does is pull (section 0). The last thing every session does is
-update this file and push it with the work (section 0.4). A session that does not push is
-invisible to the other person; a session that does not pull may redo or undo their work.
+turns on this fork, Kevin (the owner, GitHub `kevinanguyen`) and Alee (GitHub `TubAleeLo`,
+who also owns the upstream repository this fork came from), each driving Claude (Fable 5.1)
+in their own sessions, on their own machines, at different times. This file is how one
+session hands the work to the next. It is checked in on branch `port/cpp`, Claude Code
+loads it automatically, and **the copy on disk is only as current as the last `git pull`**,
+so the first thing every session does is pull (section 0). The last thing every session
+does is update this file and push it with the work (section 0.4). A session that does not
+push is invisible to the other person; a session that does not pull may redo or undo their
+work.
 
 Section numbers are anchors both agents rely on: add to sections, do not renumber them.
 Sections 7 and 8 are append-only.
@@ -94,11 +96,14 @@ person may continue it in their next session; when it is green it is rebased ont
 
 ## 1. Current state (rewrite this block; keep it short and exact)
 
-- **Branch** `port/cpp` on `origin` = github.com/kevinanguyen/fmofp. HEAD: see `git log -1`.
-  Last milestone commit: `051e57d` (mission computer + comms, ICD v1.16; CI run
-  41569356013 all ten jobs green). After it: `d82173f` merge of upstream/main `4c25f52`
-  (six commits of 2026-11-02, mechanical; full suite green on the merged tree), then the
-  commit that added this file and `B20SS/verify.sh`.
+- **Branch** `port/cpp` on `origin` = github.com/kevinanguyen/fmofp-c-port (renamed from
+  `fmofp` on 2026-11-04; the old URL redirects, new clones use the new name). HEAD: see
+  `git log -1`. Last milestone commit: `051e57d` (mission computer + comms, ICD v1.16; CI
+  run 41569356013 all ten jobs green). After it: `d82173f` merge of upstream/main `4c25f52`
+  (six commits of 2026-11-02, mechanical; full suite green on the merged tree); `8d67afd`
+  this file and `B20SS/verify.sh` (CI run 41931935765 all ten green); `e325d00` LF rule for
+  shell scripts (CI run 41932029106: nine green, the Windows 3.13 Python leg red on the
+  flaky `test_weather_radar_live` only; both `cpp` jobs green).
 - **ICD** v1.16 (`B20SS/icd/fmofp_icd.xml`): 26 terminals, 102 message definitions
   (148 after per-terminal expansion), 35 message relays (15 broadcast), 20 block streams
   (10 layouts, 10 relayed copies), 9 mode codes, 89/89 legacy types mapped.
@@ -125,10 +130,13 @@ person may continue it in their next session; when it is green it is rebased ont
   stays `0ab9236` (Alee's freeze, 2026-10-10); later upstream commits have been plumbing and
   lint only.
 - **Open work / claims**: none. No `wip/` branches. Last session: Kevin's, 2026-11-04 (this
-  file, the merge). Suggested next unit: 18 defensive (RT 22), then 15 sensor management,
-  16 power, 17 avionics, 19 flight surfaces, 20 utilities, 28, 29 last, 30.
+  file, the merge, the repository rename; Alee invited as collaborator with write access,
+  so his first session on his machine starts with section 0.1 step 6). Suggested next
+  unit: 18 defensive (RT 22), then 15 sensor management, 16 power, 17 avionics, 19 flight
+  surfaces, 20 utilities, 28, 29 last, 30.
 - **Known red in CI that is not ours**: Alee's `test_weather_radar_live` is flaky on the
-  Windows and 3.12 Python legs; the two `cpp` jobs are the ones that judge the port.
+  Windows and 3.12 Python legs (again on the Windows 3.13 leg of run 41932029106); the two
+  `cpp` jobs are the ones that judge the port.
 
 ---
 
@@ -485,8 +493,9 @@ spool-up).
 - The Python under `B20SS/FMOFP/` is frozen at Alee's `0ab9236` for the logic being ported;
   the C++ is measured against it by oracle tests that import the frozen modules. Upstream
   merges (section 4.4) are allowed only when they do not change that logic.
-- The ICD is ours to evolve (Kevin's decision, 2026-10-10: no approvals through Alee).
-  Decide, implement, record in the ICD README section 2, tell the humans.
+- The ICD is ours to evolve (Kevin's decision, 2026-10-10: no approval loop; since 2026-11-04
+  Alee is the second contributor, so "ours" means the two of them). Whoever is working
+  decides, implements, records it in the ICD README section 2, and tells both humans.
 
 ### 4.2 Bus and ICD rules (the tool enforces most; know them anyway)
 
@@ -565,7 +574,7 @@ always at 450 kt, the SMS station table painted with the wrong brush.
   <noreply@anthropic.com>` today).
 - Both CI files are edited together (`.github/workflows/ci.yml` and
   `bitbucket-pipelines.yml`): the env vars for new binaries, the apt packages.
-- After a push, note the CI run (`gh run list --repo kevinanguyen/fmofp --branch port/cpp
+- After a push, note the CI run (`gh run list --repo kevinanguyen/fmofp-c-port --branch port/cpp
   --limit 3`; the `gh` binary on Windows is at `C:\Program Files\GitHub CLI\gh.exe` and
   needs `--repo`). Record the result in section 7 when it lands (next session is fine).
 - Warnings like `LF will be replaced by CRLF` on commit are harmless (`-c
@@ -608,17 +617,20 @@ step that was skipped.
 ### 5.1 Clone and remotes (once per machine)
 
 ```bash
-git clone https://github.com/kevinanguyen/fmofp.git
-cd fmofp
+git clone https://github.com/kevinanguyen/fmofp-c-port.git
+cd fmofp-c-port
 git checkout port/cpp
 git remote add upstream https://github.com/TubAleeLo/fmofp.git
 git remote set-url --push upstream DISABLED
 git config user.name "<your name>" && git config user.email "<your email>"
 ```
 
-The partner needs write access to `kevinanguyen/fmofp` (Kevin: repository Settings,
-Collaborators). Until then the partner works on a fork of the fork and opens pull requests
-into `port/cpp`, and the protocol's "push" means "push and open the PR".
+Alee has write access to `kevinanguyen/fmofp-c-port` (collaborator invitation sent by Kevin
+on 2026-11-04; it must be accepted on GitHub before the first push). The disabled `upstream`
+push URL applies to Alee's clone of this fork too: port work reaches `TubAleeLo/fmofp` only
+when both humans decide so (unit 29 is where that comes up). Anyone without write access
+works on a fork of the fork and opens pull requests into `port/cpp`; the protocol's "push"
+then means "push and open the PR".
 
 ### 5.2 Windows toolchain
 
@@ -942,6 +954,17 @@ done before this file existed are condensed from the private session notes.
   machine).
 - *Numbers*: meter unchanged, 21 / 29.5 = 71 %.
 
+### 2026-11-04 - repository renamed, Alee joins, CI of the two file commits - by Kevin's agent
+- *What*: Kevin renamed the fork `kevinanguyen/fmofp` to `kevinanguyen/fmofp-c-port` and
+  invited Alee (GitHub `TubAleeLo`, the upstream owner) as a collaborator with write access
+  (invitation pending acceptance when this was written). The local `origin` URL, this file
+  (preamble, sections 1, 4.1, 4.6, 5.1) and Kevin's private pointer file carry the new name;
+  GitHub redirects the old one. No code changed.
+- *CI*: `8d67afd` run 41931935765 all ten jobs green; `e325d00` run 41932029106 nine green,
+  the Windows 3.13 Python leg red on `FMOFP.Tests.test_weather_radar_live` only (Alee's
+  flaky live test, section 1), both `cpp` jobs green.
+- *Numbers*: meter unchanged, 21 / 29.5 = 71 %.
+
 ---
 
 ## 8. Decisions (append-only: date, who, what, why)
@@ -966,3 +989,7 @@ done before this file existed are condensed from the private session notes.
 - 2026-11-04, Kevin: two people alternate on the fork, each with Claude; the shared working
   file is this `CLAUDE.md` at the repository root; every session pulls first and reads it,
   every turn that changes anything updates it and pushes; `B20SS/verify.sh` is the gate.
+- 2026-11-04, Kevin: the second contributor is Alee (GitHub `TubAleeLo`), added as a
+  collaborator with write access; the fork is renamed `fmofp-c-port`. Section 0.5 does not
+  change: port work is never pushed to `TubAleeLo/fmofp` from this workflow and the frozen
+  Python stays frozen; "ours" in section 4.1 now means the two contributors.
